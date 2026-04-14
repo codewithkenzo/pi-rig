@@ -66,4 +66,26 @@ describe("theme lifecycle helpers", () => {
 		expect(restored).toBe(false);
 		expect(state.getActive()).toBe("catppuccin-mocha");
 	});
+
+	it("restoreThemeEntry normalizes legacy alias values before applying", async () => {
+		const calls: string[] = [];
+		const state = makeThemeState("dracula");
+		const restored = await restoreThemeEntry(
+			{
+				ui: {
+					setTheme: (theme: string) => {
+						calls.push(theme);
+						return { success: true };
+					},
+					theme: { name: "dark" },
+				},
+			},
+			state,
+			{ active: "dark" },
+		);
+
+		expect(restored).toBe(true);
+		expect(calls).toEqual(["dracula"]);
+		expect(state.getActive()).toBe("dracula");
+	});
 });

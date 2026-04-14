@@ -32,6 +32,24 @@ describe("makeThemeState", () => {
 		expect(state.getActive()).toBe("nord");
 	});
 
+	it("syncThemeStateFromUi keeps the current dark palette when ui reports dark alias", () => {
+		const state = makeThemeState("dracula");
+		expect(syncThemeStateFromUi(state, "dark")).toBe("dracula");
+		expect(state.getActive()).toBe("dracula");
+	});
+
+	it("syncThemeStateFromUi resolves ui dark alias to a concrete dark palette when needed", () => {
+		const state = makeThemeState("catppuccin-latte");
+		expect(syncThemeStateFromUi(state, "dark")).toBe("catppuccin-mocha");
+		expect(state.getActive()).toBe("catppuccin-mocha");
+	});
+
+	it("syncThemeStateFromUi ignores unknown ui theme names", () => {
+		const state = makeThemeState("nord");
+		expect(syncThemeStateFromUi(state, "not-a-real-theme")).toBe("nord");
+		expect(state.getActive()).toBe("nord");
+	});
+
 	it("getNextName advances and wraps across built-in palettes", () => {
 		const names = BUILTIN_PALETTES.map((palette) => palette.name);
 		const first = names[0] ?? "catppuccin-mocha";

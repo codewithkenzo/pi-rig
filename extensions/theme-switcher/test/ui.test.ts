@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { PALETTE_MAP } from "../../../shared/theme/index.js";
 import { makeThemeState } from "../src/state.js";
 import { renderThemeWidgetLines, themeStatusText } from "../src/ui.js";
 
@@ -12,6 +13,20 @@ describe("theme UI helpers", () => {
 
 		expect(lines.join("\n")).toContain("dracula");
 		expect(lines.join("\n")).toContain("/theme set <name>");
+	});
+
+	it("recovers from legacy non-palette active values without throwing", () => {
+		const state = makeThemeState("dracula");
+		state.setActive("dark");
+
+		expect(() =>
+			renderThemeWidgetLines(state, process.cwd(), {
+				frame: 1,
+				startedAt: Date.now() - 100,
+			}),
+		).not.toThrow();
+		expect(state.getActive()).not.toBe("dark");
+		expect(PALETTE_MAP.has(state.getActive())).toBe(true);
 	});
 
 	it("formats the footer status text", () => {

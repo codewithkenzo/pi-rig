@@ -1,6 +1,6 @@
 import type { ExtensionUIContext } from "@mariozechner/pi-coding-agent";
-import { AnimationTicker, createEngine, getPalette, loadTheme, shimmer, spin, withMotion } from "../../../shared/theme/index.js";
-import type { ThemeState } from "./state.js";
+import { AnimationTicker, PALETTE_MAP, createEngine, getPalette, loadTheme, shimmer, spin, withMotion } from "../../../shared/theme/index.js";
+import { resolveThemeName, type ThemeState } from "./state.js";
 
 const THEME_STATUS_KEY = "theme-switcher";
 const THEME_WIDGET_KEY = "theme-switcher";
@@ -52,8 +52,13 @@ export const renderThemeWidgetLines = (
 	cwd: string,
 	animationState = { frame: 0, startedAt: Date.now() },
 ): string[] => {
-	const { config } = loadTheme(cwd);
-	const activeTheme = state.getActive();
+	const { config, palette: configuredPalette } = loadTheme(cwd);
+	let activeTheme = state.getActive();
+	if (!PALETTE_MAP.has(activeTheme)) {
+		const resolved = resolveThemeName(activeTheme, configuredPalette.name);
+		activeTheme = PALETTE_MAP.has(resolved) ? resolved : configuredPalette.name;
+		state.setActive(activeTheme);
+	}
 	const palette = getPalette(activeTheme);
 	const engine = createEngine(palette, config.colorMode);
 	const nextTheme = state.getNextName();

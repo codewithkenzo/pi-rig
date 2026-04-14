@@ -11,7 +11,7 @@ import {
 	spin,
 	spinnerFrames,
 } from "../../../shared/theme/index.js";
-import type { ThemeState } from "./state.js";
+import { syncThemeStateFromUi, type ThemeState } from "./state.js";
 
 export const themeSkillDir = join(import.meta.dirname, "..", "skills");
 export const themeSkillPackageDir = join(themeSkillDir, "theme-switcher");
@@ -29,13 +29,7 @@ export const getThemeNames = (): string[] =>
 export const getResolvedThemeName = (
 	state: ThemeState,
 	uiThemeName: string | undefined,
-): string => {
-	if (uiThemeName !== undefined && uiThemeName !== state.getActive()) {
-		state.setActive(uiThemeName);
-	}
-
-	return state.getActive();
-};
+): string => syncThemeStateFromUi(state, uiThemeName);
 
 export const renderThemeStatus = (activeTheme: string): string[] => {
 	const theme = PALETTE_MAP.get(activeTheme);

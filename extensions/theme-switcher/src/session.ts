@@ -1,6 +1,6 @@
 import type { CustomEntry, SessionEntry } from "@mariozechner/pi-coding-agent";
 import { THEME_ENTRY_TYPE, type ThemeStateEntry } from "./types.js";
-import type { ThemeState, ThemeSwitcherContext } from "./state.js";
+import { resolveThemeName, type ThemeState, type ThemeSwitcherContext } from "./state.js";
 
 const isThemeStateEntry = (value: unknown): value is ThemeStateEntry => {
 	if (typeof value !== "object" || value === null) return false;
@@ -29,12 +29,13 @@ export const restoreThemeEntry = async (
 		return false;
 	}
 
-	const result = ctx.ui.setTheme(entry.active);
+	const restoredTheme = resolveThemeName(entry.active, state.getActive());
+	const result = ctx.ui.setTheme(restoredTheme);
 	if (!result.success) {
 		return false;
 	}
 
-	state.setActive(entry.active);
+	state.setActive(restoredTheme);
 	return true;
 };
 

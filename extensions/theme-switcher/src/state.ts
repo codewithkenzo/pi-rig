@@ -2,6 +2,63 @@ import { Effect } from "effect";
 import { BUILTIN_PALETTES, PALETTE_MAP, getPalette } from "../../../shared/theme/index.js";
 import { ThemeLoadError, ThemeNotFoundError } from "./types.js";
 
+const DEFAULT_THEME_BY_VARIANT = {
+	dark: "catppuccin-mocha",
+	light: "catppuccin-latte",
+} as const;
+
+const isKnownThemeName = (name: string): boolean => PALETTE_MAP.has(name);
+
+const firstThemeByVariant = (variant: "dark" | "light"): string | undefined => {
+	for (const palette of PALETTE_MAP.values()) {
+		if (palette.variant === variant) {
+			return palette.name;
+		}
+	}
+	return undefined;
+};
+
+const defaultThemeName = (): string =>
+	PALETTE_MAP.has(DEFAULT_THEME_BY_VARIANT.dark)
+		? DEFAULT_THEME_BY_VARIANT.dark
+		: BUILTIN_PALETTES[0]?.name ?? DEFAULT_THEME_BY_VARIANT.dark;
+
+const fallbackThemeForVariant = (
+	variant: "dark" | "light",
+	currentActive: string,
+): string => {
+	const preferred = DEFAULT_THEME_BY_VARIANT[variant];
+	if (PALETTE_MAP.has(preferred)) {
+		return preferred;
+	}
+	const first = firstThemeByVariant(variant);
+	return first ?? currentActive;
+};
+
+export const resolveThemeName = (
+	candidate: string | undefined,
+	currentActive: string,
+): string => {
+	const normalized = candidate?.trim();
+	if (normalized === undefined || normalized === "") {
+		return currentActive;
+	}
+
+	if (isKnownThemeName(normalized)) {
+		return normalized;
+	}
+
+	if (normalized === "dark" || normalized === "light") {
+		const current = PALETTE_MAP.get(currentActive);
+		if (current?.variant === normalized) {
+			return currentActive;
+		}
+		return fallbackThemeForVariant(normalized, currentActive);
+	}
+
+	return currentActive;
+};
+
 const getThemeNames = (): string[] =>
 	Array.from(
 		new Set([
@@ -32,7 +89,7 @@ export interface ThemeSwitcherContext {
 }
 
 export const makeThemeState = (initial: string): ThemeState => {
-	let active = initial;
+	let active = resolveThemeName(initial, defaultThemeName());
 
 	return {
 		getActive: () => active,
@@ -59,8 +116,9 @@ export const syncThemeStateFromUi = (
 	state: ThemeState,
 	themeName: string | undefined,
 ): string => {
-	if (themeName !== undefined && themeName !== state.getActive()) {
-		state.setActive(themeName);
+	const resolved = resolveThemeName(themeName, state.getActive());
+	if (resolved !== state.getActive()) {
+		state.setActive(resolved);
 	}
 
 	return state.getActive();
