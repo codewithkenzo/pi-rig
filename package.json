@@ -1,0 +1,22 @@
+{
+  "name": "@codewithkenzo/pi-plugins",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "workspaces": [
+    "shared",
+    "packages/*",
+    "extensions/*"
+  ],
+  "scripts": {
+    "build": "bun run --filter @codewithkenzo/pi-installer build && bun run --filter @codewithkenzo/pi-flow-system build && bun run --filter @codewithkenzo/pi-theme-switcher build && bun run --filter @codewithkenzo/pi-gateway-messaging build",
+    "typecheck": "bun run --filter '*' typecheck",
+    "test": "bun run --filter '*' test",
+    "setup": "bun run bin/setup.ts",
+    "plan:tg": "python3 bin/notify_plan_to_tg.py",
+    "plan:tg:dry": "python3 bin/notify_plan_to_tg.py --dry-run",
+    "plan:watch": "python3 bin/watch_plan_updates.py",
+    "plan:watch:seed": "python3 bin/watch_plan_updates.py --seed",
+    "plan:watch:once": "python3 bin/watch_plan_updates.py --once"
+  }
+}
