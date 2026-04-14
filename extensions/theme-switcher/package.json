@@ -5,6 +5,9 @@
   "type": "module",
   "main": "./dist/index.js",
   "extensions": ["./dist/index.js"],
+  "pi": {
+    "extensions": ["./dist/index.js"]
+  },
   "scripts": {
     "build": "bun build ./index.ts --outfile ./dist/index.js --target node",
     "tsc": "tsc",
