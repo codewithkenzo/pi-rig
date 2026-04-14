@@ -3,7 +3,7 @@ import { Effect, Exit } from "effect";
 import type { AgentToolUpdateCallback } from "@mariozechner/pi-coding-agent";
 import type { FlowQueueService } from "./queue.js";
 import { getProfile } from "./profiles.js";
-import { executeFlow } from "./executor.js";
+import { executeFlow, type FlowProgressEvent } from "./executor.js";
 import type { FlowJob } from "./types.js";
 import { formatFlowError } from "./errors.js";
 
@@ -16,6 +16,17 @@ const emitUpdate = (
 		content: [{ type: "text", text }],
 		details,
 	});
+};
+
+const updateProgress = (
+	queue: FlowQueueService,
+	jobId: string,
+	toolCount: number,
+	lastProgress: string,
+): void => {
+	void Effect.runPromise(
+		queue.setStatus(jobId, "running", { toolCount, lastProgress }).pipe(Effect.result, Effect.asVoid),
+	);
 };
 
 // ── flow_batch tool ───────────────────────────────────────────────────────────
@@ -132,13 +143,28 @@ export function makeFlowBatchTool(queue: FlowQueueService) {
 					return { id: job.id, profile: item.profile, task: item.task, status: "failed", error: "profile not found" };
 				}
 				const profile = profileExit.value;
+				let toolCount = 0;
 
 				await Effect.runPromise(
-					queue.setStatus(job.id, "running", { startedAt: Date.now() }),
+					queue.setStatus(job.id, "running", { startedAt: Date.now(), toolCount, lastProgress: "starting" }),
 				);
+				const onProgress = (event: FlowProgressEvent): void => {
+					if (event._tag === "tool_end") {
+						toolCount += 1;
+					}
+					updateProgress(queue, job.id, toolCount, event.detail);
+					emitUpdate(onUpdate, `${item.profile}: ${event.detail}`, {
+						jobId: job.id,
+						index,
+						count: items.length,
+						profile: item.profile,
+						phase: "progress",
+						toolCount,
+					});
+				};
 
 				const exit = await Effect.runPromiseExit(
-					executeFlow({ task: item.task, profile, cwd: item.cwd }),
+					executeFlow({ task: item.task, profile, cwd: item.cwd, onProgress }),
 				);
 
 				if (Exit.isSuccess(exit)) {
@@ -146,6 +172,8 @@ export function makeFlowBatchTool(queue: FlowQueueService) {
 						queue.setStatus(job.id, "done", {
 							finishedAt: Date.now(),
 							output: exit.value,
+							toolCount,
+							lastProgress: "done",
 						}),
 					);
 					return {
@@ -161,6 +189,8 @@ export function makeFlowBatchTool(queue: FlowQueueService) {
 						queue.setStatus(job.id, "failed", {
 							finishedAt: Date.now(),
 							error: errText,
+							toolCount,
+							lastProgress: "failed",
 						}),
 					);
 					return {

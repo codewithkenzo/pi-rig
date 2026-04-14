@@ -25,6 +25,17 @@ const formatCount = (jobs: readonly FlowJob[], status: FlowJob["status"]): numbe
 const truncate = (text: string, width: number): string =>
 	text.length <= width ? text : `${text.slice(0, Math.max(0, width - 1))}…`;
 
+const ANSI_PATTERN = /\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g;
+
+const fitLine = (line: string, width: number): string => {
+	const safeWidth = Math.max(1, width);
+	const plain = line.replace(ANSI_PATTERN, "");
+	if (plain.length <= safeWidth) {
+		return line;
+	}
+	return plain.slice(0, safeWidth);
+};
+
 const formatChain = (queue: FlowQueue, limit = 3): string => {
 	const active = queue.jobs
 		.filter((job) => job.status === "running" || job.status === "pending")
@@ -87,7 +98,11 @@ export const renderFlowWidgetLines = (
 			truncate(
 				activeJobs
 					.slice(0, 1)
-					.map((job) => `${job.profile}: ${job.task}`)
+					.map((job) => {
+						const tools = job.toolCount !== undefined ? ` · tools ${job.toolCount}` : "";
+						const progress = job.lastProgress !== undefined ? ` · ${job.lastProgress}` : "";
+						return `${job.profile}: ${job.task}${tools}${progress}`;
+					})
 					.join(""),
 				72,
 			),
@@ -101,7 +116,7 @@ export const renderFlowWidgetLines = (
 const makeLinesComponent = (getLines: () => string[]): LinesComponent => {
 	let cached = getLines();
 	return {
-		render: () => cached,
+		render: (width: number) => cached.map((line) => fitLine(line, width)),
 		invalidate: () => {
 			cached = getLines();
 		},

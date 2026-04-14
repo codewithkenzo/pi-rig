@@ -2,7 +2,7 @@ import { Effect, Exit } from "effect";
 import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
 import type { FlowQueueService } from "./queue.js";
 import { getProfile, loadProfiles } from "./profiles.js";
-import { executeFlow } from "./executor.js";
+import { executeFlow, type FlowProgressEvent } from "./executor.js";
 import { formatFlowError } from "./errors.js";
 import type { FlowJob } from "./types.js";
 
@@ -77,8 +77,10 @@ function formatJob(job: FlowJob): string {
 	const profile = color(job.profile.padEnd(12));
 	const task = job.task.slice(0, 68) + (job.task.length > 68 ? "…" : "");
 	const id = C.gray(`  ${job.id}`);
+	const tools = job.toolCount !== undefined ? C.dim(`  · tools ${job.toolCount}`) : "";
+	const progress = job.lastProgress !== undefined ? C.dim(`\n  ↳ ${job.lastProgress.slice(0, 80)}`) : "";
 
-	return `  ${icon}  ${profile}  ${task}${durationStr}\n${id}`;
+	return `  ${icon}  ${profile}  ${task}${durationStr}${tools}\n${id}${progress}`;
 }
 
 const parseRunArgs = (rawArgs: string): { ok: true; profile: string; task: string } | { ok: false } => {
@@ -102,6 +104,17 @@ const summarizeOutput = (text: string): string => {
 	return normalized.length > 240 ? `${normalized.slice(0, 240)}…` : normalized;
 };
 
+const setRunningProgress = async (
+	queue: FlowQueueService,
+	id: string,
+	toolCount: number,
+	lastProgress: string,
+): Promise<void> => {
+	await Effect.runPromise(
+		queue.setStatus(id, "running", { toolCount, lastProgress }).pipe(Effect.result, Effect.asVoid),
+	);
+};
+
 const runFlowFromCommand = async (
 	queue: FlowQueueService,
 	ctx: FlowUiContext,
@@ -122,11 +135,18 @@ const runFlowFromCommand = async (
 	const profile = profileExit.value;
 	const job = await Effect.runPromise(queue.enqueue(profileName, task, cwd));
 	const startedAt = Date.now();
+	let toolCount = 0;
 
 	ctx.ui.setWorkingMessage(`▶ ${profileName}…`);
 	try {
-		await Effect.runPromise(queue.setStatus(job.id, "running", { startedAt }));
-		const exit = await Effect.runPromiseExit(executeFlow({ task, profile, cwd }));
+		await Effect.runPromise(queue.setStatus(job.id, "running", { startedAt, toolCount, lastProgress: "starting" }));
+		const onProgress = (event: FlowProgressEvent): void => {
+			if (event._tag === "tool_end") {
+				toolCount += 1;
+			}
+			void setRunningProgress(queue, job.id, toolCount, event.detail);
+		};
+		const exit = await Effect.runPromiseExit(executeFlow({ task, profile, cwd, onProgress }));
 
 		if (Exit.isSuccess(exit)) {
 			const finishedAt = Date.now();
@@ -135,6 +155,8 @@ const runFlowFromCommand = async (
 				queue.setStatus(job.id, "done", {
 					finishedAt,
 					output,
+					toolCount,
+					lastProgress: "done",
 				}),
 			);
 			await ctx.ui.notify(
@@ -153,6 +175,8 @@ const runFlowFromCommand = async (
 			queue.setStatus(job.id, "failed", {
 				finishedAt,
 				error: errorText,
+				toolCount,
+				lastProgress: "failed",
 			}),
 		);
 		await ctx.ui.notify(
@@ -250,6 +274,19 @@ export function registerFlowCommands(pi: ExtensionAPI, queue: FlowQueueService):
 
 					if (query === undefined) {
 						sections.push(C.dim("Tip: /flow status <id> for one job."));
+					} else if (jobs.length === 1) {
+						const job = jobs[0]!;
+						if (job.output !== undefined && job.output.trim().length > 0) {
+							sections.push(C.bold("Output preview"));
+							sections.push(DIVIDER);
+							sections.push(summarizeOutput(job.output));
+						}
+						if (job.error !== undefined && job.error.trim().length > 0) {
+							sections.push("");
+							sections.push(C.boldRed("Error preview"));
+							sections.push(DIVIDER);
+							sections.push(summarizeOutput(job.error));
+						}
 					}
 
 					await ctx.ui.notify(sections.join("\n"));

@@ -66,5 +66,31 @@ describe("/flow command", () => {
 		expect(messages.at(-1)).toContain(job.id);
 		expect(messages.at(-1)).toContain("coder");
 	});
-});
 
+	it("shows output preview for single status lookup", async () => {
+		const { queue, flowHandler, messages, ctx } = await makeHarness();
+		expect(flowHandler).toBeDefined();
+
+		const job = await Effect.runPromise(queue.enqueue("research", "summarize docs"));
+		await Effect.runPromise(
+			queue.setStatus(job.id, "running", {
+				startedAt: Date.now() - 1000,
+				toolCount: 2,
+				lastProgress: "read done",
+			}),
+		);
+		await Effect.runPromise(
+			queue.setStatus(job.id, "done", {
+				finishedAt: Date.now(),
+				output: "docs summary complete",
+				toolCount: 2,
+			}),
+		);
+
+		await flowHandler?.(`status ${job.id}`, ctx);
+		const message = messages.at(-1) ?? "";
+		expect(message).toContain("Output preview");
+		expect(message).toContain("docs summary complete");
+		expect(message).toContain("tools 2");
+	});
+});

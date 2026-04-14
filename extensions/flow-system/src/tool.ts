@@ -3,7 +3,7 @@ import { Effect, Exit } from "effect";
 import type { AgentToolUpdateCallback, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import type { FlowQueueService } from "./queue.js";
 import { getProfile } from "./profiles.js";
-import { executeFlow } from "./executor.js";
+import { executeFlow, type FlowProgressEvent } from "./executor.js";
 import { formatFlowError } from "./errors.js";
 
 const emitUpdate = (
@@ -19,6 +19,15 @@ const emitUpdate = (
 
 const describeError = (error: unknown): string =>
 	error instanceof Error ? error.message : String(error);
+
+const applyProgress = (
+	queue: FlowQueueService,
+	jobId: string,
+	status: "running" | "done" | "failed",
+	extras: { toolCount: number; lastProgress: string },
+): void => {
+	void Effect.runPromise(queue.setStatus(jobId, status, extras).pipe(Effect.result, Effect.asVoid));
+};
 
 // ── flow_run tool ─────────────────────────────────────────────────────────────
 
@@ -100,16 +109,25 @@ export function makeFlowTool(queue: FlowQueueService) {
 			if (background) {
 				// Fire and forget — kick off execution without awaiting
 				void (async () => {
+					let toolCount = 0;
 					try {
 						await Effect.runPromise(
-							queue.setStatus(job.id, "running", { startedAt: Date.now() }),
+							queue.setStatus(job.id, "running", { startedAt: Date.now(), toolCount, lastProgress: "starting" }),
 						);
-						const exit = await Effect.runPromiseExit(executeFlow({ task, profile, cwd }));
+						const onProgress = (event: FlowProgressEvent): void => {
+							if (event._tag === "tool_end") {
+								toolCount += 1;
+							}
+							applyProgress(queue, job.id, "running", { toolCount, lastProgress: event.detail });
+						};
+						const exit = await Effect.runPromiseExit(executeFlow({ task, profile, cwd, onProgress }));
 						if (Exit.isSuccess(exit)) {
 							await Effect.runPromise(
 								queue.setStatus(job.id, "done", {
 									finishedAt: Date.now(),
 									output: exit.value,
+									toolCount,
+									lastProgress: "done",
 								}),
 							);
 						} else {
@@ -117,6 +135,8 @@ export function makeFlowTool(queue: FlowQueueService) {
 								queue.setStatus(job.id, "failed", {
 									finishedAt: Date.now(),
 									error: formatFlowError(exit.cause),
+									toolCount,
+									lastProgress: "failed",
 								}),
 							);
 						}
@@ -155,8 +175,9 @@ export function makeFlowTool(queue: FlowQueueService) {
 			}
 
 			// Foreground — run inline and await
+			let toolCount = 0;
 			await Effect.runPromise(
-				queue.setStatus(job.id, "running", { startedAt: Date.now() }),
+				queue.setStatus(job.id, "running", { startedAt: Date.now(), toolCount, lastProgress: "starting" }),
 			);
 			emitUpdate(onUpdate, `Running flow ${job.id} (${profileName})…`, {
 				jobId: job.id,
@@ -164,13 +185,28 @@ export function makeFlowTool(queue: FlowQueueService) {
 				phase: "running",
 			});
 
-			const exit = await Effect.runPromiseExit(executeFlow({ task, profile, cwd }));
+			const onProgress = (event: FlowProgressEvent): void => {
+				if (event._tag === "tool_end") {
+					toolCount += 1;
+				}
+				applyProgress(queue, job.id, "running", { toolCount, lastProgress: event.detail });
+				emitUpdate(onUpdate, `${profileName}: ${event.detail}`, {
+					jobId: job.id,
+					profile: profileName,
+					phase: "progress",
+					toolCount,
+				});
+			};
+
+			const exit = await Effect.runPromiseExit(executeFlow({ task, profile, cwd, onProgress }));
 
 			if (Exit.isSuccess(exit)) {
 				await Effect.runPromise(
 					queue.setStatus(job.id, "done", {
 						finishedAt: Date.now(),
 						output: exit.value,
+						toolCount,
+						lastProgress: "done",
 					}),
 				);
 				return {
@@ -183,6 +219,8 @@ export function makeFlowTool(queue: FlowQueueService) {
 					queue.setStatus(job.id, "failed", {
 						finishedAt: Date.now(),
 						error: errText,
+						toolCount,
+						lastProgress: "failed",
 					}),
 				);
 				return {

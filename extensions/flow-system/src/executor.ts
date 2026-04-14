@@ -41,6 +41,10 @@ interface PiAgentEnd {
 	}>;
 }
 
+export type FlowProgressEvent =
+	| { readonly _tag: "tool_start"; readonly toolName: string; readonly detail: string }
+	| { readonly _tag: "tool_end"; readonly toolName: string; readonly detail: string };
+
 /**
  * Extracts the final assistant text from a pi JSON event.
  *
@@ -86,6 +90,22 @@ function extractText(v: unknown): string | undefined {
 	return undefined;
 }
 
+function extractProgressEvent(v: unknown): FlowProgressEvent | undefined {
+	if (typeof v !== "object" || v === null) return undefined;
+	const obj = v as Record<string, unknown>;
+	const type = obj["type"];
+	if (type !== "tool_execution_start" && type !== "tool_execution_end") {
+		return undefined;
+	}
+
+	const toolNameRaw = obj["toolName"];
+	const toolName = typeof toolNameRaw === "string" && toolNameRaw.length > 0 ? toolNameRaw : "tool";
+	if (type === "tool_execution_start") {
+		return { _tag: "tool_start", toolName, detail: `${toolName}…` };
+	}
+	return { _tag: "tool_end", toolName, detail: `${toolName} done` };
+}
+
 // ── Subprocess runner ─────────────────────────────────────────────────────────
 
 /**
@@ -101,6 +121,7 @@ export const runSubprocess = (
 	profile: FlowProfile,
 	skillFile: string | undefined,
 	cwd: string,
+	onProgress?: (event: FlowProgressEvent) => void,
 ): Effect.Effect<string, SubprocessError> =>
 	Effect.callback<string, SubprocessError>((resume, signal) => {
 		const MAX_STDERR_BYTES = 64 * 1024;
@@ -203,6 +224,10 @@ export const runSubprocess = (
 				const msg: unknown = JSON.parse(line);
 				const text = extractText(msg);
 				if (text !== undefined) lastText = text;
+				const progress = extractProgressEvent(msg);
+				if (progress !== undefined) {
+					onProgress?.(progress);
+				}
 			} catch {
 				// non-JSON stdout lines — skip
 			}
@@ -258,6 +283,7 @@ export interface ExecuteOptions {
 	task: string;
 	profile: FlowProfile;
 	cwd?: string | undefined;
+	onProgress?: (event: FlowProgressEvent) => void;
 }
 
 /**
@@ -273,11 +299,12 @@ export const executeFlow = ({
 	task,
 	profile,
 	cwd = process.cwd(),
+	onProgress,
 }: ExecuteOptions): Effect.Effect<string, SubprocessError | SkillLoadError> => {
 	const hasSkills = profile.skills.length > 0;
 
 	if (!hasSkills) {
-		return runSubprocess(task, profile, undefined, cwd);
+		return runSubprocess(task, profile, undefined, cwd, onProgress);
 	}
 
 	return Effect.acquireUseRelease(
@@ -286,7 +313,7 @@ export const executeFlow = ({
 			Effect.flatMap((content) => writeTempSkillFile(content)),
 		),
 		// Use: run subprocess with skill file
-		(skillFile) => runSubprocess(task, profile, skillFile, cwd),
+		(skillFile) => runSubprocess(task, profile, skillFile, cwd, onProgress),
 		// Release: always clean up, even on failure or interruption
 		(skillFile) => cleanupTempFile(skillFile),
 	);

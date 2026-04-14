@@ -21,6 +21,17 @@ const dim = (text: string): string => `\x1b[2m${text}\x1b[22m`;
 const truncate = (text: string, width: number): string =>
 	text.length <= width ? text : `${text.slice(0, Math.max(0, width - 1))}…`;
 
+const ANSI_PATTERN = /\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g;
+
+const fitLine = (line: string, width: number): string => {
+	const safeWidth = Math.max(1, width);
+	const plain = line.replace(ANSI_PATTERN, "");
+	if (plain.length <= safeWidth) {
+		return line;
+	}
+	return plain.slice(0, safeWidth);
+};
+
 export const themeStatusText = (activeTheme: string): string =>
 	`${activeTheme} · /theme pick · /theme cycle · alt+shift+t`;
 
@@ -85,7 +96,7 @@ const makeLinesComponent = (getLines: () => string[]): LinesComponent => {
 	let cachedLines = getLines();
 
 	return {
-		render: () => cachedLines,
+		render: (width: number) => cachedLines.map((line) => fitLine(line, width)),
 		invalidate: () => {
 			cachedLines = getLines();
 		},

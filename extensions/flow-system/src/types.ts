@@ -61,6 +61,8 @@ export const FlowJobSchema = Type.Object({
 	finishedAt: Type.Optional(Type.Number()),
 	output: Type.Optional(Type.String()),
 	error: Type.Optional(Type.String()),
+	toolCount: Type.Optional(Type.Number({ minimum: 0 })),
+	lastProgress: Type.Optional(Type.String()),
 });
 
 export type FlowJob = Static<typeof FlowJobSchema>;
