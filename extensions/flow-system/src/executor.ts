@@ -3,7 +3,7 @@ import { spawn } from "node:child_process";
 import * as readline from "node:readline";
 import { stageSkills, writeTempSkillFile, cleanupTempFile } from "./vfs.js";
 import type { FlowProfile } from "./types.js";
-import { SubprocessError, SkillLoadError } from "./types.js";
+import { FlowCancelledError, SubprocessError, SkillLoadError } from "./types.js";
 
 // ── Toolset → pi CLI tool mapping ────────────────────────────────────────────
 
@@ -43,7 +43,16 @@ interface PiAgentEnd {
 
 export type FlowProgressEvent =
 	| { readonly _tag: "tool_start"; readonly toolName: string; readonly detail: string }
-	| { readonly _tag: "tool_end"; readonly toolName: string; readonly detail: string };
+	| { readonly _tag: "tool_end"; readonly toolName: string; readonly detail: string }
+	| { readonly _tag: "assistant_text"; readonly detail: string };
+
+const FLOW_CANCELLED_REASON = "Flow cancelled.";
+
+const cancelledError = (): FlowCancelledError =>
+	new FlowCancelledError({ reason: FLOW_CANCELLED_REASON });
+
+const failIfAborted = (signal: AbortSignal | undefined): Effect.Effect<void, FlowCancelledError> =>
+	signal?.aborted ? Effect.fail(cancelledError()) : Effect.void;
 
 /**
  * Extracts the final assistant text from a pi JSON event.
@@ -94,16 +103,34 @@ function extractProgressEvent(v: unknown): FlowProgressEvent | undefined {
 	if (typeof v !== "object" || v === null) return undefined;
 	const obj = v as Record<string, unknown>;
 	const type = obj["type"];
-	if (type !== "tool_execution_start" && type !== "tool_execution_end") {
-		return undefined;
+	if (type === "tool_execution_start" || type === "tool_execution_end") {
+		const toolNameRaw = obj["toolName"];
+		const toolName = typeof toolNameRaw === "string" && toolNameRaw.length > 0 ? toolNameRaw : "tool";
+		if (type === "tool_execution_start") {
+			return { _tag: "tool_start", toolName, detail: `${toolName}…` };
+		}
+		return { _tag: "tool_end", toolName, detail: `${toolName} done` };
 	}
-
-	const toolNameRaw = obj["toolName"];
-	const toolName = typeof toolNameRaw === "string" && toolNameRaw.length > 0 ? toolNameRaw : "tool";
-	if (type === "tool_execution_start") {
-		return { _tag: "tool_start", toolName, detail: `${toolName}…` };
+	if (type === "message_update") {
+		const message = obj["message"] as Record<string, unknown> | undefined;
+		if (message?.["role"] !== "assistant") {
+			return undefined;
+		}
+		const content = message["content"] as ReadonlyArray<Record<string, unknown>> | undefined;
+		if (!Array.isArray(content)) {
+			return undefined;
+		}
+		const text = content
+			.filter((part) => part["type"] === "text" && typeof part["text"] === "string")
+			.map((part) => part["text"] as string)
+			.join("\n")
+			.trim();
+		if (text.length === 0) {
+			return undefined;
+		}
+		return { _tag: "assistant_text", detail: text };
 	}
-	return { _tag: "tool_end", toolName, detail: `${toolName} done` };
+	return undefined;
 }
 
 // ── Subprocess runner ─────────────────────────────────────────────────────────
@@ -122,8 +149,9 @@ export const runSubprocess = (
 	skillFile: string | undefined,
 	cwd: string,
 	onProgress?: (event: FlowProgressEvent) => void,
-): Effect.Effect<string, SubprocessError> =>
-	Effect.callback<string, SubprocessError>((resume, signal) => {
+	abortSignal?: AbortSignal,
+): Effect.Effect<string, SubprocessError | FlowCancelledError> =>
+	Effect.callback<string, SubprocessError | FlowCancelledError>((resume, effectSignal) => {
 		const MAX_STDERR_BYTES = 64 * 1024;
 		const args: string[] = ["--mode", "json", "-p", "--no-session"];
 
@@ -153,20 +181,22 @@ export const runSubprocess = (
 		let child: ReturnType<typeof spawn> | undefined;
 		let rl: readline.Interface | undefined;
 		let finished = false;
+		let cancelled = false;
 		let killTimer: ReturnType<typeof setTimeout> | undefined;
 
 		let lastText = "";
 		let stderrBuf = "";
 		let stderrTruncated = false;
 
-		const finish = (effect: Effect.Effect<string, SubprocessError>): void => {
+		const finish = (effect: Effect.Effect<string, SubprocessError | FlowCancelledError>): void => {
 			if (finished) return;
 			finished = true;
 			if (killTimer !== undefined) {
 				clearTimeout(killTimer);
 				killTimer = undefined;
 			}
-			signal.removeEventListener("abort", onAbort);
+			effectSignal.removeEventListener("abort", onAbort);
+			abortSignal?.removeEventListener("abort", onAbort);
 			rl?.close();
 			resume(effect);
 		};
@@ -184,9 +214,15 @@ export const runSubprocess = (
 			}, 1500);
 		};
 
-		const onAbort = () => {
+		const onAbort = (): void => {
+			cancelled = true;
 			terminateChild();
 		};
+
+		if (abortSignal?.aborted || effectSignal.aborted) {
+			finish(Effect.fail(cancelledError()));
+			return;
+		}
 
 		try {
 			child = spawn(bin, args, {
@@ -217,7 +253,8 @@ export const runSubprocess = (
 			return;
 		}
 		rl = readline.createInterface({ input: proc.stdout });
-		signal.addEventListener("abort", onAbort, { once: true });
+		effectSignal.addEventListener("abort", onAbort, { once: true });
+		abortSignal?.addEventListener("abort", onAbort, { once: true });
 
 		rl.on("line", (line) => {
 			try {
@@ -247,6 +284,10 @@ export const runSubprocess = (
 		});
 
 		proc.on("error", (error: Error) => {
+			if (cancelled || abortSignal?.aborted || effectSignal.aborted) {
+				finish(Effect.fail(cancelledError()));
+				return;
+			}
 			finish(
 				Effect.fail(
 					new SubprocessError({
@@ -258,6 +299,10 @@ export const runSubprocess = (
 		});
 
 		proc.on("close", (code) => {
+			if (cancelled || abortSignal?.aborted || effectSignal.aborted) {
+				finish(Effect.fail(cancelledError()));
+				return;
+			}
 			if (code === 0) {
 				finish(Effect.succeed(lastText));
 			} else {
@@ -272,7 +317,7 @@ export const runSubprocess = (
 		// Return cleanup effect — called on interruption
 		return Effect.sync(() => {
 			if (!finished) {
-				terminateChild();
+				onAbort();
 			}
 		});
 	});
@@ -284,6 +329,7 @@ export interface ExecuteOptions {
 	profile: FlowProfile;
 	cwd?: string | undefined;
 	onProgress?: (event: FlowProgressEvent) => void;
+	signal?: AbortSignal | undefined;
 }
 
 /**
@@ -300,22 +346,29 @@ export const executeFlow = ({
 	profile,
 	cwd = process.cwd(),
 	onProgress,
-}: ExecuteOptions): Effect.Effect<string, SubprocessError | SkillLoadError> => {
+	signal,
+}: ExecuteOptions): Effect.Effect<string, SubprocessError | SkillLoadError | FlowCancelledError> => {
 	const hasSkills = profile.skills.length > 0;
 
 	if (!hasSkills) {
-		return runSubprocess(task, profile, undefined, cwd, onProgress);
+		return failIfAborted(signal).pipe(
+			Effect.flatMap(() => runSubprocess(task, profile, undefined, cwd, onProgress, signal)),
+		);
 	}
 
-	return Effect.acquireUseRelease(
-		// Acquire: stage skills → write temp file → return path
-		stageSkills(profile.skills).pipe(
-			Effect.flatMap((content) => writeTempSkillFile(content)),
+	return failIfAborted(signal).pipe(
+		Effect.flatMap(() =>
+			Effect.acquireUseRelease(
+				// Acquire: stage skills → write temp file → return path
+				stageSkills(profile.skills).pipe(
+					Effect.flatMap((content) => writeTempSkillFile(content)),
+				),
+				// Use: run subprocess with skill file
+				(skillFile) => runSubprocess(task, profile, skillFile, cwd, onProgress, signal),
+				// Release: always clean up, even on failure or interruption
+				(skillFile) => cleanupTempFile(skillFile),
+			),
 		),
-		// Use: run subprocess with skill file
-		(skillFile) => runSubprocess(task, profile, skillFile, cwd, onProgress),
-		// Release: always clean up, even on failure or interruption
-		(skillFile) => cleanupTempFile(skillFile),
 	);
 };
 

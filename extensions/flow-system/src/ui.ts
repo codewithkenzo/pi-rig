@@ -1,5 +1,6 @@
 import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { AnimationTicker, createEngine, loadTheme, shimmer, spin, withMotion } from "../../../shared/theme/index.js";
+import { ellipsize, fitAnsiLine, joinCompact, metric, tag } from "../../../shared/ui/hud.js";
 import type { FlowQueueService } from "./queue.js";
 import type { FlowJob, FlowQueue } from "./types.js";
 
@@ -16,107 +17,146 @@ interface WidgetTui {
 	requestRender(force?: boolean): void;
 }
 
-const bold = (text: string): string => `\x1b[1m${text}\x1b[22m`;
-const dim = (text: string): string => `\x1b[2m${text}\x1b[22m`;
+const runningJobs = (queue: FlowQueue): FlowJob[] => queue.jobs.filter((job) => job.status === "running");
+const activeJobs = (queue: FlowQueue): FlowJob[] => queue.jobs.filter((job) => job.status === "running" || job.status === "pending");
+const hasActiveJobs = (queue: FlowQueue): boolean => activeJobs(queue).length > 0;
+const hasRunningJobs = (queue: FlowQueue): boolean => runningJobs(queue).length > 0;
 
-const formatCount = (jobs: readonly FlowJob[], status: FlowJob["status"]): number =>
-	jobs.filter((job) => job.status === status).length;
-
-const truncate = (text: string, width: number): string =>
-	text.length <= width ? text : `${text.slice(0, Math.max(0, width - 1))}…`;
-
-const ANSI_PATTERN = /\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g;
-
-const fitLine = (line: string, width: number): string => {
-	const safeWidth = Math.max(1, width);
-	const plain = line.replace(ANSI_PATTERN, "");
-	if (plain.length <= safeWidth) {
-		return line;
+const toneForStatus = (status: FlowJob["status"]): "active" | "warning" | "success" | "error" | "inactive" => {
+	switch (status) {
+		case "running":
+			return "active";
+		case "pending":
+			return "warning";
+		case "done":
+			return "success";
+		case "failed":
+			return "error";
+		case "cancelled":
+			return "inactive";
 	}
-	return plain.slice(0, safeWidth);
 };
 
-const formatChain = (queue: FlowQueue, limit = 3): string => {
-	const active = queue.jobs
-		.filter((job) => job.status === "running" || job.status === "pending")
-		.slice(0, limit)
-		.map((job) => `${job.status === "running" ? "▶" : "○"}${job.profile}`);
-	return active.length === 0 ? "idle" : active.join(" → ");
+const staticIconForJob = (job: FlowJob, fallback = "•"): string => {
+	switch (job.status) {
+		case "running":
+			return "▶";
+		case "pending":
+			return "○";
+		case "done":
+			return "✓";
+		case "failed":
+			return "✗";
+		case "cancelled":
+			return "⊘";
+		default:
+			return fallback;
+	}
 };
 
-const summarizeCounts = (queue: FlowQueue): string => {
-	const running = formatCount(queue.jobs, "running");
-	const pending = formatCount(queue.jobs, "pending");
-	const failed = formatCount(queue.jobs, "failed");
-	const chain = formatChain(queue);
-	return `run ${running} · wait ${pending}${failed > 0 ? ` · fail ${failed}` : ""} · ${chain}`;
-};
+export const flowStatusText = (
+	queue: FlowQueue,
+	cwd?: string,
+	animationState = { frame: 0, startedAt: Date.now() },
+): string | undefined => {
+	const active = activeJobs(queue);
+	if (active.length === 0) {
+		return undefined;
+	}
 
-export const flowStatusText = (queue: FlowQueue): string | undefined =>
-	queue.jobs.length === 0 ? undefined : summarizeCounts(queue);
+	const primary = active.find((job) => job.status === "running") ?? active[0];
+	if (primary === undefined) {
+		return undefined;
+	}
+
+	if (cwd === undefined) {
+		const extra = active.length > 1 ? ` +${active.length - 1}` : "";
+		return `${staticIconForJob(primary)} ${primary.profile}${extra} · ${ellipsize(primary.lastProgress ?? primary.task, 48)}`;
+	}
+
+	const { config, palette } = loadTheme(cwd);
+	const engine = createEngine(palette, config.colorMode);
+	const reducedMotion = !config.animation.enabled || config.animation.reducedMotion;
+	const frames = palette.animations?.streamingFrames ?? palette.animations?.runningFrames ?? ["⠋", "⠙", "⠹", "⠸"];
+	const icon = hasRunningJobs(queue)
+		? withMotion(
+				() => spin(frames, animationState, Math.max(6, config.animation.fps)),
+				staticIconForJob(primary),
+				reducedMotion,
+			)
+		: staticIconForJob(primary);
+	const more = active.length > 1 ? engine.fg("muted", `+${active.length - 1}`) : undefined;
+	return joinCompact(engine, [
+		engine.fg(toneForStatus(primary.status), icon),
+		tag(engine, toneForStatus(primary.status), primary.profile),
+		engine.fg("value", ellipsize(primary.lastProgress ?? primary.task, 56)),
+		more,
+	]);
+};
 
 export const renderFlowWidgetLines = (
 	queue: FlowQueue,
 	cwd: string,
 	animationState = { frame: 0, startedAt: Date.now() },
 ): string[] => {
+	const active = activeJobs(queue);
+	if (active.length === 0) {
+		return [];
+	}
+
 	const { config, palette } = loadTheme(cwd);
 	const engine = createEngine(palette, config.colorMode);
 	const reducedMotion = !config.animation.enabled || config.animation.reducedMotion;
-	const activeJobs = queue.jobs.filter((job) => job.status === "running" || job.status === "pending");
-	const spinnerFrames = palette.animations?.toolFrames ?? palette.animations?.runningFrames ?? ["◐", "◓", "◑", "◒"];
-	const spinner = withMotion(
-		() => spin(spinnerFrames, animationState, Math.max(4, config.animation.fps)),
-		palette.animations?.pendingSymbol ?? "•",
-		reducedMotion,
-	);
-	const title = withMotion(
-		() => shimmer("flow harness", palette.semantic.label, palette.semantic.accent, animationState, 4),
-		engine.fg("label", "flow harness"),
-		reducedMotion,
-	);
-
-	const countsLine = [
-		engine.fg("active", `▶ ${formatCount(queue.jobs, "running")}`),
-		engine.fg("warning", `○ ${formatCount(queue.jobs, "pending")}`),
-		engine.fg("success", `✓ ${formatCount(queue.jobs, "done")}`),
-		engine.fg("error", `✗ ${formatCount(queue.jobs, "failed")}`),
-		engine.fg("muted", `⊘ ${formatCount(queue.jobs, "cancelled")}`),
-	].join("  ");
-
-	const lines = [`${spinner} ${bold(title)} · ${countsLine}`];
-
-	if (activeJobs.length === 0) {
-		lines.push(dim("chain idle"));
-	} else {
-		const chain = activeJobs
-			.slice(0, 3)
-			.map((job) => `${job.status === "running" ? "▶" : "○"}${job.profile}`)
-			.join(" → ");
-		lines.push(`chain ${chain}`);
-		lines.push(
-			truncate(
-				activeJobs
-					.slice(0, 1)
-					.map((job) => {
-						const tools = job.toolCount !== undefined ? ` · tools ${job.toolCount}` : "";
-						const progress = job.lastProgress !== undefined ? ` · ${job.lastProgress}` : "";
-						return `${job.profile}: ${job.task}${tools}${progress}`;
-					})
-					.join(""),
-				72,
-			),
-		);
+	const primary = active.find((job) => job.status === "running") ?? active[0];
+	if (primary === undefined) {
+		return [];
 	}
 
-	lines.push(dim("/flow run <profile> -- <task> · /flow status"));
-	return lines;
+	const frames = palette.animations?.streamingFrames ?? palette.animations?.runningFrames ?? ["⠋", "⠙", "⠹", "⠸"];
+	const icon = hasRunningJobs(queue)
+		? withMotion(
+				() => spin(frames, animationState, Math.max(6, config.animation.fps)),
+				staticIconForJob(primary),
+				reducedMotion,
+			)
+		: staticIconForJob(primary);
+	const extra = active.length > 1 ? engine.fg("muted", `+${active.length - 1} more`) : undefined;
+	const runningCount = active.filter((job) => job.status === "running").length;
+	const pendingCount = active.filter((job) => job.status === "pending").length;
+	const doneCount = queue.jobs.filter((job) => job.status === "done").length;
+	const failedCount = queue.jobs.filter((job) => job.status === "failed").length;
+	const title = hasRunningJobs(queue)
+		? withMotion(
+				() => shimmer("flow stream", palette.semantic.label, palette.semantic.accent, animationState, 3),
+				engine.fg("label", "flow stream"),
+				reducedMotion,
+			)
+		: engine.fg("label", "flow stream");
+
+	return [
+		joinCompact(engine, [
+			engine.fg(toneForStatus(primary.status), icon),
+			title,
+			metric(engine, "active", "▶", String(runningCount)),
+			metric(engine, "warning", "○", String(pendingCount)),
+			doneCount > 0 ? metric(engine, "success", "✓", String(doneCount)) : undefined,
+			failedCount > 0 ? metric(engine, "error", "✗", String(failedCount)) : undefined,
+			tag(engine, toneForStatus(primary.status), primary.profile),
+			extra,
+		]),
+		joinCompact(engine, [
+			engine.fg("accent", "↳"),
+			engine.fg("value", ellipsize(primary.lastAssistantText ?? primary.lastProgress ?? primary.task, 64)),
+			primary.toolCount !== undefined ? engine.fg("muted", `${primary.toolCount} calls`) : undefined,
+			engine.fg("dim", "alt+shift+f manage"),
+		]),
+	];
 };
 
 const makeLinesComponent = (getLines: () => string[]): LinesComponent => {
 	let cached = getLines();
 	return {
-		render: (width: number) => cached.map((line) => fitLine(line, width)),
+		render: (width: number) => cached.map((line) => fitAnsiLine(line, width)),
 		invalidate: () => {
 			cached = getLines();
 		},
@@ -128,18 +168,24 @@ export const createFlowWidgetFactory = (queue: FlowQueueService, cwd: string) =>
 		const { config } = loadTheme(cwd);
 		const ticker = new AnimationTicker();
 		const component = makeLinesComponent(() => renderFlowWidgetLines(queue.peek(), cwd, ticker.current));
-		const shouldAnimate = config.animation.enabled && !config.animation.reducedMotion;
+		const syncTicker = (): void => {
+			if (config.animation.enabled && !config.animation.reducedMotion && hasRunningJobs(queue.peek())) {
+				if (!ticker.running) {
+					ticker.start(Math.max(4, config.animation.fps), () => {
+						component.invalidate();
+						tui.requestRender();
+					});
+				}
+			} else {
+				ticker.stop();
+			}
+		};
 		const unsubscribe = queue.subscribe(() => {
+			syncTicker();
 			component.invalidate();
 			tui.requestRender();
 		});
-
-		if (shouldAnimate) {
-			ticker.start(Math.max(4, config.animation.fps), () => {
-				component.invalidate();
-				tui.requestRender();
-			});
-		}
+		syncTicker();
 
 		return {
 			...component,
@@ -154,22 +200,37 @@ export const attachFlowUi = (
 	queue: FlowQueueService,
 	ctx: ExtensionContext,
 ): (() => void) => {
-	const updateStatus = (snapshot: FlowQueue): void => {
-		ctx.ui.setStatus(FLOW_STATUS_KEY, flowStatusText(snapshot));
+	let widgetMounted = false;
+
+	const clearUi = (): void => {
+		if (widgetMounted) {
+			ctx.ui.setWidget(FLOW_WIDGET_KEY, undefined);
+			widgetMounted = false;
+		}
+		ctx.ui.setStatus(FLOW_STATUS_KEY, undefined);
+	};
+
+	const syncUi = (snapshot: FlowQueue): void => {
+		if (!hasActiveJobs(snapshot)) {
+			clearUi();
+			return;
+		}
+
+		if (!widgetMounted) {
+			ctx.ui.setWidget(FLOW_WIDGET_KEY, createFlowWidgetFactory(queue, ctx.cwd), { placement: "aboveEditor" });
+			widgetMounted = true;
+		}
+		ctx.ui.setStatus(FLOW_STATUS_KEY, undefined);
 	};
 
 	const unsubscribe = queue.subscribe((snapshot) => {
-		updateStatus(snapshot);
+		syncUi(snapshot);
 	});
 
-	ctx.ui.setWidget(FLOW_WIDGET_KEY, createFlowWidgetFactory(queue, ctx.cwd), {
-		placement: "belowEditor",
-	});
-	updateStatus(queue.peek());
+	syncUi(queue.peek());
 
 	return () => {
 		unsubscribe();
-		ctx.ui.setStatus(FLOW_STATUS_KEY, undefined);
-		ctx.ui.setWidget(FLOW_WIDGET_KEY, undefined);
+		clearUi();
 	};
 };

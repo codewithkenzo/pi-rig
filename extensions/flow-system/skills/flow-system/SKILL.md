@@ -11,14 +11,18 @@ Use this skill when the task should be delegated through pi flow profiles instea
 
 - `flow_run` for a single task
 - `flow_batch` for sequential or parallel batches
-- `/flow status|cancel|profiles` for job inspection and control
+- `/flow` opens the flow management overlay
+- `/flow status|cancel|profiles|run|pick` for job inspection and control
+- `alt+shift+f` opens the same management overlay
 
 ## Working guidance
 
 - Pick the smallest useful profile first.
 - Use background jobs for long-running exploration or research.
+- Use `/flow` when you want live inspection, quick cancel, or to browse active jobs without leaving the chat band.
 - Check `/flow profiles` before assuming which tools or reasoning level a profile uses.
 - Check `/flow status` before starting duplicate jobs.
+- The compact flow deck should stay flow-only: avoid reintroducing unrelated status noise into the bar/widget.
 
 ## Output style
 

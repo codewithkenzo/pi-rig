@@ -10,6 +10,8 @@ export interface FlowQueueService {
 	peek(): FlowQueue;
 	subscribe(listener: (queue: FlowQueue) => void): () => void;
 	cancel(id: string): Effect.Effect<void, JobNotFoundError>;
+	bindAbort(id: string, abort: () => void): Effect.Effect<FlowJobStatus, JobNotFoundError>;
+	clearAbort(id: string): Effect.Effect<void>;
 	setStatus(
 		id: string,
 		status: FlowJobStatus,
@@ -24,6 +26,9 @@ type QueueMutation =
 	| { readonly _tag: "unchanged" }
 	| { readonly _tag: "updated"; readonly next: FlowQueue };
 
+const isTerminalStatus = (status: FlowJobStatus): boolean =>
+	status === "done" || status === "failed" || status === "cancelled";
+
 // ── Factory ───────────────────────────────────────────────────────────────────
 
 export const makeQueue = (): Effect.Effect<FlowQueueService> =>
@@ -31,6 +36,7 @@ export const makeQueue = (): Effect.Effect<FlowQueueService> =>
 		const ref = yield* Ref.make<FlowQueue>({ jobs: [], mode: "sequential" });
 		let current: FlowQueue = { jobs: [], mode: "sequential" };
 		const listeners = new Set<(queue: FlowQueue) => void>();
+		const aborts = new Map<string, () => void>();
 
 		const publish = (next: FlowQueue): void => {
 			current = next;
@@ -40,6 +46,19 @@ export const makeQueue = (): Effect.Effect<FlowQueueService> =>
 				} catch (error) {
 					console.warn("flow queue listener error", error);
 				}
+			}
+		};
+
+		const runAbort = (id: string): void => {
+			const abort = aborts.get(id);
+			aborts.delete(id);
+			if (abort === undefined) {
+				return;
+			}
+			try {
+				abort();
+			} catch (error) {
+				console.warn("flow queue abort handler error", error);
 			}
 		};
 
@@ -95,7 +114,13 @@ export const makeQueue = (): Effect.Effect<FlowQueueService> =>
 							const next = {
 								...s,
 								jobs: s.jobs.map((j) =>
-									j.id === id ? { ...j, status: "cancelled" as FlowJobStatus } : j
+									j.id === id
+										? {
+											...j,
+											status: "cancelled" as FlowJobStatus,
+											lastProgress: "cancelled",
+										}
+										: j,
 								),
 							};
 							return [{ _tag: "updated", next }, next] as const;
@@ -107,8 +132,37 @@ export const makeQueue = (): Effect.Effect<FlowQueueService> =>
 					yield* Effect.fail(new JobNotFoundError({ id }));
 				}
 				if (outcome._tag === "updated") {
+					runAbort(id);
 					publish(outcome.next);
 				}
+			});
+
+		const bindAbort = (id: string, abort: () => void): Effect.Effect<FlowJobStatus, JobNotFoundError> =>
+			Effect.gen(function* () {
+				const status = yield* Ref.get(ref).pipe(
+					Effect.flatMap((state) => {
+						const job = state.jobs.find((candidate) => candidate.id === id);
+						if (job === undefined) {
+							return Effect.fail(new JobNotFoundError({ id }));
+						}
+						return Effect.succeed(job.status);
+					}),
+				);
+				if (status === "pending" || status === "running") {
+					aborts.set(id, abort);
+				} else if (status === "cancelled") {
+					try {
+						abort();
+					} catch (error) {
+						console.warn("flow queue abort handler error", error);
+					}
+				}
+				return status;
+			});
+
+		const clearAbort = (id: string): Effect.Effect<void> =>
+			Effect.sync(() => {
+				aborts.delete(id);
 			});
 
 		const setStatus = (
@@ -124,14 +178,21 @@ export const makeQueue = (): Effect.Effect<FlowQueueService> =>
 						if (job === undefined) {
 							return [{ _tag: "missing" }, s] as const;
 						}
-						const terminal =
-							job.status === "done" || job.status === "failed" || job.status === "cancelled";
-						if (terminal) {
+						if (isTerminalStatus(job.status)) {
+							if (job.status === "cancelled" && status === "cancelled" && extras !== undefined) {
+								const next = {
+									...s,
+									jobs: s.jobs.map((j) =>
+										j.id === id ? { ...j, ...extras, status } : j,
+									),
+								};
+								return [{ _tag: "updated", next }, next] as const;
+							}
 							return [{ _tag: "unchanged" }, s] as const;
 						}
 						const next = {
 							...s,
-							jobs: s.jobs.map((j) => j.id === id ? { ...j, ...(extras ?? {}), status } : j),
+							jobs: s.jobs.map((j) => (j.id === id ? { ...j, ...(extras ?? {}), status } : j)),
 						};
 						return [{ _tag: "updated", next }, next] as const;
 					},
@@ -140,6 +201,9 @@ export const makeQueue = (): Effect.Effect<FlowQueueService> =>
 					yield* Effect.fail(new JobNotFoundError({ id }));
 				}
 				if (outcome._tag === "updated") {
+					if (isTerminalStatus(status)) {
+						aborts.delete(id);
+					}
 					publish(outcome.next);
 				}
 			});
@@ -149,10 +213,11 @@ export const makeQueue = (): Effect.Effect<FlowQueueService> =>
 		const restoreFrom = (jobs: FlowJob[]): Effect.Effect<void> => {
 			const next: FlowQueue = { jobs, mode: "sequential" };
 			return Effect.gen(function* () {
+				aborts.clear();
 				yield* Ref.set(ref, next);
 				publish(next);
 			});
 		};
 
-		return { enqueue, getAll, peek, subscribe, cancel, setStatus, snapshot, restoreFrom };
+		return { enqueue, getAll, peek, subscribe, cancel, bindAbort, clearAbort, setStatus, snapshot, restoreFrom };
 	});

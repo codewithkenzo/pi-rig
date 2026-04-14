@@ -6,6 +6,7 @@ import {
 	ProfileNotFoundError,
 	SkillLoadError,
 	SubprocessError,
+	FlowCancelledError,
 	JobNotFoundError,
 } from "../src/types.js";
 import type { FlowJobStatus } from "../src/types.js";
@@ -131,6 +132,13 @@ describe("Tagged errors", () => {
 		expect(err._tag).toBe("SubprocessError");
 		expect(err.exitCode).toBe(1);
 		expect(err.stderr).toBe("command not found");
+	});
+
+	it("FlowCancelledError carries a reason", () => {
+		const err = new FlowCancelledError({ reason: "Flow cancelled." });
+		expect(err).toBeInstanceOf(FlowCancelledError);
+		expect(err._tag).toBe("FlowCancelledError");
+		expect(err.reason).toBe("Flow cancelled.");
 	});
 
 	it("JobNotFoundError carries id", () => {

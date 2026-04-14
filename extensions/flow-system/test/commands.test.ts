@@ -3,10 +3,12 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-cod
 import { Effect } from "effect";
 import { makeQueue } from "../src/queue.js";
 import { registerFlowCommands } from "../src/commands.js";
+import { FlowCancelledError } from "../src/types.js";
+import type { ExecuteOptions } from "../src/executor.js";
 
 type FlowCommandHandler = (args: string, ctx: ExtensionCommandContext) => Promise<void>;
 
-const makeHarness = async () => {
+const makeHarness = async (options?: { runFlow?: (options: ExecuteOptions) => ReturnType<typeof Effect.succeed<string>> | Effect.Effect<string, FlowCancelledError> }) => {
 	const queue = await Effect.runPromise(makeQueue());
 	let flowHandler: FlowCommandHandler | undefined;
 	const shortcuts: string[] = [];
@@ -22,7 +24,7 @@ const makeHarness = async () => {
 		},
 	};
 
-	registerFlowCommands(pi as ExtensionAPI, queue);
+	registerFlowCommands(pi as ExtensionAPI, queue, options?.runFlow);
 
 	const messages: string[] = [];
 	const ctx = {
@@ -92,5 +94,46 @@ describe("/flow command", () => {
 		expect(message).toContain("Output preview");
 		expect(message).toContain("docs summary complete");
 		expect(message).toContain("tools 2");
+	});
+
+	it("/flow cancel aborts an in-flight /flow run", async () => {
+		let resolveStarted: (() => void) | undefined;
+		const started = new Promise<void>((resolve) => {
+			resolveStarted = resolve;
+		});
+
+		const fakeExecute = ({ signal }: ExecuteOptions) =>
+			Effect.callback<string, FlowCancelledError>(
+				(resume: (effect: Effect.Effect<string, FlowCancelledError>) => void) => {
+					resolveStarted?.();
+					if (signal?.aborted) {
+						resume(Effect.fail(new FlowCancelledError({ reason: "Flow cancelled." })));
+						return Effect.void;
+					}
+					const onAbort = () => {
+						resume(Effect.fail(new FlowCancelledError({ reason: "Flow cancelled." })));
+					};
+					signal?.addEventListener("abort", onAbort, { once: true });
+					return Effect.sync(() => {
+						signal?.removeEventListener("abort", onAbort);
+					});
+				},
+			);
+
+		const { queue, flowHandler, messages, ctx } = await makeHarness({ runFlow: fakeExecute });
+		expect(flowHandler).toBeDefined();
+
+		const running = flowHandler?.("run explore -- inspect repo", ctx);
+		await started;
+
+		const job = queue.peek().jobs[0];
+		expect(job).toBeDefined();
+		await flowHandler?.(`cancel ${job?.id}`, ctx);
+		await running;
+
+		const finalJob = queue.peek().jobs[0];
+		expect(finalJob?.status).toBe("cancelled");
+		expect(messages.some((message) => message.includes("Cancelled:"))).toBe(true);
+		expect(messages.some((message) => message.includes("cancelled after"))).toBe(true);
 	});
 });

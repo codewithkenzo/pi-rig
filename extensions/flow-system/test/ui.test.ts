@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { stripAnsi } from "../../../shared/ui/hud.js";
 import { renderFlowWidgetLines, flowStatusText } from "../src/ui.js";
 
 describe("flow UI helpers", () => {
@@ -19,11 +20,11 @@ describe("flow UI helpers", () => {
 			process.cwd(),
 			{ frame: 1, startedAt: Date.now() - 100 },
 		);
+		const rendered = stripAnsi(lines.join("\n"));
 
-		expect(lines.join("\n")).toContain("coder");
-		expect(lines.join("\n")).toContain("/flow status");
-		expect(lines.join("\n")).toContain("/flow run <profile> -- <task>");
-		expect(lines.join("\n")).toContain("chain");
+		expect(rendered).toContain("coder");
+		expect(rendered).toContain("implement queue widget");
+		expect(rendered).toContain("alt+shift+f manage");
 	});
 
 	it("formats a compact status line", () => {
@@ -35,8 +36,7 @@ describe("flow UI helpers", () => {
 			],
 		});
 
-		expect(status).toContain("run 1");
-		expect(status).toContain("wait 1");
-		expect(status).toContain("▶explore");
+		expect(status).toContain("explore");
+		expect(status).toContain("scan");
 	});
 });

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "bun:test";
 import { Effect } from "effect";
 import { makeQueue } from "../src/queue.js";
-import { JobNotFoundError } from "../src/types.js";
+import { FlowCancelledError, JobNotFoundError } from "../src/types.js";
 import type { FlowJob } from "../src/types.js";
 
 describe("FlowQueueService", () => {
@@ -116,6 +116,21 @@ describe("FlowQueueService", () => {
 		expect(updated?.finishedAt).toBe(now);
 	});
 
+	it("setStatus can annotate an already-cancelled job", async () => {
+		const queue = await Effect.runPromise(makeQueue());
+		const job = await Effect.runPromise(queue.enqueue("debug", "interrupt me"));
+
+		await Effect.runPromise(queue.cancel(job.id));
+		await Effect.runPromise(
+			queue.setStatus(job.id, "cancelled", { finishedAt: 123, toolCount: 2 }),
+		);
+
+		const all = await Effect.runPromise(queue.getAll());
+		expect(all[0]?.status).toBe("cancelled");
+		expect(all[0]?.finishedAt).toBe(123);
+		expect(all[0]?.toolCount).toBe(2);
+	});
+
 	it("setStatus fails with JobNotFoundError for unknown id", async () => {
 		const queue = await Effect.runPromise(makeQueue());
 
@@ -149,6 +164,30 @@ describe("FlowQueueService", () => {
 
 		const all = await Effect.runPromise(queue.getAll());
 		expect(all[0]?.status).toBe("cancelled");
+	});
+
+	it("cancel triggers the bound abort handler for running jobs", async () => {
+		const queue = await Effect.runPromise(makeQueue());
+		const job = await Effect.runPromise(queue.enqueue("debug", "trace bug"));
+		await Effect.runPromise(queue.setStatus(job.id, "running"));
+
+		const controller = new AbortController();
+		await Effect.runPromise(queue.bindAbort(job.id, () => controller.abort()));
+		await Effect.runPromise(queue.cancel(job.id));
+
+		expect(controller.signal.aborted).toBe(true);
+	});
+
+	it("bindAbort immediately aborts when the job is already cancelled", async () => {
+		const queue = await Effect.runPromise(makeQueue());
+		const job = await Effect.runPromise(queue.enqueue("debug", "already cancelled"));
+		await Effect.runPromise(queue.cancel(job.id));
+
+		const controller = new AbortController();
+		const status = await Effect.runPromise(queue.bindAbort(job.id, () => controller.abort()));
+
+		expect(status).toBe("cancelled");
+		expect(controller.signal.aborted).toBe(true);
 	});
 
 	it("cancel does not change status of done/failed/cancelled jobs", async () => {

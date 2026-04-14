@@ -63,6 +63,7 @@ export const FlowJobSchema = Type.Object({
 	error: Type.Optional(Type.String()),
 	toolCount: Type.Optional(Type.Number({ minimum: 0 })),
 	lastProgress: Type.Optional(Type.String()),
+	lastAssistantText: Type.Optional(Type.String()),
 });
 
 export type FlowJob = Static<typeof FlowJobSchema>;
@@ -94,6 +95,10 @@ export class SkillLoadError extends Data.TaggedError("SkillLoadError")<{
 export class SubprocessError extends Data.TaggedError("SubprocessError")<{
 	readonly exitCode: number;
 	readonly stderr: string;
+}> {}
+
+export class FlowCancelledError extends Data.TaggedError("FlowCancelledError")<{
+	readonly reason: string;
 }> {}
 
 export class JobNotFoundError extends Data.TaggedError("JobNotFoundError")<{

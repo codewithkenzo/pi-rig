@@ -2,58 +2,85 @@ import { Effect, Exit } from "effect";
 import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
 import type { FlowQueueService } from "./queue.js";
 import { getProfile, loadProfiles } from "./profiles.js";
-import { executeFlow, type FlowProgressEvent } from "./executor.js";
-import { formatFlowError } from "./errors.js";
+import { executeFlow, type ExecuteOptions, type FlowProgressEvent } from "./executor.js";
+import { formatFlowError, isFlowCancelledCause } from "./errors.js";
 import type { FlowJob } from "./types.js";
+import { showFlowProfilePicker } from "./picker.js";
+import { showFlowOverlay } from "./overlay.js";
 
-// ── Inline ANSI helpers ───────────────────────────────────────────────────────
-// Standard ANSI — adapts to terminal theme, no extra dependencies.
+type ExecuteFlowFn = typeof executeFlow;
 
 const C = {
-	bold:       (s: string) => `\x1b[1m${s}\x1b[22m`,
-	dim:        (s: string) => `\x1b[2m${s}\x1b[22m`,
-	reset:      (s: string) => `\x1b[0m${s}\x1b[0m`,
-	green:      (s: string) => `\x1b[32m${s}\x1b[39m`,
-	red:        (s: string) => `\x1b[31m${s}\x1b[39m`,
-	yellow:     (s: string) => `\x1b[33m${s}\x1b[39m`,
-	cyan:       (s: string) => `\x1b[36m${s}\x1b[39m`,
-	magenta:    (s: string) => `\x1b[35m${s}\x1b[39m`,
-	gray:       (s: string) => `\x1b[90m${s}\x1b[39m`,
-	boldGreen:  (s: string) => `\x1b[1;32m${s}\x1b[0m`,
-	boldRed:    (s: string) => `\x1b[1;31m${s}\x1b[0m`,
+	bold: (s: string) => `\x1b[1m${s}\x1b[22m`,
+	dim: (s: string) => `\x1b[2m${s}\x1b[22m`,
+	green: (s: string) => `\x1b[32m${s}\x1b[39m`,
+	red: (s: string) => `\x1b[31m${s}\x1b[39m`,
+	yellow: (s: string) => `\x1b[33m${s}\x1b[39m`,
+	cyan: (s: string) => `\x1b[36m${s}\x1b[39m`,
+	magenta: (s: string) => `\x1b[35m${s}\x1b[39m`,
+	gray: (s: string) => `\x1b[90m${s}\x1b[39m`,
+	boldGreen: (s: string) => `\x1b[1;32m${s}\x1b[0m`,
+	boldRed: (s: string) => `\x1b[1;31m${s}\x1b[0m`,
 	boldYellow: (s: string) => `\x1b[1;33m${s}\x1b[0m`,
 } as const;
 
 const STATUS_COLOR: Record<FlowJob["status"], (s: string) => string> = {
-	running:   C.boldGreen,
-	pending:   C.yellow,
-	done:      C.dim,
-	failed:    C.boldRed,
+	running: C.boldGreen,
+	pending: C.yellow,
+	done: C.dim,
+	failed: C.boldRed,
 	cancelled: C.gray,
 };
 
 const STATUS_ICON: Record<FlowJob["status"], string> = {
-	running:   "▶",
-	pending:   "○",
-	done:      "✓",
-	failed:    "✗",
+	running: "▶",
+	pending: "○",
+	done: "✓",
+	failed: "✗",
 	cancelled: "⊘",
 };
 
 const SECTION_HEADER: Record<FlowJob["status"], (n: number) => string> = {
-	running:   (n) => C.boldGreen(`▶  Running (${n})`),
-	pending:   (n) => C.boldYellow(`○  Pending (${n})`),
-	done:      (n) => C.dim(`✓  Done (${n})`),
-	failed:    (n) => C.boldRed(`✗  Failed (${n})`),
+	running: (n) => C.boldGreen(`▶  Running (${n})`),
+	pending: (n) => C.boldYellow(`○  Pending (${n})`),
+	done: (n) => C.dim(`✓  Done (${n})`),
+	failed: (n) => C.boldRed(`✗  Failed (${n})`),
 	cancelled: (n) => C.gray(`⊘  Cancelled (${n})`),
 };
 
 const DIVIDER = C.dim("─".repeat(52));
 const RUN_USAGE = "Usage: /flow run <profile> -- <task>";
-const DEFAULT_HELP = "Use: /flow status [id] | /flow cancel <id> | /flow profiles | /flow run <profile> -- <task>";
+const DEFAULT_HELP = "Use: /flow manage | /flow status [id] | /flow cancel <id> | /flow profiles | /flow run <profile> -- <task> | /flow pick";
 type FlowUiContext = Pick<ExtensionCommandContext, "cwd" | "ui">;
 
-// ── Formatting helpers ────────────────────────────────────────────────────────
+const completeFlowArgs = (raw: string, queue: FlowQueueService, cwd: string): { label: string; value: string }[] | null => {
+	const trimmed = raw.trimStart();
+	if (trimmed.length === 0) {
+		return ["manage", "status", "cancel", "profiles", "run", "pick"].map((value) => ({ label: value, value }));
+	}
+	const parts = trimmed.split(/\s+/);
+	const sub = parts[0] ?? "";
+	const ids = queue.peek().jobs.map((job) => job.id);
+	if (parts.length <= 1 && !raw.endsWith(" ")) {
+		return ["manage", "status", "cancel", "profiles", "run", "pick"]
+			.filter((value) => value.startsWith(sub))
+			.map((value) => ({ label: value, value }));
+	}
+	if (sub === "cancel" || sub === "status") {
+		const prefix = raw.endsWith(" ") ? "" : parts.at(-1) ?? "";
+		return ids
+			.filter((id) => id.startsWith(prefix))
+			.map((id) => ({ label: id, value: `${sub} ${id}` }));
+	}
+	if (sub === "run") {
+		const profilePrefix = parts[1] ?? "";
+		return loadProfiles(cwd)
+			.map((profile) => profile.name)
+			.filter((name) => name.startsWith(profilePrefix))
+			.map((name) => ({ label: name, value: `run ${name}` }));
+	}
+	return null;
+};
 
 function formatDuration(ms: number): string {
 	if (ms < 1000) return `${ms}ms`;
@@ -115,11 +142,28 @@ const setRunningProgress = async (
 	);
 };
 
+const markCancelled = async (
+	queue: FlowQueueService,
+	id: string,
+	toolCount: number,
+): Promise<void> => {
+	await Effect.runPromise(
+		queue
+			.setStatus(id, "cancelled", {
+				finishedAt: Date.now(),
+				toolCount,
+				lastProgress: "cancelled",
+			})
+			.pipe(Effect.result, Effect.asVoid),
+	);
+};
+
 const runFlowFromCommand = async (
 	queue: FlowQueueService,
 	ctx: FlowUiContext,
 	profileName: string,
 	task: string,
+	runFlow: ExecuteFlowFn,
 ): Promise<void> => {
 	const cwd = ctx.cwd;
 	const profileExit = await Effect.runPromiseExit(getProfile(profileName, cwd));
@@ -134,6 +178,8 @@ const runFlowFromCommand = async (
 
 	const profile = profileExit.value;
 	const job = await Effect.runPromise(queue.enqueue(profileName, task, cwd));
+	const jobController = new AbortController();
+	await Effect.runPromise(queue.bindAbort(job.id, () => jobController.abort()));
 	const startedAt = Date.now();
 	let toolCount = 0;
 
@@ -146,7 +192,9 @@ const runFlowFromCommand = async (
 			}
 			void setRunningProgress(queue, job.id, toolCount, event.detail);
 		};
-		const exit = await Effect.runPromiseExit(executeFlow({ task, profile, cwd, onProgress }));
+		const exit = await Effect.runPromiseExit(
+			runFlow({ task, profile, cwd, onProgress, signal: jobController.signal } satisfies ExecuteOptions),
+		);
 
 		if (Exit.isSuccess(exit)) {
 			const finishedAt = Date.now();
@@ -165,6 +213,19 @@ const runFlowFromCommand = async (
 					C.dim(`ID: ${job.id}`),
 					summarizeOutput(output),
 				].join("\n"),
+			);
+			return;
+		}
+
+		if (isFlowCancelledCause(exit.cause)) {
+			const finishedAt = Date.now();
+			await markCancelled(queue, job.id, toolCount);
+			await ctx.ui.notify(
+				[
+					C.gray(`⊘ ${profileName} cancelled after ${formatDuration(finishedAt - startedAt)}.`),
+					C.dim(`ID: ${job.id}`),
+				].join("\n"),
+				"warning",
 			);
 			return;
 		}
@@ -188,17 +249,22 @@ const runFlowFromCommand = async (
 			"error",
 		);
 	} finally {
+		await Effect.runPromise(queue.clearAbort(job.id));
 		ctx.ui.setWorkingMessage();
 	}
 };
 
-const selectAndRunFlow = async (queue: FlowQueueService, ctx: FlowUiContext): Promise<void> => {
-	const profileOptions = loadProfiles(ctx.cwd).map((profile) => profile.name);
-	if (profileOptions.length === 0) {
+const selectAndRunFlow = async (
+	queue: FlowQueueService,
+	ctx: FlowUiContext,
+	runFlow: ExecuteFlowFn,
+): Promise<void> => {
+	const profiles = loadProfiles(ctx.cwd);
+	if (profiles.length === 0) {
 		await ctx.ui.notify(C.red("No flow profiles available."), "error");
 		return;
 	}
-	const selectedProfile = await ctx.ui.select("Flow profile", profileOptions);
+	const selectedProfile = await showFlowProfilePicker(ctx, profiles);
 	if (selectedProfile === undefined) {
 		return;
 	}
@@ -210,20 +276,23 @@ const selectAndRunFlow = async (queue: FlowQueueService, ctx: FlowUiContext): Pr
 		return;
 	}
 
-	await runFlowFromCommand(queue, ctx, selectedProfile, trimmedTask);
+	await runFlowFromCommand(queue, ctx, selectedProfile, trimmedTask, runFlow);
 };
 
-// ── Command registration ──────────────────────────────────────────────────────
-
-export function registerFlowCommands(pi: ExtensionAPI, queue: FlowQueueService): void {
+export function registerFlowCommands(pi: ExtensionAPI, queue: FlowQueueService, runFlow: ExecuteFlowFn = executeFlow): void {
 	pi.registerCommand("flow", {
-		description: "Manage flow jobs. Subcommands: status, cancel, profiles, run",
-		getArgumentCompletions: (_partial: string) => null,
+		description: "Manage flow jobs. Subcommands: manage, status, cancel, profiles, run, pick",
+		getArgumentCompletions: (partial: string) => completeFlowArgs(partial, queue, process.cwd()),
 		handler: async (args: string, ctx) => {
 			const parts = args.trim().split(/\s+/).filter(Boolean);
-			const sub = parts[0] ?? "status";
+			const sub = parts[0] ?? "manage";
 
 			switch (sub) {
+				case "manage": {
+					await showFlowOverlay(queue, ctx);
+					break;
+				}
+
 				case "status": {
 					const query = parts[1];
 					const allJobs = await Effect.runPromise(queue.getAll());
@@ -366,7 +435,12 @@ export function registerFlowCommands(pi: ExtensionAPI, queue: FlowQueueService):
 						await ctx.ui.notify(C.yellow(RUN_USAGE));
 						return;
 					}
-					await runFlowFromCommand(queue, ctx, parsed.profile, parsed.task);
+					await runFlowFromCommand(queue, ctx, parsed.profile, parsed.task, runFlow);
+					break;
+				}
+
+				case "pick": {
+					await selectAndRunFlow(queue, ctx, runFlow);
 					break;
 				}
 
@@ -378,9 +452,9 @@ export function registerFlowCommands(pi: ExtensionAPI, queue: FlowQueueService):
 	});
 
 	pi.registerShortcut("alt+shift+f", {
-		description: "Run a flow from an interactive picker",
+		description: "Manage running flows",
 		handler: async (ctx) => {
-			await selectAndRunFlow(queue, ctx);
+			await showFlowOverlay(queue, ctx);
 		},
 	});
 }

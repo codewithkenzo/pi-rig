@@ -3,9 +3,12 @@ import { Effect, Exit } from "effect";
 import type { AgentToolUpdateCallback } from "@mariozechner/pi-coding-agent";
 import type { FlowQueueService } from "./queue.js";
 import { getProfile } from "./profiles.js";
-import { executeFlow, type FlowProgressEvent } from "./executor.js";
+import { executeFlow, type ExecuteOptions, type FlowProgressEvent } from "./executor.js";
 import type { FlowJob } from "./types.js";
-import { formatFlowError } from "./errors.js";
+import { formatFlowError, isFlowCancelledCause } from "./errors.js";
+import { renderFlowBatchCall, renderFlowBatchResult, type FlowRenderDetails } from "./renderers.js";
+
+type ExecuteFlowFn = typeof executeFlow;
 
 const emitUpdate = (
 	onUpdate: AgentToolUpdateCallback<unknown> | undefined,
@@ -16,6 +19,14 @@ const emitUpdate = (
 		content: [{ type: "text", text }],
 		details,
 	});
+};
+
+const summarize = (text: string): string => {
+	const normalized = text.trim();
+	if (normalized.length === 0) {
+		return "(no output)";
+	}
+	return normalized.length > 180 ? `${normalized.slice(0, 180)}…` : normalized;
 };
 
 const updateProgress = (
@@ -29,7 +40,21 @@ const updateProgress = (
 	);
 };
 
-// ── flow_batch tool ───────────────────────────────────────────────────────────
+const markCancelled = async (
+	queue: FlowQueueService,
+	jobId: string,
+	toolCount: number,
+): Promise<void> => {
+	await Effect.runPromise(
+		queue
+			.setStatus(jobId, "cancelled", {
+				finishedAt: Date.now(),
+				toolCount,
+				lastProgress: "cancelled",
+			})
+			.pipe(Effect.result, Effect.asVoid),
+	);
+};
 
 interface BatchItem {
 	profile: string;
@@ -41,12 +66,19 @@ interface BatchResult {
 	id: string;
 	profile: string;
 	task: string;
-	status: "done" | "failed";
+	status: "done" | "failed" | "cancelled";
 	output?: string;
 	error?: string;
 }
 
-export function makeFlowBatchTool(queue: FlowQueueService) {
+interface RuntimeBatchItem {
+	job: FlowJob;
+	item: BatchItem;
+	index: number;
+	controller: AbortController;
+}
+
+export function makeFlowBatchTool(queue: FlowQueueService, runFlow: ExecuteFlowFn = executeFlow) {
 	return {
 		name: "flow_batch",
 		label: "Batch Flow",
@@ -67,6 +99,15 @@ export function makeFlowBatchTool(queue: FlowQueueService) {
 				}),
 			),
 		}),
+		renderCall: (
+			args: Parameters<typeof renderFlowBatchCall>[0],
+			theme: Parameters<typeof renderFlowBatchCall>[1],
+		) => renderFlowBatchCall(args, theme),
+		renderResult: (
+			result: Parameters<typeof renderFlowBatchResult>[0],
+			options: Parameters<typeof renderFlowBatchResult>[1],
+			theme: Parameters<typeof renderFlowBatchResult>[2],
+		) => renderFlowBatchResult(result, options, theme),
 		execute: async (
 			_toolCallId: string,
 			params: { items: BatchItem[]; parallel?: boolean },
@@ -78,25 +119,24 @@ export function makeFlowBatchTool(queue: FlowQueueService) {
 			if (signal?.aborted) {
 				return {
 					content: [{ type: "text" as const, text: "Batch cancelled before start." }],
-					details: undefined,
-					isError: true,
+					details: { status: "cancelled", summary: "batch cancelled before start" } satisfies FlowRenderDetails,
 				};
 			}
 
 			if (items.length === 0) {
 				return {
 					content: [{ type: "text" as const, text: "No items provided." }],
-					details: undefined,
+					details: { status: "failed", summary: "no batch items" } satisfies FlowRenderDetails,
 					isError: true,
 				};
 			}
 
-			// Resolve all profiles up front — fail fast on unknown names
+			const startedAt = Date.now();
 			emitUpdate(onUpdate, `Resolving ${items.length} flow profile(s)…`, {
 				count: items.length,
 				parallel,
 				phase: "resolve-profiles",
-			});
+			} satisfies FlowRenderDetails);
 			const profileResults = await Promise.all(
 				items.map((item) =>
 					Effect.runPromiseExit(getProfile(item.profile, item.cwd ?? process.cwd())),
@@ -116,32 +156,63 @@ export function makeFlowBatchTool(queue: FlowQueueService) {
 							text: `Unknown profiles: ${unknownProfiles.join(", ")}. Available built-ins: explore, research, coder, debug, browser, ambivalent.`,
 						},
 					],
-					details: undefined,
+					details: {
+						count: items.length,
+						parallel,
+						status: "failed",
+						summary: `unknown profiles ${unknownProfiles.join(", ")}`,
+					} satisfies FlowRenderDetails,
 					isError: true,
 				};
 			}
 
-			// Enqueue all jobs
 			const jobs: FlowJob[] = await Promise.all(
 				items.map((item) =>
 					Effect.runPromise(queue.enqueue(item.profile, item.task, item.cwd)),
 				),
 			);
+			const runtimeItems: RuntimeBatchItem[] = await Promise.all(
+				jobs.map(async (job, index) => {
+					const controller = new AbortController();
+					await Effect.runPromise(queue.bindAbort(job.id, () => controller.abort()));
+					return { job, item: items[index]!, index, controller };
+				}),
+			);
 
-			// Runner for a single job
-			const runJob = async (job: FlowJob, item: BatchItem, index: number): Promise<BatchResult> => {
+			const cancelAll = (): void => {
+				for (const runtimeItem of runtimeItems) {
+					runtimeItem.controller.abort();
+					void Effect.runPromise(queue.cancel(runtimeItem.job.id).pipe(Effect.result, Effect.asVoid));
+				}
+			};
+			signal?.addEventListener("abort", cancelAll, { once: true });
+			if (signal?.aborted) {
+				cancelAll();
+			}
+
+			const runJob = async ({ job, item, index, controller }: RuntimeBatchItem): Promise<BatchResult> => {
 				emitUpdate(onUpdate, `Running batch item ${index + 1}/${items.length}: ${item.profile}`, {
 					jobId: job.id,
 					index,
 					count: items.length,
 					profile: item.profile,
 					phase: "running",
-				});
+				} satisfies FlowRenderDetails);
 				const profileExit = profileResults[index];
 				if (profileExit === undefined || Exit.isFailure(profileExit)) {
-					// Should not happen — we already checked above
 					return { id: job.id, profile: item.profile, task: item.task, status: "failed", error: "profile not found" };
 				}
+				if (controller.signal.aborted) {
+					await markCancelled(queue, job.id, 0);
+					return {
+						id: job.id,
+						profile: item.profile,
+						task: item.task,
+						status: "cancelled",
+						error: "Flow cancelled.",
+					};
+				}
+
 				const profile = profileExit.value;
 				let toolCount = 0;
 
@@ -149,10 +220,20 @@ export function makeFlowBatchTool(queue: FlowQueueService) {
 					queue.setStatus(job.id, "running", { startedAt: Date.now(), toolCount, lastProgress: "starting" }),
 				);
 				const onProgress = (event: FlowProgressEvent): void => {
-					if (event._tag === "tool_end") {
+					if (event._tag === "tool_start") {
 						toolCount += 1;
+						updateProgress(queue, job.id, toolCount, event.detail);
+					} else if (event._tag === "assistant_text") {
+						void Effect.runPromise(
+							queue.setStatus(job.id, "running", {
+								toolCount,
+								lastProgress: event.detail,
+								lastAssistantText: event.detail,
+							}).pipe(Effect.result, Effect.asVoid),
+						);
+					} else {
+						updateProgress(queue, job.id, toolCount, event.detail);
 					}
-					updateProgress(queue, job.id, toolCount, event.detail);
 					emitUpdate(onUpdate, `${item.profile}: ${event.detail}`, {
 						jobId: job.id,
 						index,
@@ -160,11 +241,18 @@ export function makeFlowBatchTool(queue: FlowQueueService) {
 						profile: item.profile,
 						phase: "progress",
 						toolCount,
-					});
+						summary: event.detail,
+					} satisfies FlowRenderDetails);
 				};
 
 				const exit = await Effect.runPromiseExit(
-					executeFlow({ task: item.task, profile, cwd: item.cwd, onProgress }),
+					runFlow({
+						task: item.task,
+						profile,
+						cwd: item.cwd,
+						onProgress,
+						signal: controller.signal,
+					} satisfies ExecuteOptions),
 				);
 
 				if (Exit.isSuccess(exit)) {
@@ -183,49 +271,69 @@ export function makeFlowBatchTool(queue: FlowQueueService) {
 						status: "done",
 						output: exit.value || "(no output)",
 					};
-				} else {
-					const errText = formatFlowError(exit.cause);
-					await Effect.runPromise(
-						queue.setStatus(job.id, "failed", {
-							finishedAt: Date.now(),
-							error: errText,
-							toolCount,
-							lastProgress: "failed",
-						}),
-					);
+				}
+
+				if (isFlowCancelledCause(exit.cause)) {
+					await markCancelled(queue, job.id, toolCount);
 					return {
 						id: job.id,
 						profile: item.profile,
 						task: item.task,
-						status: "failed",
-						error: errText,
+						status: "cancelled",
+						error: "Flow cancelled.",
 					};
 				}
+
+				const errText = formatFlowError(exit.cause);
+				await Effect.runPromise(
+					queue.setStatus(job.id, "failed", {
+						finishedAt: Date.now(),
+						error: errText,
+						toolCount,
+						lastProgress: "failed",
+					}),
+				);
+				return {
+					id: job.id,
+					profile: item.profile,
+					task: item.task,
+					status: "failed",
+					error: errText,
+				};
 			};
 
 			let results: BatchResult[];
 
-			if (parallel) {
-				const runTargets = jobs.map((job, i) => ({ job, item: items[i]!, index: i }));
-				results = await Effect.runPromise(
-					Effect.forEach(
-						runTargets,
-						({ job, item, index }) => Effect.promise(() => runJob(job, item, index)),
-						{ concurrency: 4 },
+			try {
+				if (parallel) {
+					results = await Effect.runPromise(
+						Effect.forEach(
+							runtimeItems,
+							(runtimeItem) => Effect.promise(() => runJob(runtimeItem)),
+							{ concurrency: 4 },
+						),
+					);
+				} else {
+					results = [];
+					for (const runtimeItem of runtimeItems) {
+						results.push(await runJob(runtimeItem));
+					}
+				}
+			} finally {
+				signal?.removeEventListener("abort", cancelAll);
+				await Promise.all(
+					runtimeItems.map((runtimeItem) =>
+						Effect.runPromise(queue.clearAbort(runtimeItem.job.id)),
 					),
 				);
-			} else {
-				results = [];
-				for (let i = 0; i < jobs.length; i++) {
-					results.push(await runJob(jobs[i]!, items[i]!, i));
-				}
 			}
 
 			const successCount = results.filter((r) => r.status === "done").length;
 			const failCount = results.filter((r) => r.status === "failed").length;
+			const cancelCount = results.filter((r) => r.status === "cancelled").length;
 
 			const lines: string[] = [
-				`Batch complete: ${successCount} done, ${failCount} failed (${parallel ? "parallel" : "sequential"})`,
+				`Batch complete: ${successCount} done, ${failCount} failed, ${cancelCount} cancelled (${parallel ? "parallel" : "sequential"})`,
 				"",
 			];
 
@@ -236,18 +344,28 @@ export function makeFlowBatchTool(queue: FlowQueueService) {
 					const preview = r.output.slice(0, 200);
 					lines.push(`  Output: ${preview}${r.output.length > 200 ? "…" : ""}`);
 				}
-				if (r.status === "failed" && r.error) {
+				if ((r.status === "failed" || r.status === "cancelled") && r.error) {
 					lines.push(`  Error: ${r.error.slice(0, 200)}`);
 				}
 				lines.push("");
 			}
 
-			const hasErrors = failCount > 0;
+			const durationMs = Date.now() - startedAt;
+			const finalStatus = failCount > 0 ? "failed" : cancelCount > 0 ? "cancelled" : "done";
 
 			return {
 				content: [{ type: "text" as const, text: lines.join("\n").trimEnd() }],
-				details: undefined,
-				isError: hasErrors,
+				details: {
+					count: items.length,
+					successCount,
+					failCount,
+					cancelCount,
+					parallel,
+					status: finalStatus,
+					durationMs,
+					summary: summarize(lines.join(" ")),
+				} satisfies FlowRenderDetails,
+				isError: failCount > 0,
 			};
 		},
 	} as const;
