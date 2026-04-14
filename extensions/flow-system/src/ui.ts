@@ -109,7 +109,7 @@ export const renderFlowWidgetLines = (
 		);
 	}
 
-	lines.push(dim("/flow run <profile> -- <task> · /flow status · alt+shift+f"));
+	lines.push(dim("/flow run <profile> -- <task> · /flow status"));
 	return lines;
 };
 

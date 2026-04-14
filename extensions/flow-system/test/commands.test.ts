@@ -51,7 +51,7 @@ describe("/flow command", () => {
 		const { flowHandler, messages, ctx } = await makeHarness();
 		expect(flowHandler).toBeDefined();
 
-		await flowHandler?.("run coder implement auth", ctx);
+		await flowHandler?.("run coder", ctx);
 
 		expect(messages.at(-1)).toContain("/flow run <profile> -- <task>");
 	});

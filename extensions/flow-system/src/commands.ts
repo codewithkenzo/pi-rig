@@ -84,7 +84,7 @@ function formatJob(job: FlowJob): string {
 }
 
 const parseRunArgs = (rawArgs: string): { ok: true; profile: string; task: string } | { ok: false } => {
-	const match = /^run\s+(\S+)\s+--\s+([\s\S]+)$/u.exec(rawArgs.trim());
+	const match = /^run\s+(\S+)\s+(?:--\s+)?([\s\S]+)$/u.exec(rawArgs.trim());
 	if (match === null) {
 		return { ok: false };
 	}

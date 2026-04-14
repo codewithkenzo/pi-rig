@@ -88,7 +88,7 @@ export const renderThemeWidgetLines = (
 		`${spinner} ${bold(title)} ${engine.fg("accent", activeTheme)}`,
 		`↪ next ${engine.fg("value", nextTheme)} · ${engine.fg("label", `${palette.variant}/${palette.source ?? "builtin"}`)}`,
 		truncate(swatches, 72),
-		dim("/theme pick · /theme set <name> · /theme preview <name> · alt+shift+t"),
+		dim("/theme pick · /theme set <name> · /theme cycle"),
 	];
 };
 

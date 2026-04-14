@@ -147,7 +147,7 @@ export const runSubprocess = (
 		}
 
 		// Task is the final positional argument
-		args.push("--", task);
+		args.push(task);
 
 		const bin = process.argv[1] ?? "pi";
 		let child: ReturnType<typeof spawn> | undefined;
