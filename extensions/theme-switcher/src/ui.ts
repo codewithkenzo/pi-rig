@@ -18,20 +18,11 @@ interface WidgetTui {
 const bold = (text: string): string => `\x1b[1m${text}\x1b[22m`;
 const dim = (text: string): string => `\x1b[2m${text}\x1b[22m`;
 
-const pad = (text: string, width: number): string =>
-	text.length >= width ? text : `${text}${" ".repeat(width - text.length)}`;
-
 const truncate = (text: string, width: number): string =>
 	text.length <= width ? text : `${text.slice(0, Math.max(0, width - 1))}…`;
 
-const renderPanel = (title: string, lines: readonly string[]): string[] => [
-	`╭─ ${title}`,
-	...lines.map((line) => `│ ${line}`),
-	"╰─",
-];
-
 export const themeStatusText = (activeTheme: string): string =>
-	`${activeTheme} · /theme set <name> · /theme cycle`;
+	`${activeTheme} · /theme pick · /theme cycle · alt+shift+t`;
 
 export const setThemeUiStatus = (ui: ExtensionUIContext, activeTheme: string): void => {
 	const setStatus = (ui as unknown as { setStatus?: (key: string, text: string | undefined) => void }).setStatus;
@@ -82,13 +73,12 @@ export const renderThemeWidgetLines = (
 		`${engine.fg("error", "●●")} error`,
 	].join("  ");
 
-	return renderPanel(`${spinner} ${bold(title)}`, [
-		`${pad(engine.fg("label", "Active"), 8)} ${engine.fg("accent", activeTheme)}`,
-		`${pad(engine.fg("label", "Next"), 8)} ${engine.fg("value", nextTheme)}`,
-		`${pad(engine.fg("label", "Mode"), 8)} ${engine.fg("value", `${palette.variant} · ${palette.source ?? "builtin"}`)}`,
+	return [
+		`${spinner} ${bold(title)} ${engine.fg("accent", activeTheme)}`,
+		`↪ next ${engine.fg("value", nextTheme)} · ${engine.fg("label", `${palette.variant}/${palette.source ?? "builtin"}`)}`,
 		truncate(swatches, 72),
-		dim("/theme set <name> · /theme preview <name> · /theme cycle"),
-	]);
+		dim("/theme pick · /theme set <name> · /theme preview <name> · alt+shift+t"),
+	];
 };
 
 const makeLinesComponent = (getLines: () => string[]): LinesComponent => {

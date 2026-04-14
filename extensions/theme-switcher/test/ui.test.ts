@@ -31,6 +31,8 @@ describe("theme UI helpers", () => {
 
 	it("formats the footer status text", () => {
 		expect(themeStatusText("nord")).toContain("nord");
+		expect(themeStatusText("nord")).toContain("/theme pick");
 		expect(themeStatusText("nord")).toContain("/theme cycle");
+		expect(themeStatusText("nord")).toContain("alt+shift+t");
 	});
 });

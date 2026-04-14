@@ -4,14 +4,20 @@ import { handleThemeCommand } from "../src/commands.js";
 
 const makeCtx = (themeName = "catppuccin-mocha") => {
 	const messages: string[] = [];
+	const selections: Array<string | undefined> = [];
 	return {
 		messages,
+		selections,
 		ctx: {
+			cwd: process.cwd(),
 			ui: {
 				theme: { name: themeName },
 				notify: (message: string) => {
 					messages.push(message);
 				},
+				select: async () => selections.shift(),
+				setWidget: () => undefined,
+				setStatus: () => undefined,
 				setTheme: () => ({ success: true }),
 			},
 		},
@@ -48,6 +54,17 @@ describe("/theme command", () => {
 		expect(messages.at(-1)).toContain("dracula");
 
 		await handleThemeCommand("preview nord", ctx as never, state);
+		expect(messages.at(-1)).toContain("nord");
+	});
+
+	it("supports interactive theme picking", async () => {
+		const state = makeThemeState("dracula");
+		const { ctx, messages, selections } = makeCtx("dracula");
+		selections.push("nord");
+
+		await handleThemeCommand("pick", ctx as never, state);
+
+		expect(state.getActive()).toBe("nord");
 		expect(messages.at(-1)).toContain("nord");
 	});
 });

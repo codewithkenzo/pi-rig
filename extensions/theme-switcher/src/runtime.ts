@@ -58,7 +58,7 @@ export const renderThemeStatus = (activeTheme: string): string[] => {
 		}
 	}
 
-	lines.push("  /theme set <name> | /theme list | /theme preview <name> | /theme cycle");
+	lines.push("  /theme pick | /theme set <name> | /theme preview <name> | /theme cycle");
 	return lines;
 };
 
