@@ -1,4 +1,5 @@
-import type { ExtensionAPI } from "@mariozechner/pi-agent-core";
+import type { ExtensionAPI, ExtensionContext, SessionStartEvent } from "@mariozechner/pi-coding-agent";
+import type { CustomEntry } from "@mariozechner/pi-coding-agent";
 import { Effect } from "effect";
 import { makeQueue } from "./src/queue.js";
 import { makeFlowTool } from "./src/tool.js";
@@ -14,18 +15,22 @@ export default async function (pi: ExtensionAPI): Promise<void> {
 	pi.registerTool(makeFlowBatchTool(queue));
 	registerFlowCommands(pi, queue);
 
-	pi.on("session_start", async (event) => {
-		const entries = (event as { entries?: Array<{ type: string; data: unknown }> }).entries ?? [];
-		const last = entries.filter((e) => e.type === FLOW_ENTRY_TYPE).at(-1) as
-			| { data: FlowStateEntry }
-			| undefined;
-		if (last) {
+	pi.on("session_start", async (_event: SessionStartEvent, ctx: ExtensionContext) => {
+		const entries = ctx.sessionManager.getEntries();
+		const last = entries
+			.filter(
+				(e): e is CustomEntry<FlowStateEntry> =>
+					e.type === "custom" && e.customType === FLOW_ENTRY_TYPE,
+			)
+			.at(-1);
+
+		if (last?.data !== undefined) {
 			await Effect.runPromise(queue.restoreFrom(last.data.jobs));
 		}
 	});
 
-	pi.on("agent_end", async () => {
+	pi.on("agent_end", async (_event, _ctx: ExtensionContext) => {
 		const snap = await Effect.runPromise(queue.snapshot());
-		await pi.appendEntry(FLOW_ENTRY_TYPE, { jobs: snap.jobs } satisfies FlowStateEntry);
+		pi.appendEntry(FLOW_ENTRY_TYPE, { jobs: snap.jobs } satisfies FlowStateEntry);
 	});
 }
