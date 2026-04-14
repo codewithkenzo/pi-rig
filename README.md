@@ -6,8 +6,8 @@ If you want usable slash commands, theme switching, and Telegram/notification gr
 
 ## What you get
 
-- `/flow` job orchestration (`flow_run`, `flow_batch`)
-- `/theme` runtime theme control (`theme_set`, `theme_list`, `theme_preview`)
+- `/flow` job orchestration (`flow_run`, `flow_batch`, `/flow run <profile> -- <task>`)
+- `/theme` runtime theme control (`theme_set`, `theme_list`, `theme_preview`, `/theme pick`)
 - `/gateway` diagnostics + Telegram-first turn/runtime baseline
 - `/notify-cron` scheduled notification baseline
 - bundled operator skills copied to `~/.pi/skills/*`
