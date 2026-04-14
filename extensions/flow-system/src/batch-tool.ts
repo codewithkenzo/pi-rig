@@ -1,24 +1,22 @@
 import { Type } from "@sinclair/typebox";
-import { Effect, Exit, Cause } from "effect";
+import { Effect, Exit } from "effect";
+import type { AgentToolUpdateCallback } from "@mariozechner/pi-coding-agent";
 import type { FlowQueueService } from "./queue.js";
 import { getProfile } from "./profiles.js";
 import { executeFlow } from "./executor.js";
-import { SubprocessError, SkillLoadError } from "./types.js";
 import type { FlowJob } from "./types.js";
+import { formatFlowError } from "./errors.js";
 
-function formatFlowError(cause: Cause.Cause<unknown>): string {
-	const failures = Cause.failures(cause);
-	for (const err of failures) {
-		if (err instanceof SubprocessError) {
-			const stderr = err.stderr.trim();
-			return `Subprocess exited with code ${err.exitCode}${stderr ? `\n${stderr}` : ""}`;
-		}
-		if (err instanceof SkillLoadError) {
-			return `Failed to load skill "${err.path}": ${err.reason}`;
-		}
-	}
-	return Cause.pretty(cause);
-}
+const emitUpdate = (
+	onUpdate: AgentToolUpdateCallback<unknown> | undefined,
+	text: string,
+	details?: Record<string, unknown>,
+): void => {
+	onUpdate?.({
+		content: [{ type: "text", text }],
+		details,
+	});
+};
 
 // ── flow_batch tool ───────────────────────────────────────────────────────────
 
@@ -61,11 +59,18 @@ export function makeFlowBatchTool(queue: FlowQueueService) {
 		execute: async (
 			_toolCallId: string,
 			params: { items: BatchItem[]; parallel?: boolean },
-			_signal: AbortSignal | undefined,
-			_onUpdate: unknown,
+			signal: AbortSignal | undefined,
+			onUpdate: AgentToolUpdateCallback<unknown> | undefined,
 			_ctx: unknown,
 		) => {
 			const { items, parallel = false } = params;
+			if (signal?.aborted) {
+				return {
+					content: [{ type: "text" as const, text: "Batch cancelled before start." }],
+					details: undefined,
+					isError: true,
+				};
+			}
 
 			if (items.length === 0) {
 				return {
@@ -76,6 +81,11 @@ export function makeFlowBatchTool(queue: FlowQueueService) {
 			}
 
 			// Resolve all profiles up front — fail fast on unknown names
+			emitUpdate(onUpdate, `Resolving ${items.length} flow profile(s)…`, {
+				count: items.length,
+				parallel,
+				phase: "resolve-profiles",
+			});
 			const profileResults = await Promise.all(
 				items.map((item) =>
 					Effect.runPromiseExit(getProfile(item.profile, item.cwd ?? process.cwd())),
@@ -109,6 +119,13 @@ export function makeFlowBatchTool(queue: FlowQueueService) {
 
 			// Runner for a single job
 			const runJob = async (job: FlowJob, item: BatchItem, index: number): Promise<BatchResult> => {
+				emitUpdate(onUpdate, `Running batch item ${index + 1}/${items.length}: ${item.profile}`, {
+					jobId: job.id,
+					index,
+					count: items.length,
+					profile: item.profile,
+					phase: "running",
+				});
 				const profileExit = profileResults[index];
 				if (profileExit === undefined || Exit.isFailure(profileExit)) {
 					// Should not happen — we already checked above
@@ -159,7 +176,14 @@ export function makeFlowBatchTool(queue: FlowQueueService) {
 			let results: BatchResult[];
 
 			if (parallel) {
-				results = await Promise.all(jobs.map((job, i) => runJob(job, items[i]!, i)));
+				const runTargets = jobs.map((job, i) => ({ job, item: items[i]!, index: i }));
+				results = await Effect.runPromise(
+					Effect.forEach(
+						runTargets,
+						({ job, item, index }) => Effect.promise(() => runJob(job, item, index)),
+						{ concurrency: 4 },
+					),
+				);
 			} else {
 				results = [];
 				for (let i = 0; i < jobs.length; i++) {

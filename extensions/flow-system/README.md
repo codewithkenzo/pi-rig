@@ -38,7 +38,7 @@ src/
   types.ts            TypeBox schemas + tagged errors
   queue.ts            In-memory job queue (Effect Ref)
   profiles.ts         Built-in profiles + file-based overrides
-  executor.ts         Subprocess runner (Effect.async + acquireUseRelease)
+  executor.ts         Subprocess runner (Effect.callback + acquireUseRelease)
   vfs.ts              Skill file staging with temp file lifecycle
   tool.ts             flow_run tool implementation
   batch-tool.ts       flow_batch tool implementation
@@ -47,7 +47,8 @@ src/
 
 ## Key patterns
 
-- **Effect at boundaries**: all internal logic uses Effect-TS. Conversion to Promise happens only at the pi API surface (`Effect.runPromise` / `Effect.runPromiseExit`).
+- **Effect at boundaries**: async subprocess and tool execution stay in Effect-TS, while synchronous helpers like profile loading remain plain functions. Conversion to Promise happens only at the pi API surface (`Effect.runPromise` / `Effect.runPromiseExit`).
+- **Effect v4 APIs**: uses `Effect.callback` for subprocess bridges and `Effect.runPromiseExit` at the pi surface; `getProfile` uses `Effect.suspend` so profile lookup stays lazy while remaining a thin error-channel boundary around sync file reads.
 - **Tagged errors**: `ProfileNotFoundError`, `SkillLoadError`, `SubprocessError`, `JobNotFoundError` — no trailing `()` per Bun 1.3+ convention.
 - **acquireUseRelease**: skill temp files are always cleaned up, even on subprocess failure or interruption.
 - **Session persistence**: queue state is snapshotted to a custom entry on `agent_end` and restored on `session_start`.
@@ -57,6 +58,7 @@ src/
 ```bash
 cd extensions/flow-system
 bun install
+bun run build
 ```
 
 Register in pi:
@@ -68,6 +70,7 @@ Register in pi:
 ## Development
 
 ```bash
+bun run build       # runtime bundle for pi
 bun tsc --noEmit   # typecheck
 bun test            # tests
 ```

@@ -1,0 +1,19 @@
+{
+  "name": "@codewithkenzo/pi-installer",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/lib.js",
+  "bin": {
+    "pi-installer": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "bun build ./src/cli.ts --outfile ./dist/cli.js --target node && bun build ./src/lib.ts --outfile ./dist/lib.js --target node",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  }
+}

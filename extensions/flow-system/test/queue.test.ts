@@ -51,6 +51,41 @@ describe("FlowQueueService", () => {
 		expect(all).toHaveLength(0);
 	});
 
+	it("peek and subscribe expose queue updates for UI consumers", async () => {
+		const queue = await Effect.runPromise(makeQueue());
+		const seen: number[] = [];
+		const unsubscribe = queue.subscribe((snapshot) => {
+			seen.push(snapshot.jobs.length);
+		});
+
+		expect(queue.peek().jobs).toHaveLength(0);
+		await Effect.runPromise(queue.enqueue("explore", "watch this"));
+		expect(queue.peek().jobs).toHaveLength(1);
+
+		unsubscribe();
+		expect(seen).toEqual([0, 1]);
+	});
+
+	it("listener errors do not break queue updates", async () => {
+		const queue = await Effect.runPromise(makeQueue());
+		const seen: number[] = [];
+		const unsubscribe = queue.subscribe((snapshot) => {
+			seen.push(snapshot.jobs.length);
+			if (snapshot.jobs.length === 1) {
+				throw new Error("listener blew up");
+			}
+		});
+
+		await Effect.runPromise(queue.enqueue("explore", "listener test"));
+
+		expect(queue.peek().jobs).toHaveLength(1);
+		const all = await Effect.runPromise(queue.getAll());
+		expect(all).toHaveLength(1);
+
+		unsubscribe();
+		expect(seen).toEqual([0, 1]);
+	});
+
 	it("setStatus updates the job status", async () => {
 		const queue = await Effect.runPromise(makeQueue());
 		const job = await Effect.runPromise(queue.enqueue("explore", "find files"));
@@ -85,13 +120,13 @@ describe("FlowQueueService", () => {
 		const queue = await Effect.runPromise(makeQueue());
 
 		const result = await Effect.runPromise(
-			queue.setStatus("nonexistent-id", "running").pipe(Effect.either),
+			queue.setStatus("nonexistent-id", "running").pipe(Effect.result),
 		);
 
-		expect(result._tag).toBe("Left");
-		if (result._tag === "Left") {
-			expect(result.left).toBeInstanceOf(JobNotFoundError);
-			expect((result.left as JobNotFoundError).id).toBe("nonexistent-id");
+		expect(result._tag).toBe("Failure");
+		if (result._tag === "Failure") {
+			expect(result.failure).toBeInstanceOf(JobNotFoundError);
+			expect(result.failure.id).toBe("nonexistent-id");
 		}
 	});
 
@@ -137,13 +172,13 @@ describe("FlowQueueService", () => {
 		const queue = await Effect.runPromise(makeQueue());
 
 		const result = await Effect.runPromise(
-			queue.cancel("no-such-id").pipe(Effect.either),
+			queue.cancel("no-such-id").pipe(Effect.result),
 		);
 
-		expect(result._tag).toBe("Left");
-		if (result._tag === "Left") {
-			expect(result.left).toBeInstanceOf(JobNotFoundError);
-			expect((result.left as JobNotFoundError).id).toBe("no-such-id");
+		expect(result._tag).toBe("Failure");
+		if (result._tag === "Failure") {
+			expect(result.failure).toBeInstanceOf(JobNotFoundError);
+			expect(result.failure.id).toBe("no-such-id");
 		}
 	});
 

@@ -1,17 +1,18 @@
 {
-  "name": "@kenzo/pi-flow-system",
+  "name": "@codewithkenzo/pi-flow-system",
   "version": "0.1.0",
   "description": "Flow profiles, prequeue, and skill injection as a pi agent extension",
   "type": "module",
-  "main": "./index.ts",
-  "extensions": ["./index.ts"],
+  "main": "./dist/index.js",
+  "extensions": ["./dist/index.js"],
   "scripts": {
+    "build": "bun build ./index.ts --outfile ./dist/index.js --target node",
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },
   "dependencies": {
     "@sinclair/typebox": "^0.34.0",
-    "effect": "^3.0.0"
+    "effect": "4.0.0-beta.48"
   },
   "devDependencies": {
     "@mariozechner/pi-coding-agent": "^0.63.1",

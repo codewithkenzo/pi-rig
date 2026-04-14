@@ -1,9 +1,9 @@
 import { Type } from "@sinclair/typebox";
 import type { NotifyCronScheduler } from "./scheduler.js";
 import { parseDestinationTarget } from "../../../shared/messaging/destination.js";
-import { Value } from "@sinclair/typebox/value";
-import { ExecutionEnvelopeSchema, type ExecutionEnvelope, type NotifyCronJob } from "./types.js";
+import { ExecutionEnvelopeSchema, type NotifyCronJob } from "./types.js";
 import { authorizeOperator, loadOperatorAuthPolicy } from "../../../shared/auth/operator.js";
+import { validateDestination, validateEnvelope } from "./validation.js";
 
 const defaultEnvelope = {
 	model: "claude-sonnet-4-6",
@@ -31,25 +31,6 @@ const authorizeNotifyCronOperator = (
 ) => {
 	const policy = loadOperatorAuthPolicy("PI_NOTIFY_CRON", allowedActorIds);
 	return authorizeOperator(policy, actorId, actorToken);
-};
-
-const validateEnvelope = (envelope: unknown): { ok: true; value: ExecutionEnvelope } | { ok: false; reason: string } => {
-	if (!Value.Check(ExecutionEnvelopeSchema, envelope)) {
-		return { ok: false, reason: "Invalid envelope schema." };
-	}
-
-	const parsed = envelope as ExecutionEnvelope;
-	if (parsed.permissions.network === "limited") {
-		const allowlist = parsed.permissions.networkAllowlist;
-		if (allowlist === undefined || allowlist.length === 0) {
-			return {
-				ok: false,
-				reason: "Invalid envelope: network=limited requires permissions.networkAllowlist.",
-			};
-		}
-	}
-
-	return { ok: true, value: parsed };
 };
 
 export const makeNotifyCronUpsertTool = (scheduler: NotifyCronScheduler) =>
@@ -100,6 +81,10 @@ export const makeNotifyCronUpsertTool = (scheduler: NotifyCronScheduler) =>
 					true,
 				);
 			}
+			const destinationValidation = validateDestination(destination);
+			if (!destinationValidation.ok) {
+				return toolTextResult(destinationValidation.reason, true);
+			}
 
 			const envelope = params.envelope ?? defaultEnvelope;
 			const envelopeValidation = validateEnvelope(envelope);
@@ -111,7 +96,7 @@ export const makeNotifyCronUpsertTool = (scheduler: NotifyCronScheduler) =>
 				id: params.id,
 				title: params.title,
 				everyMinutes: params.every_minutes,
-				destination,
+				destination: destinationValidation.value,
 				enabled: params.enabled ?? true,
 				envelope: envelopeValidation.value,
 				message: params.message,
@@ -157,10 +142,27 @@ export const makeNotifyCronTickTool = (scheduler: NotifyCronScheduler) =>
 			if (result.blockedByLease) {
 				return toolTextResult(`Tick blocked by lease owner ${result.lease?.owner ?? "unknown"}.`);
 			}
-			const lines = result.runs.map((run) => `- ${run.jobId} -> ${run.idempotencyKey}`);
+			const invalid: string[] = [];
+			const validRuns = result.runs.filter((run) => {
+				const destinationValidation = validateDestination(run.destination);
+				if (!destinationValidation.ok) {
+					invalid.push(`${run.jobId}: ${destinationValidation.reason}`);
+					return false;
+				}
+				const envelopeValidation = validateEnvelope(run.envelope);
+				if (!envelopeValidation.ok) {
+					invalid.push(`${run.jobId}: ${envelopeValidation.reason}`);
+					return false;
+				}
+				return true;
+			});
+			const lines = validRuns.map((run) => `- ${run.jobId} -> ${run.idempotencyKey}`);
+			const invalidLine =
+				invalid.length === 0 ? "" : `\ninvalid=${invalid.length}\n${invalid.map((line) => `! ${line}`).join("\n")}`;
 			return toolTextResult(
-				`Tick owner=${params.lease_owner} due=${result.runs.length}\n` +
-					(lines.length > 0 ? lines.join("\n") : "- no due jobs"),
+				`Tick owner=${params.lease_owner} due=${validRuns.length}\n` +
+					(lines.length > 0 ? lines.join("\n") : "- no due jobs") +
+					invalidLine,
 			);
 		},
 	}) as const;

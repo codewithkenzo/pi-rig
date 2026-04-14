@@ -105,12 +105,10 @@ export function getProfile(
 	name: string,
 	cwd: string,
 ): Effect.Effect<FlowProfile, ProfileNotFoundError> {
-	return Effect.sync(() => loadProfiles(cwd)).pipe(
-		Effect.flatMap((profiles) => {
-			const found = profiles.find((p) => p.name === name);
-			return found !== undefined
-				? Effect.succeed(found)
-				: Effect.fail(new ProfileNotFoundError({ name }));
-		}),
-	);
+	return Effect.suspend(() => {
+		const found = loadProfiles(cwd).find((profile) => profile.name === name);
+		return found !== undefined
+			? Effect.succeed(found)
+			: Effect.fail(new ProfileNotFoundError({ name }));
+	});
 }

@@ -1,0 +1,19 @@
+{
+  "name": "@codewithkenzo/gateway-ingress",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "main": "./index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "hono": "^4.9.8"
+  },
+  "devDependencies": {
+    "bun-types": "latest",
+    "@types/bun": "latest",
+    "typescript": "^5.0.0"
+  }
+}

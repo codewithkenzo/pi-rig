@@ -7,16 +7,31 @@ import { SkillLoadError } from "./types.js";
 // In-process skill file cache — avoids re-reading disk for the same path within a session.
 const cache = new Map<string, string>();
 
+const isWithinRoot = (candidate: string, root: string): boolean => {
+	const rel = path.relative(root, candidate);
+	return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
+};
+
 export const stageSkills = (paths: string[]): Effect.Effect<string, SkillLoadError> =>
 	Effect.forEach(
 		paths,
 		(p) =>
 			Effect.tryPromise({
 				try: async () => {
-					if (!cache.has(p)) {
-						cache.set(p, await Bun.file(p).text());
+					const resolvedPath = path.resolve(p);
+					const allowedRoots = [path.resolve(os.homedir(), ".pi"), path.resolve(process.cwd())];
+					const allowed = allowedRoots.some((root) => isWithinRoot(resolvedPath, root));
+
+					if (!allowed) {
+						throw new Error(
+							`Skill path must be under ${allowedRoots[0]} or ${allowedRoots[1]}`,
+						);
 					}
-					return cache.get(p) as string;
+
+					if (!cache.has(resolvedPath)) {
+						cache.set(resolvedPath, await Bun.file(resolvedPath).text());
+					}
+					return cache.get(resolvedPath) as string;
 				},
 				catch: (e) => new SkillLoadError({ path: p, reason: String(e) }),
 			}),

@@ -1,24 +1,24 @@
 import { Type } from "@sinclair/typebox";
-import { Effect, Exit, Cause } from "effect";
-import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
+import { Effect, Exit } from "effect";
+import type { AgentToolUpdateCallback, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import type { FlowQueueService } from "./queue.js";
 import { getProfile } from "./profiles.js";
 import { executeFlow } from "./executor.js";
-import { SubprocessError, SkillLoadError } from "./types.js";
+import { formatFlowError } from "./errors.js";
 
-function formatFlowError(cause: Cause.Cause<unknown>): string {
-	const failures = Cause.failures(cause);
-	for (const err of failures) {
-		if (err instanceof SubprocessError) {
-			const stderr = err.stderr.trim();
-			return `Subprocess exited with code ${err.exitCode}${stderr ? `\n${stderr}` : ""}`;
-		}
-		if (err instanceof SkillLoadError) {
-			return `Failed to load skill "${err.path}": ${err.reason}`;
-		}
-	}
-	return Cause.pretty(cause);
-}
+const emitUpdate = (
+	onUpdate: AgentToolUpdateCallback<unknown> | undefined,
+	text: string,
+	details?: Record<string, unknown>,
+): void => {
+	onUpdate?.({
+		content: [{ type: "text", text }],
+		details,
+	});
+};
+
+const describeError = (error: unknown): string =>
+	error instanceof Error ? error.message : String(error);
 
 // ── flow_run tool ─────────────────────────────────────────────────────────────
 
@@ -52,11 +52,22 @@ export function makeFlowTool(queue: FlowQueueService) {
 		execute: async (
 			_toolCallId: string,
 			params: { profile: string; task: string; cwd?: string; background?: boolean },
-			_signal: AbortSignal | undefined,
-			_onUpdate: unknown,
+			signal: AbortSignal | undefined,
+			onUpdate: AgentToolUpdateCallback<unknown> | undefined,
 			_ctx: ExtensionContext,
 		) => {
 			const { profile: profileName, task, cwd, background = false } = params;
+			if (signal?.aborted) {
+				return {
+					content: [{ type: "text" as const, text: `Flow cancelled before start: ${profileName}` }],
+					details: undefined,
+					isError: true,
+				};
+			}
+			emitUpdate(onUpdate, `Resolving flow profile "${profileName}"…`, {
+				profile: profileName,
+				phase: "resolve-profile",
+			});
 
 			// Resolve profile
 			const profileExit = await Effect.runPromiseExit(
@@ -80,28 +91,55 @@ export function makeFlowTool(queue: FlowQueueService) {
 
 			// Enqueue the job
 			const job = await Effect.runPromise(queue.enqueue(profileName, task, cwd));
+			emitUpdate(onUpdate, `Queued flow ${job.id} (${profileName}).`, {
+				jobId: job.id,
+				profile: profileName,
+				phase: "queued",
+			});
 
 			if (background) {
 				// Fire and forget — kick off execution without awaiting
 				void (async () => {
-					await Effect.runPromise(
-						queue.setStatus(job.id, "running", { startedAt: Date.now() }),
-					);
-					const exit = await Effect.runPromiseExit(executeFlow({ task, profile, cwd }));
-					if (Exit.isSuccess(exit)) {
+					try {
 						await Effect.runPromise(
-							queue.setStatus(job.id, "done", {
-								finishedAt: Date.now(),
-								output: exit.value,
-							}),
+							queue.setStatus(job.id, "running", { startedAt: Date.now() }),
 						);
-					} else {
-						await Effect.runPromise(
-							queue.setStatus(job.id, "failed", {
-								finishedAt: Date.now(),
-								error: formatFlowError(exit.cause),
-							}),
-						);
+						const exit = await Effect.runPromiseExit(executeFlow({ task, profile, cwd }));
+						if (Exit.isSuccess(exit)) {
+							await Effect.runPromise(
+								queue.setStatus(job.id, "done", {
+									finishedAt: Date.now(),
+									output: exit.value,
+								}),
+							);
+						} else {
+							await Effect.runPromise(
+								queue.setStatus(job.id, "failed", {
+									finishedAt: Date.now(),
+									error: formatFlowError(exit.cause),
+								}),
+							);
+						}
+					} catch (error) {
+						const errorText = describeError(error);
+						try {
+							await Effect.runPromise(
+								queue.setStatus(job.id, "failed", {
+									finishedAt: Date.now(),
+									error: errorText,
+								}),
+							);
+						} catch {
+							// Keep the catch path bounded; diagnostics below still fire.
+						}
+						const summary = `Flow ${job.id} failed.`;
+						_ctx.ui.notify(summary, "error");
+						emitUpdate(onUpdate, summary, {
+							jobId: job.id,
+							profile: profileName,
+							phase: "background-failed",
+							error: errorText,
+						});
 					}
 				})();
 
@@ -120,6 +158,11 @@ export function makeFlowTool(queue: FlowQueueService) {
 			await Effect.runPromise(
 				queue.setStatus(job.id, "running", { startedAt: Date.now() }),
 			);
+			emitUpdate(onUpdate, `Running flow ${job.id} (${profileName})…`, {
+				jobId: job.id,
+				profile: profileName,
+				phase: "running",
+			});
 
 			const exit = await Effect.runPromiseExit(executeFlow({ task, profile, cwd }));
 

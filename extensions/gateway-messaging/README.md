@@ -23,8 +23,8 @@ Telegram-first baseline gateway-messaging extension for pi.
 
 This baseline is **Telegram-first** and intentionally narrow:
 
-- queueing/dispatch/formatting only (no Telegram transport client wiring in this slice)
-- no message edit/delete API calls yet
+- queueing/dispatch/formatting with Telegram send/edit adapter support
+- primary-message strategy: send once, edit in place, replace when edit is rejected
 - no Discordeno transport integration yet (adapter is pure + diagnostics-only in this slice)
 - no persistent storage (all state is in-memory)
 
@@ -59,6 +59,13 @@ For callback/action hardening in local deployments:
 Policy behavior:
 - if unset -> open/dev mode
 - if set -> action execution requires allowed actor and/or matching token
+
+## Optional Deepgram hooks (feature flags)
+
+`gateway_turn_preview` supports voice hooks behind flags:
+
+- `PI_GATEWAY_DEEPGRAM_STT_ENABLED=true` enables transcript summary injection (`voice_transcript`).
+- `PI_GATEWAY_DEEPGRAM_TTS_ENABLED=true` enables final-response TTS queue signal (`request_tts` + `final_text`).
 
 ## Development
 

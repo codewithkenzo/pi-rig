@@ -102,7 +102,8 @@ export const runSubprocess = (
 	skillFile: string | undefined,
 	cwd: string,
 ): Effect.Effect<string, SubprocessError> =>
-	Effect.async<string, SubprocessError>((resume) => {
+	Effect.callback<string, SubprocessError>((resume, signal) => {
+		const MAX_STDERR_BYTES = 64 * 1024;
 		const args: string[] = ["--mode", "json", "-p", "--no-session"];
 
 		// Thinking level
@@ -125,19 +126,77 @@ export const runSubprocess = (
 		}
 
 		// Task is the final positional argument
-		args.push(task);
+		args.push("--", task);
 
 		const bin = process.argv[1] ?? "pi";
-
-		const child = spawn(bin, args, {
-			stdio: ["ignore", "pipe", "pipe"],
-			cwd,
-		});
+		let child: ReturnType<typeof spawn> | undefined;
+		let rl: readline.Interface | undefined;
+		let finished = false;
+		let killTimer: ReturnType<typeof setTimeout> | undefined;
 
 		let lastText = "";
 		let stderrBuf = "";
+		let stderrTruncated = false;
 
-		const rl = readline.createInterface({ input: child.stdout });
+		const finish = (effect: Effect.Effect<string, SubprocessError>): void => {
+			if (finished) return;
+			finished = true;
+			if (killTimer !== undefined) {
+				clearTimeout(killTimer);
+				killTimer = undefined;
+			}
+			signal.removeEventListener("abort", onAbort);
+			rl?.close();
+			resume(effect);
+		};
+
+		const cappedStderr = (): string =>
+			stderrTruncated ? `${stderrBuf}\n...[truncated]` : stderrBuf;
+
+		const terminateChild = (): void => {
+			if (child === undefined || child.exitCode !== null) return;
+			child.kill("SIGTERM");
+			killTimer = setTimeout(() => {
+				if (!finished && child !== undefined && child.exitCode === null) {
+					child.kill("SIGKILL");
+				}
+			}, 1500);
+		};
+
+		const onAbort = () => {
+			terminateChild();
+		};
+
+		try {
+			child = spawn(bin, args, {
+				stdio: ["ignore", "pipe", "pipe"],
+				cwd,
+			});
+		} catch (error) {
+			const stderr = error instanceof Error ? error.message : String(error);
+			finish(Effect.fail(new SubprocessError({ exitCode: 1, stderr })));
+			return;
+		}
+
+		if (child === undefined) {
+			finish(Effect.fail(new SubprocessError({ exitCode: 1, stderr: "Failed to spawn process" })));
+			return;
+		}
+
+		const proc = child;
+		if (proc.stdout === null || proc.stderr === null) {
+			finish(
+				Effect.fail(
+					new SubprocessError({
+						exitCode: 1,
+						stderr: "Failed to capture subprocess stdio streams",
+					}),
+				),
+			);
+			return;
+		}
+		rl = readline.createInterface({ input: proc.stdout });
+		signal.addEventListener("abort", onAbort, { once: true });
 
 		rl.on("line", (line) => {
 			try {
@@ -149,18 +208,37 @@ export const runSubprocess = (
 			}
 		});
 
-		child.stderr?.on("data", (chunk: Buffer) => {
-			stderrBuf += chunk.toString();
+		proc.stderr.on("data", (chunk: Buffer) => {
+			const text = chunk.toString();
+			if (stderrBuf.length >= MAX_STDERR_BYTES) {
+				stderrTruncated = true;
+				return;
+			}
+			const remaining = MAX_STDERR_BYTES - stderrBuf.length;
+			stderrBuf += text.slice(0, remaining);
+			if (text.length > remaining) {
+				stderrTruncated = true;
+			}
 		});
 
-		child.on("close", (code) => {
-			rl.close();
+		proc.on("error", (error: Error) => {
+			finish(
+				Effect.fail(
+					new SubprocessError({
+						exitCode: 1,
+						stderr: `${cappedStderr()}\n${error.message}`.trim(),
+					}),
+				),
+			);
+		});
+
+		proc.on("close", (code) => {
 			if (code === 0) {
-				resume(Effect.succeed(lastText));
+				finish(Effect.succeed(lastText));
 			} else {
-				resume(
+				finish(
 					Effect.fail(
-						new SubprocessError({ exitCode: code ?? 1, stderr: stderrBuf }),
+						new SubprocessError({ exitCode: code ?? 1, stderr: cappedStderr() }),
 					),
 				);
 			}
@@ -168,7 +246,9 @@ export const runSubprocess = (
 
 		// Return cleanup effect — called on interruption
 		return Effect.sync(() => {
-			child.kill();
+			if (!finished) {
+				terminateChild();
+			}
 		});
 	});
 

@@ -2,3 +2,7 @@ node_modules/
 dist/
 *.lock
 .env
+.pi/
+error.log
+__pycache__/
+*.pyc

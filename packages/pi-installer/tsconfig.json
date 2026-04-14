@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "skipLibCheck": true,
+    "lib": ["ESNext"],
+    "types": ["bun-types", "node"],
+    "typeRoots": [
+      "./node_modules/@types",
+      "../../node_modules/.bun/node_modules",
+      "../../node_modules/@types"
+    ],
+    "outDir": "./dist",
+    "rootDir": "."
+  },
+  "include": ["./src/**/*.ts", "./test/**/*.ts"],
+  "exclude": ["dist", "node_modules"]
+}

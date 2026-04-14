@@ -7,6 +7,8 @@ import { JobNotFoundError } from "./types.js";
 export interface FlowQueueService {
 	enqueue(profile: string, task: string, cwd?: string): Effect.Effect<FlowJob>;
 	getAll(): Effect.Effect<FlowJob[]>;
+	peek(): FlowQueue;
+	subscribe(listener: (queue: FlowQueue) => void): () => void;
 	cancel(id: string): Effect.Effect<void, JobNotFoundError>;
 	setStatus(
 		id: string,
@@ -17,11 +19,29 @@ export interface FlowQueueService {
 	restoreFrom(jobs: FlowJob[]): Effect.Effect<void>;
 }
 
+type QueueMutation =
+	| { readonly _tag: "missing" }
+	| { readonly _tag: "unchanged" }
+	| { readonly _tag: "updated"; readonly next: FlowQueue };
+
 // ── Factory ───────────────────────────────────────────────────────────────────
 
 export const makeQueue = (): Effect.Effect<FlowQueueService> =>
 	Effect.gen(function* () {
 		const ref = yield* Ref.make<FlowQueue>({ jobs: [], mode: "sequential" });
+		let current: FlowQueue = { jobs: [], mode: "sequential" };
+		const listeners = new Set<(queue: FlowQueue) => void>();
+
+		const publish = (next: FlowQueue): void => {
+			current = next;
+			for (const listener of listeners) {
+				try {
+					listener(next);
+				} catch (error) {
+					console.warn("flow queue listener error", error);
+				}
+			}
+		};
 
 		const enqueue = (
 			profile: string,
@@ -37,50 +57,102 @@ export const makeQueue = (): Effect.Effect<FlowQueueService> =>
 					status: "pending",
 					createdAt: Date.now(),
 				};
-				yield* Ref.update(ref, (s) => ({ ...s, jobs: [...s.jobs, job] }));
+				const next = yield* Ref.updateAndGet(ref, (state) => ({
+					...state,
+					jobs: [...state.jobs, job],
+				}));
+				publish(next);
 				return job;
 			});
 
 		const getAll = (): Effect.Effect<FlowJob[]> =>
 			Ref.get(ref).pipe(Effect.map((s) => s.jobs));
 
+		const peek = (): FlowQueue => current;
+
+		const subscribe = (listener: (queue: FlowQueue) => void): (() => void) => {
+			listeners.add(listener);
+			try {
+				listener(current);
+			} catch (error) {
+				console.warn("flow queue listener error", error);
+			}
+			return () => {
+				listeners.delete(listener);
+			};
+		};
+
 		const cancel = (id: string): Effect.Effect<void, JobNotFoundError> =>
-			Ref.modify(ref, (s): readonly [Effect.Effect<void, JobNotFoundError>, FlowQueue] => {
-				const job = s.jobs.find((j) => j.id === id);
-				if (job === undefined) {
-					return [Effect.fail(new JobNotFoundError({ id })), s] as const;
+			Effect.gen(function* () {
+				const outcome = yield* Ref.modify(
+					ref,
+					(s): readonly [QueueMutation, FlowQueue] => {
+						const job = s.jobs.find((j) => j.id === id);
+						if (job === undefined) {
+							return [{ _tag: "missing" }, s] as const;
+						}
+						if (job.status === "pending" || job.status === "running") {
+							const next = {
+								...s,
+								jobs: s.jobs.map((j) =>
+									j.id === id ? { ...j, status: "cancelled" as FlowJobStatus } : j
+								),
+							};
+							return [{ _tag: "updated", next }, next] as const;
+						}
+						return [{ _tag: "unchanged" }, s] as const;
+					},
+				);
+				if (outcome._tag === "missing") {
+					yield* Effect.fail(new JobNotFoundError({ id }));
 				}
-				if (job.status === "pending" || job.status === "running") {
-					return [
-						Effect.void,
-						{ ...s, jobs: s.jobs.map((j) => j.id === id ? { ...j, status: "cancelled" as FlowJobStatus } : j) },
-					] as const;
+				if (outcome._tag === "updated") {
+					publish(outcome.next);
 				}
-				return [Effect.void, s] as const;
-			}).pipe(Effect.flatten);
+			});
 
 		const setStatus = (
 			id: string,
 			status: FlowJobStatus,
 			extras?: Partial<FlowJob>,
 		): Effect.Effect<void, JobNotFoundError> =>
-			Ref.modify(ref, (s): readonly [Effect.Effect<void, JobNotFoundError>, FlowQueue] => {
-				const exists = s.jobs.some((j) => j.id === id);
-				if (!exists) {
-					return [Effect.fail(new JobNotFoundError({ id })), s] as const;
+			Effect.gen(function* () {
+				const outcome = yield* Ref.modify(
+					ref,
+					(s): readonly [QueueMutation, FlowQueue] => {
+						const job = s.jobs.find((j) => j.id === id);
+						if (job === undefined) {
+							return [{ _tag: "missing" }, s] as const;
+						}
+						const terminal =
+							job.status === "done" || job.status === "failed" || job.status === "cancelled";
+						if (terminal) {
+							return [{ _tag: "unchanged" }, s] as const;
+						}
+						const next = {
+							...s,
+							jobs: s.jobs.map((j) => j.id === id ? { ...j, ...(extras ?? {}), status } : j),
+						};
+						return [{ _tag: "updated", next }, next] as const;
+					},
+				);
+				if (outcome._tag === "missing") {
+					yield* Effect.fail(new JobNotFoundError({ id }));
 				}
-				return [
-					Effect.void,
-					{ ...s, jobs: s.jobs.map((j) => j.id === id ? { ...j, ...(extras ?? {}), status } : j) },
-				] as const;
-			}).pipe(Effect.flatten);
+				if (outcome._tag === "updated") {
+					publish(outcome.next);
+				}
+			});
 
 		const snapshot = (): Effect.Effect<FlowQueue> => Ref.get(ref);
 
 		const restoreFrom = (jobs: FlowJob[]): Effect.Effect<void> => {
 			const next: FlowQueue = { jobs, mode: "sequential" };
-			return Ref.set(ref, next);
+			return Effect.gen(function* () {
+				yield* Ref.set(ref, next);
+				publish(next);
+			});
 		};
 
-		return { enqueue, getAll, cancel, setStatus, snapshot, restoreFrom };
+		return { enqueue, getAll, peek, subscribe, cancel, setStatus, snapshot, restoreFrom };
 	});

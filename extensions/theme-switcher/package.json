@@ -1,0 +1,28 @@
+{
+  "name": "@codewithkenzo/pi-theme-switcher",
+  "version": "0.1.0",
+  "description": "Theme switching bridge for pi agent extensions",
+  "type": "module",
+  "main": "./dist/index.js",
+  "extensions": ["./dist/index.js"],
+  "scripts": {
+    "build": "bun build ./index.ts --outfile ./dist/index.js --target node",
+    "tsc": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@sinclair/typebox": "^0.34.0",
+    "effect": "4.0.0-beta.48"
+  },
+  "devDependencies": {
+    "@mariozechner/pi-coding-agent": "^0.63.1",
+    "bun-types": "latest",
+    "@types/bun": "latest",
+    "typescript": "^5.0.0"
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-agent-core": "*",
+    "@mariozechner/pi-coding-agent": "*"
+  }
+}

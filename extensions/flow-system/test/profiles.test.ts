@@ -1,9 +1,9 @@
 import { describe, it, expect } from "bun:test";
-import { Effect, Exit } from "effect";
+import { Effect } from "effect";
 import { loadProfiles, getProfile, BUILT_IN_PROFILES } from "../src/profiles.js";
 import { ProfileNotFoundError } from "../src/types.js";
 
-const NO_CONFIG_DIR = "/tmp";
+const NO_CONFIG_DIR = `/tmp/pi-flow-profiles-test-${crypto.randomUUID()}`;
 
 describe("BUILT_IN_PROFILES", () => {
 	it("contains exactly 6 profiles", () => {
@@ -83,17 +83,13 @@ describe("getProfile", () => {
 	});
 
 	it("fails with ProfileNotFoundError for unknown profile name", async () => {
-		const exit = await Effect.runPromiseExit(getProfile("nonexistent", NO_CONFIG_DIR));
-		expect(Exit.isFailure(exit)).toBe(true);
-		if (Exit.isFailure(exit)) {
-			const cause = exit.cause;
-			// The failure should be a ProfileNotFoundError
-			expect(cause._tag).toBe("Fail");
-			if (cause._tag === "Fail") {
-				const error = cause.error;
-				expect(error).toBeInstanceOf(ProfileNotFoundError);
-				expect((error as ProfileNotFoundError).name).toBe("nonexistent");
-			}
+		const result = await Effect.runPromise(
+			getProfile("nonexistent", NO_CONFIG_DIR).pipe(Effect.result),
+		);
+		expect(result._tag).toBe("Failure");
+		if (result._tag === "Failure") {
+			expect(result.failure).toBeInstanceOf(ProfileNotFoundError);
+			expect(result.failure.name).toBe("nonexistent");
 		}
 	});
 
