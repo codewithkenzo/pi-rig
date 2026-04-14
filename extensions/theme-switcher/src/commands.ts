@@ -5,9 +5,9 @@ import type { ThemeState } from "./state.js";
 import { applyTheme, syncThemeStateFromUi } from "./state.js";
 import { ThemeLoadError, ThemeNotFoundError } from "./types.js";
 import { getThemeNames, renderThemeList, renderThemePreview, renderThemeStatus, getResolvedThemeName } from "./runtime.js";
-import { attachThemeUi, setThemeUiStatus } from "./ui.js";
+import { showThemePicker } from "./picker.js";
 
-const HELP = "Usage: /theme status | set <name> | list | preview <name> | pick | cycle";
+const HELP = "Usage: /theme | /theme set <name> | /theme list | /theme preview <name> | /theme status | /theme cycle";
 type ThemeUiContext = Pick<ExtensionCommandContext, "cwd" | "ui">;
 
 const complete = (prefix: string): { label: string; value: string }[] => {
@@ -21,7 +21,7 @@ const notifyLines = async (ctx: ExtensionCommandContext, lines: string[]): Promi
 	await ctx.ui.notify(lines.join("\n"));
 };
 
-const applyAndRefreshTheme = async (
+const applyThemeDirectly = async (
 	theme: string,
 	ctx: ThemeUiContext,
 	state: ThemeState,
@@ -37,29 +37,31 @@ const applyAndRefreshTheme = async (
 		}
 		return { ok: false, message: `Theme set failed: ${theme}` };
 	}
-
-	attachThemeUi(ctx.ui, state, ctx.cwd);
-	setThemeUiStatus(ctx.ui, state.getActive());
 	return { ok: true };
 };
 
 const runThemePick = async (ctx: ThemeUiContext, state: ThemeState): Promise<void> => {
+	const active = syncThemeStateFromUi(state, ctx.ui.theme.name);
 	const options = getThemeNames();
 	if (options.length === 0) {
 		await ctx.ui.notify("No themes available.");
 		return;
 	}
 
-	const picked = await ctx.ui.select("Pick a theme", options);
+	const picked = await showThemePicker(ctx, active);
 	if (picked === undefined) {
 		await ctx.ui.notify("Theme selection cancelled.");
 		return;
 	}
 
-	const applied = await applyAndRefreshTheme(picked, ctx, state);
-	if (!applied.ok) {
-		await ctx.ui.notify(applied.message);
-		return;
+	if (ctx.ui.theme.name !== picked) {
+		const applied = await applyThemeDirectly(picked, ctx, state);
+		if (!applied.ok) {
+			await ctx.ui.notify(applied.message);
+			return;
+		}
+	} else {
+		state.setActive(picked);
 	}
 
 	await ctx.ui.notify(`Active theme set to ${state.getActive()}.`);
@@ -67,7 +69,7 @@ const runThemePick = async (ctx: ThemeUiContext, state: ThemeState): Promise<voi
 
 const runThemeCycle = async (ctx: ThemeUiContext, state: ThemeState): Promise<void> => {
 	const next = state.getNextName();
-	const applied = await applyAndRefreshTheme(next, ctx, state);
+	const applied = await applyThemeDirectly(next, ctx, state);
 	if (!applied.ok) {
 		await ctx.ui.notify(applied.message);
 		return;
@@ -82,12 +84,14 @@ export const handleThemeCommand = async (
 	state: ThemeState,
 ): Promise<void> => {
 	const parts = args.trim().split(/\s+/).filter(Boolean);
-	const sub = parts[0] ?? "status";
+	const sub = parts[0] ?? "pick";
 	const current = getResolvedThemeName(state, ctx.ui.theme.name);
 
 	switch (sub) {
+		case "pick":
+			await runThemePick(ctx, state);
+			return;
 		case "status":
-			setThemeUiStatus(ctx.ui, current);
 			await notifyLines(ctx, renderThemeStatus(current));
 			return;
 		case "list":
@@ -121,17 +125,13 @@ export const handleThemeCommand = async (
 				return;
 			}
 
-			const applied = await applyAndRefreshTheme(theme, ctx, state);
+			const applied = await applyThemeDirectly(theme, ctx, state);
 			if (!applied.ok) {
 				await ctx.ui.notify(applied.message);
 				return;
 			}
 
 			await ctx.ui.notify(`Active theme set to ${state.getActive()}.`);
-			return;
-		}
-		case "pick": {
-			await runThemePick(ctx, state);
 			return;
 		}
 		case "cycle": {
@@ -145,27 +145,11 @@ export const handleThemeCommand = async (
 
 export const registerThemeCommands = (pi: ExtensionAPI, state: ThemeState): void => {
 	pi.registerCommand("theme", {
-		description: "Manage the active theme. Subcommands: status, set, list, preview, pick, cycle",
+		description: "Open the theme picker or manage the active theme.",
 		getArgumentCompletions: (prefix: string) => complete(prefix),
 		handler: async (args: string, ctx: ExtensionCommandContext) => {
 			syncThemeStateFromUi(state, ctx.ui.theme.name);
 			await handleThemeCommand(args, ctx, state);
-		},
-	});
-
-	pi.registerShortcut("alt+shift+t", {
-		description: "Open theme picker",
-		handler: async (ctx) => {
-			syncThemeStateFromUi(state, ctx.ui.theme.name);
-			await runThemePick(ctx, state);
-		},
-	});
-
-	pi.registerShortcut("alt+shift+y", {
-		description: "Cycle theme",
-		handler: async (ctx) => {
-			syncThemeStateFromUi(state, ctx.ui.theme.name);
-			await runThemeCycle(ctx, state);
 		},
 	});
 };

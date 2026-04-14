@@ -128,8 +128,11 @@ export const applyTheme = (
 	ctx: ThemeSwitcherContext,
 	name: string,
 	state: ThemeState,
+	options?: { emitChangedEvent?: boolean },
 ): Effect.Effect<void, ThemeNotFoundError | ThemeLoadError> =>
 	Effect.gen(function* () {
+		syncThemeStateFromUi(state, ctx.ui.theme.name);
+
 		yield* Effect.try({
 			try: () => {
 				getPalette(name);
@@ -147,5 +150,7 @@ export const applyTheme = (
 		}
 
 		state.setActive(name);
-		ctx.events?.emit("theme:changed", { theme: name });
+		if (options?.emitChangedEvent !== false) {
+			ctx.events?.emit("theme:changed", { theme: name });
+		}
 	});

@@ -1,5 +1,6 @@
 import type { ExtensionUIContext } from "@mariozechner/pi-coding-agent";
 import { AnimationTicker, PALETTE_MAP, createEngine, getPalette, loadTheme, shimmer, spin, withMotion } from "../../../shared/theme/index.js";
+import { ellipsize, fitAnsiLine, hintLine, joinCompact, metric, tag } from "../../../shared/ui/hud.js";
 import { resolveThemeName, type ThemeState } from "./state.js";
 
 const THEME_STATUS_KEY = "theme-switcher";
@@ -16,29 +17,14 @@ interface WidgetTui {
 }
 
 const bold = (text: string): string => `\x1b[1m${text}\x1b[22m`;
-const dim = (text: string): string => `\x1b[2m${text}\x1b[22m`;
 
-const truncate = (text: string, width: number): string =>
-	text.length <= width ? text : `${text.slice(0, Math.max(0, width - 1))}…`;
+export const themeStatusText = (activeTheme: string, nextTheme = activeTheme): string =>
+	`theme ${activeTheme}${nextTheme !== activeTheme ? ` → ${nextTheme}` : ""} · /theme`;
 
-const ANSI_PATTERN = /\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g;
-
-const fitLine = (line: string, width: number): string => {
-	const safeWidth = Math.max(1, width);
-	const plain = line.replace(ANSI_PATTERN, "");
-	if (plain.length <= safeWidth) {
-		return line;
-	}
-	return plain.slice(0, safeWidth);
-};
-
-export const themeStatusText = (activeTheme: string): string =>
-	`${activeTheme} · /theme pick · /theme cycle · alt+shift+t`;
-
-export const setThemeUiStatus = (ui: ExtensionUIContext, activeTheme: string): void => {
+export const setThemeUiStatus = (ui: ExtensionUIContext, activeTheme: string, nextTheme = activeTheme): void => {
 	const setStatus = (ui as unknown as { setStatus?: (key: string, text: string | undefined) => void }).setStatus;
 	if (typeof setStatus === "function") {
-		setStatus(THEME_STATUS_KEY, themeStatusText(activeTheme));
+		setStatus(THEME_STATUS_KEY, themeStatusText(activeTheme, nextTheme));
 	}
 };
 
@@ -67,8 +53,8 @@ export const renderThemeWidgetLines = (
 	const reducedMotion = !config.animation.enabled || config.animation.reducedMotion;
 	const spinnerFrames = palette.animations?.runningFrames ?? ["◐", "◓", "◑", "◒"];
 	const title = withMotion(
-		() => shimmer("theme switcher", palette.semantic.label, palette.semantic.accent, animationState, 3),
-		engine.fg("label", "theme switcher"),
+		() => shimmer("theme deck", palette.semantic.label, palette.semantic.accent, animationState, 3),
+		engine.fg("label", "theme deck"),
 		reducedMotion,
 	);
 	const spinner = withMotion(
@@ -77,18 +63,22 @@ export const renderThemeWidgetLines = (
 		reducedMotion,
 	);
 
-	const swatches = [
-		`${engine.fg("accent", "●●")} accent`,
-		`${engine.fg("success", "●●")} success`,
-		`${engine.fg("warning", "●●")} warning`,
-		`${engine.fg("error", "●●")} error`,
-	].join("  ");
+	const swatches = joinCompact(engine, [
+		metric(engine, "accent", "●", "accent"),
+		metric(engine, "success", "●", "success"),
+		metric(engine, "warning", "●", "warning"),
+		metric(engine, "error", "●", "error"),
+	]);
 
 	return [
-		`${spinner} ${bold(title)} ${engine.fg("accent", activeTheme)}`,
-		`↪ next ${engine.fg("value", nextTheme)} · ${engine.fg("label", `${palette.variant}/${palette.source ?? "builtin"}`)}`,
-		truncate(swatches, 72),
-		dim("/theme pick · /theme set <name> · /theme cycle"),
+		`${spinner} ${bold(title)}${engine.fg("muted", " · ")}${tag(engine, "accent", activeTheme)} ${engine.fg("muted", "→")} ${tag(engine, "value", nextTheme)}`,
+		joinCompact(engine, [
+			tag(engine, palette.variant === "dark" ? "label" : "warning", palette.variant),
+			tag(engine, "muted", palette.source ?? "builtin"),
+			palette.description !== undefined ? engine.fg("muted", ellipsize(palette.description, 38)) : undefined,
+		]),
+		swatches,
+		hintLine(engine, "/theme · /theme set <name> · /theme preview <name>"),
 	];
 };
 
@@ -96,7 +86,7 @@ const makeLinesComponent = (getLines: () => string[]): LinesComponent => {
 	let cachedLines = getLines();
 
 	return {
-		render: (width: number) => cachedLines.map((line) => fitLine(line, width)),
+		render: (width: number) => cachedLines.map((line) => fitAnsiLine(line, width)),
 		invalidate: () => {
 			cachedLines = getLines();
 		},
@@ -130,10 +120,8 @@ export const attachThemeUi = (
 	state: ThemeState,
 	cwd: string,
 ): void => {
-	ui.setWidget(THEME_WIDGET_KEY, createThemeWidgetFactory(state, cwd), {
-		placement: "belowEditor",
-	});
-	setThemeUiStatus(ui, state.getActive());
+	ui.setWidget(THEME_WIDGET_KEY, createThemeWidgetFactory(state, cwd));
+	setThemeUiStatus(ui, state.getActive(), state.getNextName());
 };
 
 export const detachThemeUi = (ui: ExtensionUIContext): void => {

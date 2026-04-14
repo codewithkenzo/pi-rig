@@ -4,7 +4,6 @@ import { findSavedThemeEntry, restoreThemeEntry, snapshotThemeEntry } from "./se
 import type { ThemeState } from "./state.js";
 import { syncThemeStateFromUi } from "./state.js";
 import { THEME_ENTRY_TYPE } from "./types.js";
-import { attachThemeUi, detachThemeUi, setThemeUiStatus } from "./ui.js";
 
 export const registerThemeLifecycle = (pi: ExtensionAPI, state: ThemeState): void => {
 	pi.on("resources_discover", async () => {
@@ -18,9 +17,6 @@ export const registerThemeLifecycle = (pi: ExtensionAPI, state: ThemeState): voi
 	pi.on("session_start", async (_event: SessionStartEvent, ctx: ExtensionContext) => {
 		const saved = findSavedThemeEntry(ctx.sessionManager.getEntries());
 		if (saved === undefined) {
-			if (ctx.hasUI) {
-				attachThemeUi(ctx.ui, state, ctx.cwd);
-			}
 			return;
 		}
 
@@ -34,23 +30,10 @@ export const registerThemeLifecycle = (pi: ExtensionAPI, state: ThemeState): voi
 			state,
 			saved,
 		);
-		if (ctx.hasUI) {
-			attachThemeUi(ctx.ui, state, ctx.cwd);
-		}
-		setThemeUiStatus(ctx.ui, state.getActive());
 	});
 
 	pi.on("agent_end", async (_event, ctx: ExtensionContext) => {
 		syncThemeStateFromUi(state, ctx.ui.theme.name);
-		if (ctx.hasUI) {
-			setThemeUiStatus(ctx.ui, state.getActive());
-		}
 		pi.appendEntry(THEME_ENTRY_TYPE, snapshotThemeEntry(state));
-	});
-
-	pi.on("session_shutdown", async (_event, ctx: ExtensionContext) => {
-		if (ctx.hasUI) {
-			detachThemeUi(ctx.ui);
-		}
 	});
 };
