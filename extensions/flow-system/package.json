@@ -1,0 +1,23 @@
+{
+  "name": "@kenzo/pi-flow-system",
+  "version": "0.1.0",
+  "description": "Flow profiles, prequeue, and skill injection as a pi agent extension",
+  "type": "module",
+  "main": "./index.ts",
+  "extensions": ["./index.ts"],
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@sinclair/typebox": "^0.34.0",
+    "effect": "^3.0.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.0.0"
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-agent-core": "*"
+  }
+}
