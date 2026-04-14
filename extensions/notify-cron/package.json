@@ -1,0 +1,26 @@
+{
+  "name": "@codewithkenzo/pi-notify-cron",
+  "version": "0.1.0",
+  "description": "Destination-safe cron scheduler for plan/ticket/status notifications",
+  "type": "module",
+  "main": "./dist/index.js",
+  "extensions": ["./dist/index.js"],
+  "scripts": {
+    "build": "bun build ./index.ts --outfile ./dist/index.js --target node",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@sinclair/typebox": "^0.34.0"
+  },
+  "devDependencies": {
+    "@mariozechner/pi-coding-agent": "^0.63.1",
+    "bun-types": "latest",
+    "@types/bun": "latest",
+    "typescript": "^5.0.0"
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-agent-core": "*",
+    "@mariozechner/pi-coding-agent": "*"
+  }
+}

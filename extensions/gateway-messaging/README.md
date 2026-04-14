@@ -25,8 +25,21 @@ This baseline is **Telegram-first** and intentionally narrow:
 
 - queueing/dispatch/formatting only (no Telegram transport client wiring in this slice)
 - no message edit/delete API calls yet
-- no Discord/WhatsApp/other-provider adapters yet
+- no Discordeno transport integration yet (adapter is pure + diagnostics-only in this slice)
 - no persistent storage (all state is in-memory)
+
+### HS-025: Discordeno adapter baseline (no live transport)
+
+- adds Discord destination parsing contract for `discord:<channel_or_thread_id>`
+- supports optional `discord:<channel_id>:<thread_id>` normalization into runtime shape:
+  - `{ platform: "discord", kind: "channel" | "thread", id, threadId? }`
+- exposes moderation action policy enforcement (pure function) that requires:
+  - role gate
+  - permission gate
+  - non-empty audit reason for moderation actions
+- command diagnostics:
+  - `/gateway discord normalize <target>`
+  - `/gateway discord moderation <action> <role> <perm1,perm2> <audit_reason>`
 
 ## Not yet covered in this sprint
 
@@ -35,6 +48,17 @@ This baseline is **Telegram-first** and intentionally narrow:
 - Durable turn state persistence and recovery across agent restarts
 - Multi-channel action handling outside Telegram
 - Any additional action kinds not in the ticket contract (`retry`, `details`, `approve`, `cancel`). Add only with explicit docs and tests before extending.
+
+## Optional operator auth policy
+
+For callback/action hardening in local deployments:
+
+- `PI_GATEWAY_ALLOWED_ACTOR_IDS=u1,u2`
+- `PI_GATEWAY_ACCESS_TOKEN=<shared-token>`
+
+Policy behavior:
+- if unset -> open/dev mode
+- if set -> action execution requires allowed actor and/or matching token
 
 ## Development
 

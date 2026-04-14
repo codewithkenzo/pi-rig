@@ -9,10 +9,11 @@
     "extensions/*"
   ],
   "scripts": {
-    "build": "bun run --filter @codewithkenzo/pi-installer build && bun run --filter @codewithkenzo/pi-flow-system build && bun run --filter @codewithkenzo/pi-theme-switcher build && bun run --filter @codewithkenzo/pi-gateway-messaging build",
+    "build": "bun run --filter @codewithkenzo/pi-installer build && bun run --filter @codewithkenzo/pi-flow-system build && bun run --filter @codewithkenzo/pi-theme-switcher build && bun run --filter @codewithkenzo/pi-gateway-messaging build && bun run --filter @codewithkenzo/pi-notify-cron build",
     "typecheck": "bun run --filter '*' typecheck",
     "test": "bun run --filter '*' test",
     "setup": "bun run bin/setup.ts",
+    "refresh:md-index": "python3 bin/refresh_md_index.py",
     "plan:tg": "python3 bin/notify_plan_to_tg.py",
     "plan:tg:dry": "python3 bin/notify_plan_to_tg.py --dry-run",
     "plan:watch": "python3 bin/watch_plan_updates.py",

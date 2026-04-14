@@ -124,3 +124,29 @@ export interface GatewayDispatchAccepted {
 }
 
 export type GatewayDispatchResult = GatewayDispatchAccepted | GatewayDispatchRejected;
+
+export const DiscordDestinationKindSchema = Type.Union([
+  Type.Literal("channel"),
+  Type.Literal("thread"),
+]);
+
+export const GatewayDiscordDestinationSchema = Type.Object({
+  platform: Type.Literal("discord"),
+  kind: DiscordDestinationKindSchema,
+  id: Type.String({ minLength: 1 }),
+  threadId: Type.Optional(Type.String({ minLength: 1 })),
+});
+
+export type GatewayDiscordDestination = Static<typeof GatewayDiscordDestinationSchema>;
+
+export const GatewayDiscordModerationActionSchema = Type.Union([
+  Type.Literal("delete_message"),
+  Type.Literal("timeout_member"),
+  Type.Literal("kick_member"),
+  Type.Literal("ban_member"),
+  Type.Literal("unban_member"),
+  Type.Literal("mute_member"),
+  Type.Literal("move_member"),
+]);
+
+export type GatewayDiscordModerationAction = Static<typeof GatewayDiscordModerationActionSchema>;

@@ -4,6 +4,7 @@ import { parseGatewayTurnAction } from "./actions.js";
 import { dispatchGatewayTurnAction } from "./dispatcher.js";
 import type { GatewayTurnEvent, GatewayTurnPhase, ToolStreamEvent } from "./types.js";
 import type { TurnPatchQueueService } from "./turn-state.js";
+import { authorizeOperator, loadOperatorAuthPolicy } from "../../../shared/auth/operator.js";
 
 const emitUpdate = (
   onUpdate: AgentToolUpdateCallback<unknown> | undefined,
@@ -77,6 +78,7 @@ export function makeGatewayTurnPreviewTool(queue: TurnPatchQueueService) {
         Type.String({ description: "Optional JSON-encoded inline action" }),
       ),
       actor_id: Type.Optional(Type.String({ minLength: 1 })),
+      actor_token: Type.Optional(Type.String({ minLength: 1 })),
       allowed_actor_ids: Type.Optional(Type.Array(Type.String({ minLength: 1 }))),
       allow_primary_edit: Type.Optional(
         Type.Boolean({ description: "When false, route patch mode to fallback auxiliary" }),
@@ -97,6 +99,7 @@ export function makeGatewayTurnPreviewTool(queue: TurnPatchQueueService) {
         final_text?: string;
         inline_action?: string;
         actor_id?: string;
+        actor_token?: string;
         allowed_actor_ids?: string[];
         allow_primary_edit?: boolean;
         force_send?: boolean;
@@ -116,6 +119,7 @@ export function makeGatewayTurnPreviewTool(queue: TurnPatchQueueService) {
       const currentTurn = queue.getTurn(params.turn_id);
       const parsedAction =
         params.inline_action === undefined ? undefined : parseGatewayTurnAction(params.inline_action);
+      const policy = loadOperatorAuthPolicy("PI_GATEWAY", params.allowed_actor_ids ?? []);
 
       let actionSummary: string | undefined;
       let actionPhase: GatewayTurnPhase | undefined;
@@ -125,11 +129,15 @@ export function makeGatewayTurnPreviewTool(queue: TurnPatchQueueService) {
       }
 
       if (parsedAction !== undefined) {
+        const policyAuth = authorizeOperator(policy, params.actor_id, params.actor_token);
+        if (!policyAuth.ok) {
+          actionSummary = `Action rejected: ${policyAuth.reason ?? "unauthorized"} [trace:${traceId}]`;
+        } else {
         const dispatch = dispatchGatewayTurnAction(parsedAction, {
           traceId,
           nowMs: now,
           actorId: params.actor_id,
-          allowedActorIds: params.allowed_actor_ids ?? [],
+          allowedActorIds: policy.allowedActorIds,
           activeTurnId: currentTurn?.turnId ?? params.turn_id,
           activeMessageId: currentTurn?.messageId,
           currentPhase: currentTurn?.phase ?? "queued",
@@ -140,6 +148,7 @@ export function makeGatewayTurnPreviewTool(queue: TurnPatchQueueService) {
           actionPhase = dispatch.nextPhase;
         } else {
           actionSummary = `Action rejected: ${dispatch.reason} [trace:${dispatch.traceId}]`;
+        }
         }
       }
 
