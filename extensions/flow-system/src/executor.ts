@@ -5,20 +5,85 @@ import { stageSkills, writeTempSkillFile, cleanupTempFile } from "./vfs.js";
 import type { FlowProfile } from "./types.js";
 import { SubprocessError, SkillLoadError } from "./types.js";
 
-// ── Pi JSON message type ──────────────────────────────────────────────────────
+// ── Toolset → pi CLI tool mapping ────────────────────────────────────────────
 
-interface PiMessageEnd {
-	type: "message_end";
+const TOOLSET_MAP: Record<string, readonly string[]> = {
+	terminal: ["bash"],
+	file: ["read", "write", "edit", "grep", "find", "ls"],
+	code_execution: ["read", "bash", "edit", "write", "grep", "find", "ls"],
+	// "web" and "browser" have no pi CLI equivalents — omitted (inherits default)
+};
+
+function resolveToolsets(toolsets: readonly string[]): string[] {
+	const tools = new Set<string>();
+	for (const ts of toolsets) {
+		const mapped = TOOLSET_MAP[ts];
+		if (mapped !== undefined) {
+			for (const t of mapped) tools.add(t);
+		}
+		// unknown toolset names are silently skipped — pi will use defaults
+	}
+	return Array.from(tools);
+}
+
+// ── Pi JSON message types ─────────────────────────────────────────────────────
+
+interface PiContentText {
+	type: "text";
 	text: string;
 }
 
-function isPiMessageEnd(v: unknown): v is PiMessageEnd {
-	return (
-		typeof v === "object" &&
-		v !== null &&
-		(v as Record<string, unknown>)["type"] === "message_end" &&
-		typeof (v as Record<string, unknown>)["text"] === "string"
-	);
+interface PiAgentEnd {
+	type: "agent_end";
+	messages: ReadonlyArray<{
+		role: string;
+		content: ReadonlyArray<PiContentText | { type: string }>;
+	}>;
+}
+
+/**
+ * Extracts the final assistant text from a pi JSON event.
+ *
+ * Pi emits several event types; the most reliable for final output is `agent_end`
+ * which contains the full conversation. We take the last assistant message's text.
+ * Falls back to `message_end` events with assistant role.
+ */
+function extractText(v: unknown): string | undefined {
+	if (typeof v !== "object" || v === null) return undefined;
+	const obj = v as Record<string, unknown>;
+
+	// agent_end — carries the full message history; last assistant text wins
+	if (obj["type"] === "agent_end") {
+		const messages = (obj as unknown as PiAgentEnd).messages;
+		if (!Array.isArray(messages)) return undefined;
+		for (let i = messages.length - 1; i >= 0; i--) {
+			const msg = messages[i];
+			if (msg?.role !== "assistant") continue;
+			if (!msg.content) continue;
+			const contentArr: ReadonlyArray<PiContentText | { type: string }> = msg.content;
+			const texts = contentArr
+				.filter((c): c is PiContentText => c.type === "text" && "text" in c)
+				.map((c) => c.text)
+				.filter(Boolean);
+			if (texts.length > 0) return texts.join("\n");
+		}
+		return undefined;
+	}
+
+	// message_end — has nested message.content[]
+	if (obj["type"] === "message_end") {
+		const message = obj["message"] as Record<string, unknown> | undefined;
+		if (message?.["role"] !== "assistant") return undefined;
+		const content = message["content"] as ReadonlyArray<Record<string, unknown>> | undefined;
+		if (!Array.isArray(content)) return undefined;
+		const texts = content
+			.filter((c) => c["type"] === "text" && typeof c["text"] === "string")
+			.map((c) => c["text"] as string)
+			.filter(Boolean);
+		return texts.length > 0 ? texts.join("\n") : undefined;
+	}
+
+	return undefined;
 }
 
 // ── Subprocess runner ─────────────────────────────────────────────────────────
@@ -41,15 +106,12 @@ export const runSubprocess = (
 		const args: string[] = ["--mode", "json", "-p", "--no-session"];
 
 		// Thinking level
-		const level = profile.reasoning_level === "xhigh" ? "xhigh" : profile.reasoning_level;
-		args.push("--thinking-level", level);
+		args.push("--thinking", profile.reasoning_level);
 
-		// Max iterations
-		args.push("--max-iterations", String(profile.max_iterations));
-
-		// Toolsets
-		if (profile.toolsets.length > 0) {
-			args.push("--tools", profile.toolsets.join(","));
+		// Toolsets — map abstract names to pi CLI tool names
+		const tools = resolveToolsets(profile.toolsets);
+		if (tools.length > 0) {
+			args.push("--tools", tools.join(","));
 		}
 
 		// System prompt prefix via skill file
@@ -80,7 +142,8 @@ export const runSubprocess = (
 		rl.on("line", (line) => {
 			try {
 				const msg: unknown = JSON.parse(line);
-				if (isPiMessageEnd(msg)) lastText = msg.text;
+				const text = extractText(msg);
+				if (text !== undefined) lastText = text;
 			} catch {
 				// non-JSON stdout lines — skip
 			}

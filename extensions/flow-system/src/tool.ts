@@ -4,6 +4,21 @@ import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
 import type { FlowQueueService } from "./queue.js";
 import { getProfile } from "./profiles.js";
 import { executeFlow } from "./executor.js";
+import { SubprocessError, SkillLoadError } from "./types.js";
+
+function formatFlowError(cause: Cause.Cause<unknown>): string {
+	const failures = Cause.failures(cause);
+	for (const err of failures) {
+		if (err instanceof SubprocessError) {
+			const stderr = err.stderr.trim();
+			return `Subprocess exited with code ${err.exitCode}${stderr ? `\n${stderr}` : ""}`;
+		}
+		if (err instanceof SkillLoadError) {
+			return `Failed to load skill "${err.path}": ${err.reason}`;
+		}
+	}
+	return Cause.pretty(cause);
+}
 
 // ── flow_run tool ─────────────────────────────────────────────────────────────
 
@@ -84,7 +99,7 @@ export function makeFlowTool(queue: FlowQueueService) {
 						await Effect.runPromise(
 							queue.setStatus(job.id, "failed", {
 								finishedAt: Date.now(),
-								error: Cause.pretty(exit.cause),
+								error: formatFlowError(exit.cause),
 							}),
 						);
 					}
@@ -120,7 +135,7 @@ export function makeFlowTool(queue: FlowQueueService) {
 					details: undefined,
 				};
 			} else {
-				const errText = Cause.pretty(exit.cause);
+				const errText = formatFlowError(exit.cause);
 				await Effect.runPromise(
 					queue.setStatus(job.id, "failed", {
 						finishedAt: Date.now(),
