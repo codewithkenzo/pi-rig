@@ -25,11 +25,20 @@ const formatCount = (jobs: readonly FlowJob[], status: FlowJob["status"]): numbe
 const truncate = (text: string, width: number): string =>
 	text.length <= width ? text : `${text.slice(0, Math.max(0, width - 1))}…`;
 
+const formatChain = (queue: FlowQueue, limit = 3): string => {
+	const active = queue.jobs
+		.filter((job) => job.status === "running" || job.status === "pending")
+		.slice(0, limit)
+		.map((job) => `${job.status === "running" ? "▶" : "○"}${job.profile}`);
+	return active.length === 0 ? "idle" : active.join(" → ");
+};
+
 const summarizeCounts = (queue: FlowQueue): string => {
 	const running = formatCount(queue.jobs, "running");
 	const pending = formatCount(queue.jobs, "pending");
 	const failed = formatCount(queue.jobs, "failed");
-	return `run ${running} · wait ${pending}${failed > 0 ? ` · fail ${failed}` : ""}`;
+	const chain = formatChain(queue);
+	return `run ${running} · wait ${pending}${failed > 0 ? ` · fail ${failed}` : ""} · ${chain}`;
 };
 
 export const flowStatusText = (queue: FlowQueue): string | undefined =>
@@ -64,23 +73,28 @@ export const renderFlowWidgetLines = (
 		engine.fg("muted", `⊘ ${formatCount(queue.jobs, "cancelled")}`),
 	].join("  ");
 
-	const lines = [
-		`╭─ ${spinner} ${bold(title)}`,
-		`│ ${countsLine}`,
-	];
+	const lines = [`${spinner} ${bold(title)} · ${countsLine}`];
 
 	if (activeJobs.length === 0) {
-		lines.push(`│ ${dim("Queue idle · /flow profiles · /flow status")}`);
+		lines.push(dim("chain idle"));
 	} else {
-		for (const job of activeJobs.slice(0, 3)) {
-			const icon = job.status === "running" ? engine.fg("active", "▶") : engine.fg("warning", "○");
-			const label = truncate(`${job.profile} · ${job.task}`, 72);
-			lines.push(`│ ${icon} ${label}`);
-		}
-		lines.push(`│ ${dim("/flow status · /flow cancel <id> · /flow profiles")}`);
+		const chain = activeJobs
+			.slice(0, 3)
+			.map((job) => `${job.status === "running" ? "▶" : "○"}${job.profile}`)
+			.join(" → ");
+		lines.push(`chain ${chain}`);
+		lines.push(
+			truncate(
+				activeJobs
+					.slice(0, 1)
+					.map((job) => `${job.profile}: ${job.task}`)
+					.join(""),
+				72,
+			),
+		);
 	}
 
-	lines.push("╰─");
+	lines.push(dim("/flow run <profile> -- <task> · /flow status · alt+shift+f"));
 	return lines;
 };
 

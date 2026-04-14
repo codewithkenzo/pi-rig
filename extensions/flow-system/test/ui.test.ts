@@ -22,6 +22,8 @@ describe("flow UI helpers", () => {
 
 		expect(lines.join("\n")).toContain("coder");
 		expect(lines.join("\n")).toContain("/flow status");
+		expect(lines.join("\n")).toContain("/flow run <profile> -- <task>");
+		expect(lines.join("\n")).toContain("chain");
 	});
 
 	it("formats a compact status line", () => {
@@ -35,5 +37,6 @@ describe("flow UI helpers", () => {
 
 		expect(status).toContain("run 1");
 		expect(status).toContain("wait 1");
+		expect(status).toContain("▶explore");
 	});
 });
