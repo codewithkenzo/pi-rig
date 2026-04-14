@@ -45,42 +45,35 @@ export const makeQueue = (): Effect.Effect<FlowQueueService> =>
 			Ref.get(ref).pipe(Effect.map((s) => s.jobs));
 
 		const cancel = (id: string): Effect.Effect<void, JobNotFoundError> =>
-			Effect.gen(function* () {
-				const state = yield* Ref.get(ref);
-				const job = state.jobs.find((j) => j.id === id);
+			Ref.modify(ref, (s): readonly [Effect.Effect<void, JobNotFoundError>, FlowQueue] => {
+				const job = s.jobs.find((j) => j.id === id);
 				if (job === undefined) {
-					yield* Effect.fail(new JobNotFoundError({ id }));
-					return;
+					return [Effect.fail(new JobNotFoundError({ id })), s] as const;
 				}
 				if (job.status === "pending" || job.status === "running") {
-					yield* Ref.update(ref, (s) => ({
-						...s,
-						jobs: s.jobs.map((j) =>
-							j.id === id ? { ...j, status: "cancelled" as FlowJobStatus } : j,
-						),
-					}));
+					return [
+						Effect.void,
+						{ ...s, jobs: s.jobs.map((j) => j.id === id ? { ...j, status: "cancelled" as FlowJobStatus } : j) },
+					] as const;
 				}
-			});
+				return [Effect.void, s] as const;
+			}).pipe(Effect.flatten);
 
 		const setStatus = (
 			id: string,
 			status: FlowJobStatus,
 			extras?: Partial<FlowJob>,
 		): Effect.Effect<void, JobNotFoundError> =>
-			Effect.gen(function* () {
-				const state = yield* Ref.get(ref);
-				const exists = state.jobs.some((j) => j.id === id);
+			Ref.modify(ref, (s): readonly [Effect.Effect<void, JobNotFoundError>, FlowQueue] => {
+				const exists = s.jobs.some((j) => j.id === id);
 				if (!exists) {
-					yield* Effect.fail(new JobNotFoundError({ id }));
-					return;
+					return [Effect.fail(new JobNotFoundError({ id })), s] as const;
 				}
-				yield* Ref.update(ref, (s) => ({
-					...s,
-					jobs: s.jobs.map((j) =>
-						j.id === id ? { ...j, ...(extras ?? {}), status } : j,
-					),
-				}));
-			});
+				return [
+					Effect.void,
+					{ ...s, jobs: s.jobs.map((j) => j.id === id ? { ...j, ...(extras ?? {}), status } : j) },
+				] as const;
+			}).pipe(Effect.flatten);
 
 		const snapshot = (): Effect.Effect<FlowQueue> => Ref.get(ref);
 
