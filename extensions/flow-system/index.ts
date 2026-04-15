@@ -3,7 +3,6 @@ import { homedir } from "node:os";
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, ExtensionContext, SessionStartEvent } from "@mariozechner/pi-coding-agent";
-import type { CustomEntry } from "@mariozechner/pi-coding-agent";
 import { Effect } from "effect";
 import { makeQueue } from "./src/queue.js";
 import { makeFlowTool } from "./src/tool.js";
@@ -18,9 +17,11 @@ import {
 } from "./src/types.js";
 import { Value } from "@sinclair/typebox/value";
 import { attachFlowUi } from "./src/ui.js";
+import { findLatestCustomEntry } from "../../shared/session.js";
 
 const baseDir = dirname(fileURLToPath(import.meta.url));
 const FLOW_SYSTEM_CONFIG_FILE = "flow-system.json";
+const initializedApis = new WeakSet<ExtensionAPI>();
 
 const loadFlowSystemConfig = (): FlowSystemConfig => {
 	const cwd = typeof process.cwd === "function" ? process.cwd() : baseDir;
@@ -50,6 +51,12 @@ const loadFlowSystemConfig = (): FlowSystemConfig => {
 };
 
 export default async function (pi: ExtensionAPI): Promise<void> {
+	if (initializedApis.has(pi)) {
+		console.warn("[flow-system] Extension already initialized for this API instance; skipping duplicate registration.");
+		return;
+	}
+	initializedApis.add(pi);
+
 	const queue = await Effect.runPromise(makeQueue(loadFlowSystemConfig()));
 	const skillDir = join(baseDir, "..", "skills", "flow-system");
 	let detachUi: (() => void) | undefined;
@@ -63,17 +70,15 @@ export default async function (pi: ExtensionAPI): Promise<void> {
 	registerFlowCommands(pi, queue);
 
 	pi.on("session_start", async (_event: SessionStartEvent, ctx: ExtensionContext) => {
-		const entries = ctx.sessionManager.getEntries();
-		const last = entries
-			.filter(
-				(e): e is CustomEntry<FlowStateEntry> =>
-					e.type === "custom" && e.customType === FLOW_ENTRY_TYPE,
-			)
-			.at(-1);
+		const last = findLatestCustomEntry(
+			ctx.sessionManager.getEntries(),
+			FLOW_ENTRY_TYPE,
+			(value): value is FlowStateEntry => Value.Check(FlowStateEntrySchema, value),
+		);
 
-		if (last?.data !== undefined && Value.Check(FlowStateEntrySchema, last.data)) {
+		if (last !== undefined) {
 			await Effect.runPromise(
-				queue.restoreFrom(last.data.jobs, { normalizeStaleActive: true, restoredAt: Date.now() }),
+				queue.restoreFrom(last.jobs, { normalizeStaleActive: true, restoredAt: Date.now() }),
 			);
 		}
 		detachUi?.();

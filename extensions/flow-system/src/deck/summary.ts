@@ -1,18 +1,15 @@
 import { basename } from "node:path";
 import type { ThemeEngine } from "../../../../shared/theme/engine.js";
 import type { Palette, ThemeConfig } from "../../../../shared/theme/types.js";
-import { stripAnsi } from "../../../../shared/ui/hud.js";
 import { breathe, withMotion, type AnimationState } from "../../../../shared/theme/animation.js";
 import type { FlowJob } from "../types.js";
 import { truncateToWidth } from "./layout.js";
+import { sanitizeFlowText } from "../sanitize.js";
 
-const CONTROL_RE = /[\x00-\x08\x0b-\x1f]/g;
-
-export const sanitize = (text: string): string =>
-	stripAnsi(text).replace(CONTROL_RE, "");
+export const sanitize = sanitizeFlowText;
 
 const pickContent = (job: FlowJob): string =>
-	sanitize(job.output ?? job.error ?? job.lastAssistantText ?? job.task);
+	sanitizeFlowText(job.output ?? job.error ?? job.lastAssistantText ?? job.task);
 
 const wrapLines = (content: string, innerWidth: number): string[] =>
 	content.split("\n").flatMap((line) => {

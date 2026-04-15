@@ -8,6 +8,7 @@ import type { FlowJob } from "./types.js";
 import { formatFlowError, isFlowCancelledCause } from "./errors.js";
 import { renderFlowBatchCall, renderFlowBatchResult, type FlowRenderDetails } from "./renderers.js";
 import { createFlowProgressTracker } from "./progress.js";
+import { createProfileMetaHandlers } from "./profile-meta.js";
 
 type ExecuteFlowFn = typeof executeFlow;
 
@@ -226,12 +227,12 @@ export function makeFlowBatchTool(queue: FlowQueueService, runFlow: ExecuteFlowF
 				}),
 			);
 
-	const cancelAll = (): void => {
-		for (const runtimeItem of runtimeItems) {
-			runtimeItem.controller.abort();
-			runFireAndForget(`cancel request for job ${runtimeItem.job.id}`, queue.cancel(runtimeItem.job.id));
-		}
-	};
+			const cancelAll = (): void => {
+				for (const runtimeItem of runtimeItems) {
+					runtimeItem.controller.abort();
+					runFireAndForget(`cancel request for job ${runtimeItem.job.id}`, queue.cancel(runtimeItem.job.id));
+				}
+			};
 			signal?.addEventListener("abort", cancelAll, { once: true });
 			if (signal?.aborted) {
 				cancelAll();
@@ -261,36 +262,20 @@ export function makeFlowBatchTool(queue: FlowQueueService, runFlow: ExecuteFlowF
 				}
 
 				const profile = profileExit.value;
-				const effectiveProfileMeta: { model?: string; agent?: string } = {
-					...(profile.model !== undefined && profile.model.trim().length > 0 ? { model: profile.model } : {}),
-					...(profile.agent !== undefined && profile.agent.trim().length > 0 ? { agent: profile.agent } : {}),
-				};
-				const profileMetaPatch = (): { model?: string; agent?: string } => ({
-					...(effectiveProfileMeta.model !== undefined ? { model: effectiveProfileMeta.model } : {}),
-					...(effectiveProfileMeta.agent !== undefined ? { agent: effectiveProfileMeta.agent } : {}),
-				});
-				const syncRunningMeta = (): void => {
+				const profileMeta = createProfileMetaHandlers(profile, (meta) => {
 					runFireAndForget(
 						`syncing profile metadata for job ${job.id}`,
 						queue.setStatus(job.id, "running", {
-							model: effectiveProfileMeta.model ?? "",
-							agent: effectiveProfileMeta.agent ?? "",
+							model: meta.model ?? "",
+							agent: meta.agent ?? "",
 						}),
 					);
-				};
-				const handleModelFallback = (): void => {
-					delete effectiveProfileMeta.model;
-					syncRunningMeta();
-				};
-				const handleAgentPromptUnavailable = (): void => {
-					delete effectiveProfileMeta.agent;
-					syncRunningMeta();
-				};
+				});
 				const tracker = createFlowProgressTracker();
 
 				await Effect.runPromise(
 					queue.setStatus(job.id, "running", {
-						...profileMetaPatch(),
+						...profileMeta.metaPatch(),
 						startedAt: Date.now(),
 						toolCount: tracker.toolCount,
 						lastProgress: "starting",
@@ -321,8 +306,8 @@ export function makeFlowBatchTool(queue: FlowQueueService, runFlow: ExecuteFlowF
 						cwd: item.cwd,
 						onProgress,
 						signal: controller.signal,
-						onModelFallback: handleModelFallback,
-						onAgentPromptUnavailable: handleAgentPromptUnavailable,
+						onModelFallback: profileMeta.onModelFallback,
+						onAgentPromptUnavailable: profileMeta.onAgentPromptUnavailable,
 					} satisfies ExecuteOptions),
 				);
 
@@ -334,7 +319,7 @@ export function makeFlowBatchTool(queue: FlowQueueService, runFlow: ExecuteFlowF
 						job.id,
 						"done",
 						{
-							...profileMetaPatch(),
+							...profileMeta.metaPatch(),
 							finishedAt,
 							output: exit.value,
 							toolCount: tracker.completedToolCount,
@@ -369,7 +354,7 @@ export function makeFlowBatchTool(queue: FlowQueueService, runFlow: ExecuteFlowF
 					job.id,
 					"failed",
 					{
-						...profileMetaPatch(),
+						...profileMeta.metaPatch(),
 						finishedAt: Date.now(),
 						error: errText,
 						toolCount: tracker.toolCount,

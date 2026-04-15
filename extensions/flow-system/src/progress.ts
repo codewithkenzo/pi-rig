@@ -15,6 +15,7 @@ export interface ProgressUpdate {
 	summary: string;
 	extras: {
 		toolCount: number;
+		recentTools?: string[];
 		lastProgress: string;
 		lastAssistantText?: string;
 	};
@@ -22,6 +23,8 @@ export interface ProgressUpdate {
 
 export interface FlowProgressTracker {
 	readonly toolCount: number;
+	readonly completedToolCount: number;
+	readonly recentTools: string[];
 	apply(event: FlowProgressEvent): ProgressUpdate | undefined;
 	/** Flush any pending (throttled) assistant text that was never emitted. Returns undefined if nothing was pending. */
 	flush(): ProgressUpdate | undefined;
@@ -46,9 +49,14 @@ export const createFlowProgressTracker = (options?: ProgressTrackerOptions): Flo
 	const assistantTextThrottleMs = options?.assistantTextThrottleMs ?? ASSISTANT_TEXT_THROTTLE_MS;
 
 	let toolCount = 0;
+	let completedToolCount = 0;
+	let recentTools: string[] = [];
 	let lastAssistantPublishedText: string | undefined;
 	let lastAssistantEmitAt: number | undefined;
 	let pendingAssistantText: string | undefined;
+	const pushRecentTool = (label: string): void => {
+		recentTools = [...recentTools, label].slice(-6);
+	};
 
 	const fromProgress = (detail: string): ProgressUpdate | undefined => {
 		const clipped = clipText(detail, progressTextMaxChars);
@@ -59,6 +67,7 @@ export const createFlowProgressTracker = (options?: ProgressTrackerOptions): Flo
 			summary: clipped,
 			extras: {
 				toolCount,
+				...(recentTools.length > 0 ? { recentTools } : {}),
 				lastProgress: clipped,
 			},
 		};
@@ -85,6 +94,7 @@ export const createFlowProgressTracker = (options?: ProgressTrackerOptions): Flo
 			summary: toPublish,
 			extras: {
 				toolCount,
+				...(recentTools.length > 0 ? { recentTools } : {}),
 				lastProgress: toPublish,
 				lastAssistantText: toPublish,
 			},
@@ -95,12 +105,21 @@ export const createFlowProgressTracker = (options?: ProgressTrackerOptions): Flo
 		get toolCount() {
 			return toolCount;
 		},
+		get completedToolCount() {
+			return completedToolCount;
+		},
+		get recentTools() {
+			return recentTools;
+		},
 		apply(event) {
 			if (event._tag === "tool_start") {
 				toolCount += 1;
+				pushRecentTool(`${event.toolName}…`);
 				return fromProgress(event.detail);
 			}
 			if (event._tag === "tool_end") {
+				completedToolCount += 1;
+				pushRecentTool(`${event.toolName} done`);
 				return fromProgress(event.detail);
 			}
 			return fromAssistant(event.detail);
@@ -114,7 +133,12 @@ export const createFlowProgressTracker = (options?: ProgressTrackerOptions): Flo
 			pendingAssistantText = undefined;
 			return {
 				summary: toPublish,
-				extras: { toolCount, lastProgress: toPublish, lastAssistantText: toPublish },
+				extras: {
+					toolCount,
+					...(recentTools.length > 0 ? { recentTools } : {}),
+					lastProgress: toPublish,
+					lastAssistantText: toPublish,
+				},
 			};
 		},
 	};

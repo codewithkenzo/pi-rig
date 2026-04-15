@@ -62,6 +62,8 @@ Notes:
 | Extension | Path | Status |
 |-----------|------|--------|
 | flow-system | `extensions/flow-system/` | Implemented (tested) |
+| gateway-messaging | `extensions/gateway-messaging/` | Implemented (turn-state + adapter pipeline) |
+| notify-cron | `extensions/notify-cron/` | Implemented (scheduler + dispatch validation) |
 | theme-switcher | `extensions/theme-switcher/` | Implemented (tools, commands, lifecycle hooks) |
 
 ### flow-system
@@ -105,10 +107,9 @@ extensions/flow-system/
 - Feed sanitization: `stripAnsi() + FEED_CONTROL_RE` on ingest, not at render time
 - Overlay init failures fall back to text via `showFlowManager()` try/catch
 
-**Known issues** (from Codex review 2026-04-14):
-- TOCTOU race in `queue.ts` cancel/setStatus — should use `Ref.modify` for atomicity
-- Background job error path in `tool.ts` could produce unhandled rejection if `setStatus` fails
-- No SIGKILL escalation for stuck subprocesses (minor)
+**Known issues** (updated 2026-04-15):
+- Queue `maxConcurrent` now controls queue state, but real-world fairness still depends on tool-side execution pacing for long-running jobs.
+- Re-registration safety is API-instance scoped (WeakSet guard); if host semantics change, revisit unload/teardown behavior.
 
 ---
 

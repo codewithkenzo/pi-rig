@@ -3,7 +3,7 @@ import { Value } from "@sinclair/typebox/value";
 import { Effect } from "effect";
 import { makeQueue } from "../src/queue.js";
 import { makeFlowBatchTool } from "../src/batch-tool.js";
-import { FlowCancelledError } from "../src/types.js";
+import { FlowCancelledError, SubprocessError } from "../src/types.js";
 import type { ExecuteOptions } from "../src/executor.js";
 
 describe("flow_batch cancellation", () => {
@@ -149,5 +149,126 @@ describe("flow_batch cancellation", () => {
 			{},
 		);
 		expect(result.details).toMatchObject({ status: "done", successCount: 1 });
+	});
+
+	it("parallel mode runs all-success batches", async () => {
+		const queue = await Effect.runPromise(makeQueue());
+		const tool = makeFlowBatchTool(
+			queue,
+			({ task }: ExecuteOptions) => Effect.succeed(`done:${task}`),
+		);
+
+		const result = await tool.execute(
+			"batch-parallel-success",
+			{
+				items: [
+					{ profile: "explore", task: "a" },
+					{ profile: "explore", task: "b" },
+					{ profile: "explore", task: "c" },
+				],
+				parallel: true,
+			},
+			undefined,
+			undefined,
+			{},
+		);
+
+		expect(result.details).toMatchObject({ status: "done", successCount: 3, failCount: 0, cancelCount: 0 });
+	});
+
+	it("parallel mode reports mixed success and failure", async () => {
+		const queue = await Effect.runPromise(makeQueue());
+		const tool = makeFlowBatchTool(queue, ({ task }: ExecuteOptions) =>
+			task.includes("fail")
+				? Effect.fail(new SubprocessError({ exitCode: 1, stderr: "boom" }))
+				: Effect.succeed(`done:${task}`),
+		);
+
+		const result = await tool.execute(
+			"batch-parallel-mixed",
+			{
+				items: [
+					{ profile: "explore", task: "ok-1" },
+					{ profile: "explore", task: "fail-2" },
+					{ profile: "explore", task: "ok-3" },
+				],
+				parallel: true,
+			},
+			undefined,
+			undefined,
+			{},
+		);
+
+		expect(result.details).toMatchObject({ status: "failed", successCount: 2, failCount: 1, cancelCount: 0 });
+	});
+
+	it("parallel mode respects worker concurrency limit (4)", async () => {
+		const queue = await Effect.runPromise(makeQueue());
+		let active = 0;
+		let maxActive = 0;
+		const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+		const tool = makeFlowBatchTool(queue, () =>
+			Effect.promise(async () => {
+				active += 1;
+				maxActive = Math.max(maxActive, active);
+				await sleep(25);
+				active -= 1;
+				return "ok";
+			}),
+		);
+
+		await tool.execute(
+			"batch-parallel-concurrency",
+			{
+				items: Array.from({ length: 10 }, (_, index) => ({
+					profile: "explore",
+					task: `task-${index}`,
+				})),
+				parallel: true,
+			},
+			undefined,
+			undefined,
+			{},
+		);
+
+		expect(maxActive).toBeLessThanOrEqual(4);
+	});
+
+	it("parallel mode handles cancellation mid-batch", async () => {
+		const queue = await Effect.runPromise(makeQueue());
+		const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+		const tool = makeFlowBatchTool(queue, ({ signal }: ExecuteOptions) =>
+			Effect.promise(async () => {
+				for (let i = 0; i < 20; i += 1) {
+					if (signal?.aborted) {
+						throw new FlowCancelledError({ reason: "Flow cancelled." });
+					}
+					await sleep(5);
+				}
+				return "ok";
+			}),
+		);
+
+		const controller = new AbortController();
+		const execution = tool.execute(
+			"batch-parallel-cancel",
+			{
+				items: Array.from({ length: 6 }, (_, index) => ({
+					profile: "explore",
+					task: `task-${index}`,
+				})),
+				parallel: true,
+			},
+			controller.signal,
+			undefined,
+			{},
+		);
+
+		await sleep(20);
+		controller.abort();
+		const result = await execution;
+		expect(result.details?.status).toBe("cancelled");
 	});
 });

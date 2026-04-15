@@ -1,3 +1,6 @@
+import * as fs from "node:fs";
+import * as path from "node:path";
+import * as os from "node:os";
 import type { Theme } from "@mariozechner/pi-coding-agent";
 import { Effect } from "effect";
 import { BUILTIN_PALETTES, PALETTE_MAP, getPalette } from "../../../shared/theme/index.js";
@@ -58,7 +61,7 @@ export const resolveThemeName = (
 		return fallbackThemeForVariant(normalized, currentActive);
 	}
 
-	return currentActive;
+	return normalized;
 };
 
 const getThemeNames = (): string[] =>
@@ -68,6 +71,42 @@ const getThemeNames = (): string[] =>
 			...PALETTE_MAP.keys(),
 		]),
 	);
+
+const themeSettingsPath = (): string =>
+	process.env.PI_THEME_SETTINGS_PATH ?? path.join(os.homedir(), ".pi", "agent", "settings.json");
+
+export const loadThemePreference = (): string | undefined => {
+	try {
+		const parsed = JSON.parse(fs.readFileSync(themeSettingsPath(), "utf8")) as unknown;
+		if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+			return undefined;
+		}
+		const theme = (parsed as { theme?: unknown }).theme;
+		return typeof theme === "string" && theme.trim().length > 0 ? theme.trim() : undefined;
+	} catch {
+		return undefined;
+	}
+};
+
+export const saveThemePreference = (theme: string): void => {
+	const normalized = theme.trim();
+	if (normalized.length === 0) {
+		return;
+	}
+	const settingsFile = themeSettingsPath();
+	const settingsDir = path.dirname(settingsFile);
+	let current: Record<string, unknown> = {};
+	try {
+		const parsed = JSON.parse(fs.readFileSync(settingsFile, "utf8")) as unknown;
+		if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+			current = parsed as Record<string, unknown>;
+		}
+	} catch {
+		// default empty object
+	}
+	fs.mkdirSync(settingsDir, { recursive: true });
+	fs.writeFileSync(settingsFile, JSON.stringify({ ...current, theme: normalized }, null, 2), "utf8");
+};
 
 export interface ThemeState {
 	getActive(): string;
@@ -243,6 +282,9 @@ export const resolveThemeTarget = (
 	if (installed !== undefined) {
 		return name;
 	}
+	if (!isKnownThemeName(name)) {
+		return name;
+	}
 	const cached = themeCache.get(name);
 	if (cached !== undefined) {
 		return cached;
@@ -256,7 +298,7 @@ export const applyTheme = (
 	ctx: ThemeSwitcherContext,
 	name: string,
 	state: ThemeState,
-	options?: { emitChangedEvent?: boolean },
+	options?: { emitChangedEvent?: boolean; persistPreference?: boolean },
 ): Effect.Effect<void, ThemeNotFoundError | ThemeLoadError> =>
 	Effect.gen(function* () {
 		syncThemeStateFromUi(state, ctx.ui.theme.name);
@@ -276,6 +318,9 @@ export const applyTheme = (
 		}
 
 		state.setActive(name);
+		if (options?.persistPreference !== false) {
+			saveThemePreference(name);
+		}
 		if (options?.emitChangedEvent !== false) {
 			ctx.events?.emit("theme:changed", { theme: name });
 		}

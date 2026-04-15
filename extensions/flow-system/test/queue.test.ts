@@ -347,4 +347,45 @@ describe("FlowQueueService", () => {
 		expect(q1Jobs).toHaveLength(1);
 		expect(q2Jobs).toHaveLength(0);
 	});
+
+	it("survives high-contention cancel/setStatus races on one job", async () => {
+		const queue = await Effect.runPromise(makeQueue());
+		const job = await Effect.runPromise(queue.enqueue("debug", "race-target"));
+
+		await Promise.all(
+			Array.from({ length: 120 }, (_, index) =>
+				index % 2 === 0
+					? Effect.runPromise(queue.cancel(job.id).pipe(Effect.result))
+					: Effect.runPromise(
+							queue
+								.setStatus(job.id, "running", { lastProgress: `tick-${index}` })
+								.pipe(Effect.result),
+						),
+			),
+		);
+
+		const final = await Effect.runPromise(queue.getAll());
+		const target = final.find((entry) => entry.id === job.id);
+		expect(target).toBeDefined();
+		expect(["running", "cancelled", "failed", "done", "pending"]).toContain(target?.status ?? "");
+	});
+
+	it("handles rapid enqueue + terminal cycles without losing bounded state", async () => {
+		const queue = await Effect.runPromise(makeQueue({ maxConcurrent: 4 }));
+		const rounds = 120;
+
+		for (let index = 0; index < rounds; index += 1) {
+			const job = await Effect.runPromise(queue.enqueue("explore", `burst-${index}`));
+			await Effect.runPromise(
+				queue.setStatus(job.id, index % 3 === 0 ? "failed" : "done", {
+					finishedAt: Date.now(),
+					output: `out-${index}`,
+				}),
+			);
+		}
+
+		const snapshot = await Effect.runPromise(queue.snapshot());
+		expect(snapshot.jobs.length).toBeLessThanOrEqual(200);
+		expect(snapshot.jobs.at(-1)?.task ?? "").toBe("burst-119");
+	});
 });

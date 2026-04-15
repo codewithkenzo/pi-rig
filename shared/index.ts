@@ -10,5 +10,6 @@ export * from "./config.js";
 export * from "./secrets.js";
 export * from "./subprocess.js";
 export * from "./storage.js";
+export * from "./session.js";
 export * from "./theme/index.js";
 export * from "./auth/operator.js";

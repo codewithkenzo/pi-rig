@@ -7,6 +7,7 @@ import { executeFlow, type ExecuteOptions, type FlowProgressEvent } from "./exec
 import { formatFlowError, isFlowCancelledCause } from "./errors.js";
 import { renderFlowRunCall, renderFlowRunResult, type FlowRenderDetails } from "./renderers.js";
 import { createFlowProgressTracker } from "./progress.js";
+import { createProfileMetaHandlers } from "./profile-meta.js";
 
 type ExecuteFlowFn = typeof executeFlow;
 
@@ -201,32 +202,16 @@ export function makeFlowTool(queue: FlowQueueService, runFlow: ExecuteFlowFn = e
 			}
 
 			const profile = profileExit.value;
-			const effectiveProfileMeta: { model?: string; agent?: string } = {
-				...(profile.model !== undefined && profile.model.trim().length > 0 ? { model: profile.model } : {}),
-				...(profile.agent !== undefined && profile.agent.trim().length > 0 ? { agent: profile.agent } : {}),
-			};
-			const profileMetaPatch = (): { model?: string; agent?: string } => ({
-				...(effectiveProfileMeta.model !== undefined ? { model: effectiveProfileMeta.model } : {}),
-				...(effectiveProfileMeta.agent !== undefined ? { agent: effectiveProfileMeta.agent } : {}),
-			});
 			const job = await Effect.runPromise(queue.enqueue(profileName, task, cwd));
-			const syncRunningMeta = (): void => {
+			const profileMeta = createProfileMetaHandlers(profile, (meta) => {
 				runFireAndForget(
 					`syncing profile metadata for job ${job.id}`,
 					queue.setStatus(job.id, "running", {
-						model: effectiveProfileMeta.model ?? "",
-						agent: effectiveProfileMeta.agent ?? "",
+						model: meta.model ?? "",
+						agent: meta.agent ?? "",
 					}),
 				);
-			};
-			const handleModelFallback = (): void => {
-				delete effectiveProfileMeta.model;
-				syncRunningMeta();
-			};
-			const handleAgentPromptUnavailable = (): void => {
-				delete effectiveProfileMeta.agent;
-				syncRunningMeta();
-			};
+			});
 			const jobController = new AbortController();
 			await Effect.runPromise(queue.bindAbort(job.id, () => jobController.abort()));
 			if (signal?.aborted) {
@@ -255,7 +240,7 @@ export function makeFlowTool(queue: FlowQueueService, runFlow: ExecuteFlowFn = e
 					try {
 						await Effect.runPromise(
 							queue.setStatus(job.id, "running", {
-								...profileMetaPatch(),
+								...profileMeta.metaPatch(),
 								startedAt,
 								toolCount: tracker.toolCount,
 								lastProgress: "starting",
@@ -275,15 +260,15 @@ export function makeFlowTool(queue: FlowQueueService, runFlow: ExecuteFlowFn = e
 								cwd,
 								onProgress,
 								signal: jobController.signal,
-								onModelFallback: handleModelFallback,
-								onAgentPromptUnavailable: handleAgentPromptUnavailable,
+								onModelFallback: profileMeta.onModelFallback,
+								onAgentPromptUnavailable: profileMeta.onAgentPromptUnavailable,
 							} satisfies ExecuteOptions),
 						);
 						if (Exit.isSuccess(exit)) {
 							const finishedAt = Date.now();
 							const flushed = tracker.flush();
 							await setTerminalStatus(queue, job.id, "done", {
-								...profileMetaPatch(),
+								...profileMeta.metaPatch(),
 								finishedAt,
 								output: exit.value,
 								toolCount: tracker.completedToolCount,
@@ -301,7 +286,7 @@ export function makeFlowTool(queue: FlowQueueService, runFlow: ExecuteFlowFn = e
 						} else {
 							const finishedAt = Date.now();
 							await setTerminalStatus(queue, job.id, "failed", {
-								...profileMetaPatch(),
+								...profileMeta.metaPatch(),
 								finishedAt,
 								error: formatFlowError(exit.cause),
 								toolCount: tracker.toolCount,
@@ -317,7 +302,7 @@ export function makeFlowTool(queue: FlowQueueService, runFlow: ExecuteFlowFn = e
 									await markCancelled(queue, job.id, tracker.toolCount, tracker.recentTools);
 								} else {
 									await setTerminalStatus(queue, job.id, "failed", {
-										...profileMetaPatch(),
+										...profileMeta.metaPatch(),
 										finishedAt: Date.now(),
 										error: errorText,
 										toolCount: tracker.toolCount,
@@ -371,7 +356,7 @@ export function makeFlowTool(queue: FlowQueueService, runFlow: ExecuteFlowFn = e
 			try {
 				await Effect.runPromise(
 					queue.setStatus(job.id, "running", {
-						...profileMetaPatch(),
+						...profileMeta.metaPatch(),
 						startedAt,
 						toolCount: tracker.toolCount,
 						lastProgress: "starting",
@@ -406,8 +391,8 @@ export function makeFlowTool(queue: FlowQueueService, runFlow: ExecuteFlowFn = e
 						cwd,
 						onProgress,
 						signal: jobController.signal,
-						onModelFallback: handleModelFallback,
-						onAgentPromptUnavailable: handleAgentPromptUnavailable,
+						onModelFallback: profileMeta.onModelFallback,
+						onAgentPromptUnavailable: profileMeta.onAgentPromptUnavailable,
 					} satisfies ExecuteOptions),
 				);
 
@@ -415,7 +400,7 @@ export function makeFlowTool(queue: FlowQueueService, runFlow: ExecuteFlowFn = e
 					const finishedAt = Date.now();
 					const flushed = tracker.flush();
 					await setTerminalStatus(queue, job.id, "done", {
-						...profileMetaPatch(),
+						...profileMeta.metaPatch(),
 						finishedAt,
 						output: exit.value,
 						toolCount: tracker.completedToolCount,
@@ -446,7 +431,7 @@ export function makeFlowTool(queue: FlowQueueService, runFlow: ExecuteFlowFn = e
 				const errText = formatFlowError(exit.cause);
 				const finishedAt = Date.now();
 				await setTerminalStatus(queue, job.id, "failed", {
-					...profileMetaPatch(),
+					...profileMeta.metaPatch(),
 					finishedAt,
 					error: errText,
 					toolCount: tracker.toolCount,
