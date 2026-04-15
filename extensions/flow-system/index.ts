@@ -7,8 +7,9 @@ import { makeQueue } from "./src/queue.js";
 import { makeFlowTool } from "./src/tool.js";
 import { makeFlowBatchTool } from "./src/batch-tool.js";
 import { registerFlowCommands } from "./src/commands.js";
-import { FLOW_ENTRY_TYPE } from "./src/types.js";
+import { FLOW_ENTRY_TYPE, FlowStateEntrySchema } from "./src/types.js";
 import type { FlowStateEntry } from "./src/types.js";
+import { Value } from "@sinclair/typebox/value";
 import { attachFlowUi } from "./src/ui.js";
 
 const baseDir = dirname(fileURLToPath(import.meta.url));
@@ -35,7 +36,7 @@ export default async function (pi: ExtensionAPI): Promise<void> {
 			)
 			.at(-1);
 
-		if (last?.data !== undefined) {
+		if (last?.data !== undefined && Value.Check(FlowStateEntrySchema, last.data)) {
 			await Effect.runPromise(
 				queue.restoreFrom(last.data.jobs, { normalizeStaleActive: true, restoredAt: Date.now() }),
 			);
@@ -48,7 +49,9 @@ export default async function (pi: ExtensionAPI): Promise<void> {
 
 	pi.on("agent_end", async (_event, _ctx: ExtensionContext) => {
 		const snap = await Effect.runPromise(queue.snapshot());
-		pi.appendEntry(FLOW_ENTRY_TYPE, { jobs: snap.jobs } satisfies FlowStateEntry);
+		// Persist only the most recent 100 jobs to keep session state bounded.
+		const persistJobs = snap.jobs.slice(-100);
+		pi.appendEntry(FLOW_ENTRY_TYPE, { jobs: persistJobs } satisfies FlowStateEntry);
 	});
 
 	pi.on("session_shutdown", async () => {

@@ -10,6 +10,13 @@ import { showFlowDeck } from "./deck/index.js";
 
 type ExecuteFlowFn = typeof executeFlow;
 
+// Strip ANSI, OSC, and C0 control chars from job-derived text before display in notifications.
+const OSC_CMD_RE = /\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g;
+const ANSI_CMD_RE = /\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g;
+const CONTROL_CMD_RE = /[\x00-\x08\x0b-\x1f]/g;
+const sanitize = (text: string): string =>
+	text.replace(OSC_CMD_RE, "").replace(ANSI_CMD_RE, "").replace(CONTROL_CMD_RE, "");
+
 const C = {
 	bold: (s: string) => `\x1b[1m${s}\x1b[22m`,
 	dim: (s: string) => `\x1b[2m${s}\x1b[22m`,
@@ -102,10 +109,12 @@ function formatJob(job: FlowJob): string {
 	const color = STATUS_COLOR[job.status];
 	const icon = color(STATUS_ICON[job.status] ?? "?");
 	const profile = color(job.profile.padEnd(12));
-	const task = job.task.slice(0, 68) + (job.task.length > 68 ? "…" : "");
+	const rawTask = sanitize(job.task);
+	const task = rawTask.slice(0, 68) + (rawTask.length > 68 ? "…" : "");
 	const id = C.gray(`  ${job.id}`);
 	const tools = job.toolCount !== undefined ? C.dim(`  · tools ${job.toolCount}`) : "";
-	const progress = job.lastProgress !== undefined ? C.dim(`\n  ↳ ${job.lastProgress.slice(0, 80)}`) : "";
+	const rawProgress = job.lastProgress !== undefined ? sanitize(job.lastProgress) : undefined;
+	const progress = rawProgress !== undefined ? C.dim(`\n  ↳ ${rawProgress.slice(0, 80)}`) : "";
 
 	return `  ${icon}  ${profile}  ${task}${durationStr}${tools}\n${id}${progress}`;
 }

@@ -57,6 +57,21 @@ const normalizeStaleRestoredJobs = (
 
 // ── Factory ───────────────────────────────────────────────────────────────────
 
+// Hard cap on the number of jobs kept in memory. When exceeded, oldest terminal
+// (done/failed/cancelled) jobs are pruned first; active jobs are always retained.
+const MAX_JOBS = 200;
+
+const pruneJobs = (jobs: readonly FlowJob[]): FlowJob[] => {
+	if (jobs.length <= MAX_JOBS) {
+		return jobs.map((j) => ({ ...j }));
+	}
+	const active = jobs.filter((j) => j.status === "pending" || j.status === "running");
+	const terminal = jobs.filter((j) => j.status !== "pending" && j.status !== "running");
+	// Keep as many terminal jobs as possible up to the cap, preferring newest.
+	const keepTerminal = terminal.slice(Math.max(0, terminal.length - (MAX_JOBS - active.length)));
+	return [...active, ...keepTerminal].map((j) => ({ ...j }));
+};
+
 /** Shallow-clone a FlowQueue so external holders cannot mutate internal state. */
 const cloneQueue = (q: FlowQueue): FlowQueue => ({
 	...q,
@@ -112,7 +127,7 @@ export const makeQueue = (): Effect.Effect<FlowQueueService> =>
 				};
 				const next = yield* Ref.updateAndGet(ref, (state) => ({
 					...state,
-					jobs: [...state.jobs, job],
+					jobs: pruneJobs([...state.jobs, job]),
 				}));
 				publish(next);
 				// Return a clone — the live object is inside the Ref; callers must not share the reference.

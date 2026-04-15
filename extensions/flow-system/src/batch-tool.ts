@@ -95,7 +95,7 @@ export function makeFlowBatchTool(queue: FlowQueueService, runFlow: ExecuteFlowF
 					task: Type.String({ description: "Task prompt for this item." }),
 					cwd: Type.Optional(Type.String({ description: "Working directory." })),
 				}),
-				{ minItems: 1 },
+				{ minItems: 1, maxItems: 32 },
 			),
 			parallel: Type.Optional(
 				Type.Boolean({

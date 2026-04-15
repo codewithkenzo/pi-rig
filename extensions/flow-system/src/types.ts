@@ -113,6 +113,8 @@ export class JobNotFoundError extends Data.TaggedError("JobNotFoundError")<{
 
 export const FLOW_ENTRY_TYPE = "flow_system_state" as const;
 
-export type FlowStateEntry = {
-	jobs: FlowJob[];
-};
+export const FlowStateEntrySchema = Type.Object({
+	jobs: Type.Array(FlowJobSchema),
+});
+
+export type FlowStateEntry = Static<typeof FlowStateEntrySchema>;
