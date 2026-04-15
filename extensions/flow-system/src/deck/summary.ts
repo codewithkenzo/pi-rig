@@ -9,7 +9,8 @@ import { breathe, withMotion, type AnimationState } from "../../../../shared/the
 import type { FlowJob } from "../types.js";
 import { truncateToWidth } from "./layout.js";
 
-const CONTROL_RE = /[\x00-\x08\x0B\x0C\x0E-\x1F]/g;
+// Keeps \x09 (tab) and \x0a (LF); strips everything else in 0x00-0x1f including \x0d (\r).
+const CONTROL_RE = /[\x00-\x08\x0b-\x1f]/g;
 
 export const sanitize = (text: string): string =>
 	stripAnsi(text).replace(CONTROL_RE, "");

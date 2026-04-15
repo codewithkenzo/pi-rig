@@ -67,7 +67,7 @@ export const fitAnsiColumn = (text: string, width: number): string => {
 	let visW = 0;
 	let i = 0;
 	while (i < text.length) {
-		// Consume ANSI escape sequence verbatim
+		// Consume CSI/SGR sequences verbatim: \x1b[ ... <letter>
 		if (text[i] === "\x1b" && text[i + 1] === "[") {
 			const m = /^\x1b\[[0-9;]*[A-Za-z]/.exec(text.slice(i));
 			if (m !== null) {
@@ -75,6 +75,25 @@ export const fitAnsiColumn = (text: string, width: number): string => {
 				i += m[0].length;
 				continue;
 			}
+		}
+		// Consume OSC sequences verbatim: \x1b] ... BEL or \x1b] ... ST(\x1b\\)
+		// Without this, hyperlink escapes are consumed char-by-char and inflate visW.
+		if (text[i] === "\x1b" && text[i + 1] === "]") {
+			const rest = text.slice(i);
+			const bel = rest.indexOf("\x07");
+			const st  = rest.indexOf("\x1b\\");
+			if (bel !== -1 && (st === -1 || bel < st)) {
+				result += rest.slice(0, bel + 1);
+				i += bel + 1;
+			} else if (st !== -1) {
+				result += rest.slice(0, st + 2);
+				i += st + 2;
+			} else {
+				// Unterminated OSC — consume the rest of the string as escape data.
+				result += rest;
+				i = text.length;
+			}
+			continue;
 		}
 		const cp = text.codePointAt(i) ?? 0;
 		const cw = isWide(cp) ? 2 : 1;

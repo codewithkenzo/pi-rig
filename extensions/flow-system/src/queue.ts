@@ -114,7 +114,8 @@ export const makeQueue = (): Effect.Effect<FlowQueueService> =>
 					jobs: [...state.jobs, job],
 				}));
 				publish(next);
-				return job;
+				// Return a clone — the live object is inside the Ref; callers must not share the reference.
+				return { ...job };
 			});
 
 		const getAll = (): Effect.Effect<FlowJob[]> =>

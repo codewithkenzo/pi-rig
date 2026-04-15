@@ -5,6 +5,8 @@ import * as os from "node:os";
 import { SkillLoadError } from "./types.js";
 
 // In-process skill file cache — avoids re-reading disk for the same path within a session.
+// Capped at MAX_CACHE_SIZE entries; oldest entry is evicted on overflow (insertion-order LRU).
+const MAX_CACHE_SIZE = 128;
 const cache = new Map<string, string>();
 
 const isWithinRoot = (candidate: string, root: string): boolean => {
@@ -25,7 +27,8 @@ export const stageSkills = (paths: string[], cwd = process.cwd()): Effect.Effect
 					const resolvedPath = await fs.realpath(rawResolved);
 					const allowedRoots = [
 						await fs.realpath(path.resolve(os.homedir(), ".pi")).catch(() => path.resolve(os.homedir(), ".pi")),
-						await fs.realpath(path.resolve(process.cwd())).catch(() => path.resolve(process.cwd())),
+						// Use job cwd (not host process.cwd()) so skills relative to the job dir pass.
+						await fs.realpath(path.resolve(cwd)).catch(() => path.resolve(cwd)),
 					];
 					const allowed = allowedRoots.some((root) => isWithinRoot(resolvedPath, root));
 
@@ -36,6 +39,11 @@ export const stageSkills = (paths: string[], cwd = process.cwd()): Effect.Effect
 					}
 
 					if (!cache.has(resolvedPath)) {
+						if (cache.size >= MAX_CACHE_SIZE) {
+							// Evict oldest entry (Map preserves insertion order)
+							const oldest = cache.keys().next().value;
+							if (oldest !== undefined) cache.delete(oldest);
+						}
 						cache.set(resolvedPath, await Bun.file(resolvedPath).text());
 					}
 					return cache.get(resolvedPath) as string;
@@ -54,7 +62,5 @@ export const writeTempSkillFile = (content: string): Effect.Effect<string> =>
 	});
 
 export const cleanupTempFile = (file: string): Effect.Effect<void> =>
-	Effect.promise(async () => {
-		await fs.unlink(file).catch(() => {});
-		await fs.rmdir(path.dirname(file)).catch(() => {});
-	});
+	// Remove the entire temp dir in one call — handles partial writes and non-empty dirs.
+	Effect.promise(() => fs.rm(path.dirname(file), { recursive: true, force: true }));
