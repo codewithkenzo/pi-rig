@@ -1,9 +1,18 @@
 import { describe, expect, it } from "bun:test";
 import type { Theme } from "@mariozechner/pi-coding-agent";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import { Cause, Effect, Exit } from "effect";
 import { BUILTIN_PALETTES, PALETTE_MAP } from "../../../shared/theme/index.js";
-import { makeThemeState, applyTheme, syncThemeStateFromUi } from "../src/state.js";
-import { ThemeLoadError, ThemeNotFoundError } from "../src/types.js";
+import {
+	makeThemeState,
+	applyTheme,
+	syncThemeStateFromUi,
+	loadThemePreference,
+	saveThemePreference,
+} from "../src/state.js";
+import { ThemeLoadError } from "../src/types.js";
 
 class MockTheme {
 	name: string | undefined;
@@ -38,10 +47,45 @@ const makeCtx = (result: { success: boolean; error?: string }) => {
 	return { ctx, emitted, setThemeCalls };
 };
 
+const settingsPath = (dir: string): string =>
+	path.join(dir, "settings.json");
+
+const writeSettings = (dir: string, value: Record<string, unknown>): void => {
+	const file = settingsPath(dir);
+	fs.mkdirSync(path.dirname(file), { recursive: true });
+	fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+};
+
+const readSettings = (dir: string): Record<string, unknown> => {
+	const raw = fs.readFileSync(settingsPath(dir), "utf8");
+	return JSON.parse(raw) as Record<string, unknown>;
+};
+
+const withTempSettings = async <T>(run: (dir: string) => Promise<T> | T): Promise<T> => {
+	const prevPath = process.env["PI_THEME_SETTINGS_PATH"];
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "theme-switcher-settings-"));
+	process.env["PI_THEME_SETTINGS_PATH"] = settingsPath(dir);
+	try {
+		return await run(dir);
+	} finally {
+		if (prevPath === undefined) {
+			delete process.env["PI_THEME_SETTINGS_PATH"];
+		} else {
+			process.env["PI_THEME_SETTINGS_PATH"] = prevPath;
+		}
+		fs.rmSync(dir, { recursive: true, force: true });
+	}
+};
+
 describe("makeThemeState", () => {
 	it("returns the initial active theme", () => {
 		const state = makeThemeState("dracula");
 		expect(state.getActive()).toBe("dracula");
+	});
+
+	it("preserves explicit non-palette initial names for installed-theme restore", () => {
+		const state = makeThemeState("my-installed-theme");
+		expect(state.getActive()).toBe("my-installed-theme");
 	});
 
 	it("syncThemeStateFromUi adopts the ui theme name", () => {
@@ -62,10 +106,10 @@ describe("makeThemeState", () => {
 		expect(state.getActive()).toBe("catppuccin-mocha");
 	});
 
-	it("syncThemeStateFromUi ignores unknown ui theme names", () => {
+	it("syncThemeStateFromUi preserves unknown ui theme names for installed-theme persistence", () => {
 		const state = makeThemeState("nord");
-		expect(syncThemeStateFromUi(state, "not-a-real-theme")).toBe("nord");
-		expect(state.getActive()).toBe("nord");
+		expect(syncThemeStateFromUi(state, "not-a-real-theme")).toBe("not-a-real-theme");
+		expect(state.getActive()).toBe("not-a-real-theme");
 	});
 
 	it("getNextName advances and wraps across built-in palettes", () => {
@@ -104,53 +148,118 @@ describe("makeThemeState", () => {
 	});
 });
 
-describe("applyTheme", () => {
-	it("updates state and emits theme:changed on success", async () => {
-		const state = makeThemeState("catppuccin-mocha");
-		const { ctx, emitted, setThemeCalls } = makeCtx({ success: true });
-
-		const exit = await Effect.runPromiseExit(applyTheme(ctx, "dracula", state));
-
-		expect(Exit.isSuccess(exit)).toBe(true);
-		expect(state.getActive()).toBe("dracula");
-		expect(typeof setThemeCalls[0]).not.toBe("string");
-		expect((setThemeCalls[0] as Theme | undefined)?.name).toBe("dracula");
-		expect(emitted).toEqual([{ event: "theme:changed", payload: { theme: "dracula" } }]);
+describe("theme preference persistence", () => {
+	it("loadThemePreference reads theme from ~/.pi/agent/settings.json", async () => {
+		await withTempSettings((dir) => {
+			writeSettings(dir, {
+				theme: "dracula",
+				defaultModel: "gpt-5.4-mini",
+			});
+			expect(loadThemePreference()).toBe("dracula");
+		});
 	});
 
-	it("returns ThemeLoadError and leaves state unchanged when setTheme fails", async () => {
-		const state = makeThemeState("catppuccin-mocha");
-		const { ctx } = makeCtx({ success: false, error: "unknown theme" });
+	it("saveThemePreference merges theme and preserves other settings keys", async () => {
+		await withTempSettings((dir) => {
+			writeSettings(dir, {
+				theme: "catppuccin-mocha",
+				defaultModel: "gpt-5.4-mini",
+				autoUpdate: true,
+			});
 
-		const exit = await Effect.runPromiseExit(applyTheme(ctx, "dracula", state));
+			saveThemePreference("nord");
+			const saved = readSettings(dir);
+			expect(saved["theme"]).toBe("nord");
+			expect(saved["defaultModel"]).toBe("gpt-5.4-mini");
+			expect(saved["autoUpdate"]).toBe(true);
+		});
+	});
+});
 
-		expect(Exit.isFailure(exit)).toBe(true);
-		expect(state.getActive()).toBe("catppuccin-mocha");
-		if (Exit.isFailure(exit)) {
-			const reason = exit.cause.reasons.find(Cause.isFailReason);
-			if (reason !== undefined) {
-				const error = reason.error;
-				expect(error).toBeInstanceOf(ThemeLoadError);
-				if (error instanceof ThemeLoadError) {
-					expect(error.reason).toContain("unknown theme");
+describe("applyTheme", () => {
+	it("updates state, emits theme:changed, and persists settings on success", async () => {
+		await withTempSettings(async (dir) => {
+			writeSettings(dir, {
+				theme: "catppuccin-mocha",
+				defaultModel: "gpt-5.4-mini",
+			});
+
+			const state = makeThemeState("catppuccin-mocha");
+			const { ctx, emitted, setThemeCalls } = makeCtx({ success: true });
+
+			const exit = await Effect.runPromiseExit(applyTheme(ctx, "dracula", state));
+
+			expect(Exit.isSuccess(exit)).toBe(true);
+			expect(state.getActive()).toBe("dracula");
+			expect(typeof setThemeCalls[0]).not.toBe("string");
+			expect((setThemeCalls[0] as Theme | undefined)?.name).toBe("dracula");
+			expect(emitted).toEqual([{ event: "theme:changed", payload: { theme: "dracula" } }]);
+
+			const saved = readSettings(dir);
+			expect(saved["theme"]).toBe("dracula");
+			expect(saved["defaultModel"]).toBe("gpt-5.4-mini");
+		});
+	});
+
+	it("can skip preference writes when persistPreference is disabled", async () => {
+		await withTempSettings(async (dir) => {
+			writeSettings(dir, {
+				theme: "catppuccin-mocha",
+				defaultModel: "gpt-5.4-mini",
+			});
+
+			const state = makeThemeState("catppuccin-mocha");
+			const { ctx } = makeCtx({ success: true });
+			const exit = await Effect.runPromiseExit(
+				applyTheme(ctx, "dracula", state, { persistPreference: false }),
+			);
+			expect(Exit.isSuccess(exit)).toBe(true);
+
+			const saved = readSettings(dir);
+			expect(saved["theme"]).toBe("catppuccin-mocha");
+			expect(state.getActive()).toBe("dracula");
+		});
+	});
+
+	it("returns ThemeLoadError, keeps state, and does not persist on failed apply", async () => {
+		await withTempSettings(async (dir) => {
+			writeSettings(dir, {
+				theme: "catppuccin-mocha",
+				defaultModel: "gpt-5.4-mini",
+			});
+
+			const state = makeThemeState("catppuccin-mocha");
+			const { ctx } = makeCtx({ success: false, error: "unknown theme" });
+
+			const exit = await Effect.runPromiseExit(applyTheme(ctx, "dracula", state));
+
+			expect(Exit.isFailure(exit)).toBe(true);
+			expect(state.getActive()).toBe("catppuccin-mocha");
+			if (Exit.isFailure(exit)) {
+				const reason = exit.cause.reasons.find(Cause.isFailReason);
+				if (reason !== undefined) {
+					const error = reason.error;
+					expect(error).toBeInstanceOf(ThemeLoadError);
+					if (error instanceof ThemeLoadError) {
+						expect(error.reason).toContain("unknown theme");
+					}
 				}
 			}
-		}
+
+			const saved = readSettings(dir);
+			expect(saved["theme"]).toBe("catppuccin-mocha");
+			expect(saved["defaultModel"]).toBe("gpt-5.4-mini");
+		});
 	});
 
-	it("returns ThemeNotFoundError when theme is unknown before setTheme", async () => {
+	it("preserves unknown theme names when the UI can accept them", async () => {
 		const state = makeThemeState("catppuccin-mocha");
-		const { ctx } = makeCtx({ success: true });
+		const { ctx, setThemeCalls } = makeCtx({ success: true });
 
 		const exit = await Effect.runPromiseExit(applyTheme(ctx, "missing-theme", state));
 
-		expect(Exit.isFailure(exit)).toBe(true);
-		expect(state.getActive()).toBe("catppuccin-mocha");
-		if (Exit.isFailure(exit)) {
-			const reason = exit.cause.reasons.find(Cause.isFailReason);
-			if (reason !== undefined) {
-				expect(reason.error).toBeInstanceOf(ThemeNotFoundError);
-			}
-		}
+		expect(Exit.isSuccess(exit)).toBe(true);
+		expect(state.getActive()).toBe("missing-theme");
+		expect(setThemeCalls[0]).toBe("missing-theme");
 	});
 });
