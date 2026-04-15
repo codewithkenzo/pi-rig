@@ -2,6 +2,7 @@ import type { ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
 import { SelectList, type SelectItem, truncateToWidth } from "@mariozechner/pi-tui";
 import { PALETTE_MAP, createEngine } from "../../../shared/theme/index.js";
 import { getThemeNames } from "./runtime.js";
+import { resolveThemeTarget } from "./state.js";
 
 type ThemePickerContext = Pick<ExtensionCommandContext, "ui">;
 
@@ -15,13 +16,10 @@ type CustomUi = ThemePickerContext["ui"] & {
 
 const getAvailableThemeNames = (ctx: ThemePickerContext): string[] => {
 	const customUi = ctx.ui as CustomUi;
-	if (typeof customUi.getAllThemes === "function") {
-		const names = customUi.getAllThemes().map((theme) => theme.name);
-		if (names.length > 0) {
-			return names;
-		}
-	}
-	return getThemeNames();
+	const installed = typeof customUi.getAllThemes === "function"
+		? customUi.getAllThemes().map((theme) => theme.name)
+		: [];
+	return Array.from(new Set([...getThemeNames(), ...installed]));
 };
 
 const buildItems = (activeTheme: string, availableNames: string[]): SelectItem[] =>
@@ -51,7 +49,7 @@ export const showThemePicker = async (
 	let previewTheme = activeTheme;
 
 	const applyPreview = (name: string): boolean => {
-		const result = ctx.ui.setTheme(name);
+		const result = ctx.ui.setTheme(resolveThemeTarget({ ui: ctx.ui }, name));
 		if (!result.success) {
 			void ctx.ui.notify(`Failed to load theme: ${result.error ?? name}`, "error");
 			return false;
@@ -86,7 +84,7 @@ export const showThemePicker = async (
 			};
 			selectList.onCancel = () => {
 				if (previewTheme !== originalTheme) {
-					ctx.ui.setTheme(originalTheme);
+					ctx.ui.setTheme(resolveThemeTarget({ ui: ctx.ui }, originalTheme));
 					previewTheme = originalTheme;
 				}
 				done(null);
@@ -104,7 +102,7 @@ export const showThemePicker = async (
 					const border = theme.fg("accent", "─".repeat(Math.max(1, width)));
 					const header = truncateToWidth(theme.fg("accent", theme.bold("Theme picker")), width);
 					const subtitle = truncateToWidth(
-						theme.fg("muted", "Preview applies live when the selected theme is installed in pi."),
+						theme.fg("muted", "Preview applies live for bundled palettes and installed pi themes."),
 						width,
 					);
 					const rows = [border, header, subtitle, "", ...selectList.render(width), ""];

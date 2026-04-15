@@ -1,5 +1,7 @@
+import type { Theme } from "@mariozechner/pi-coding-agent";
 import { Effect } from "effect";
 import { BUILTIN_PALETTES, PALETTE_MAP, getPalette } from "../../../shared/theme/index.js";
+import type { Palette } from "../../../shared/theme/types.js";
 import { ThemeLoadError, ThemeNotFoundError } from "./types.js";
 
 const DEFAULT_THEME_BY_VARIANT = {
@@ -75,10 +77,11 @@ export interface ThemeState {
 
 export interface ThemeSwitcherContext {
 	ui: {
-		setTheme(theme: string): {
+		setTheme(theme: string | Theme): {
 			success: boolean;
 			error?: string;
 		};
+		getTheme?: (name: string) => Theme | undefined;
 		theme: {
 			name?: string;
 		};
@@ -124,6 +127,123 @@ export const syncThemeStateFromUi = (
 	return state.getActive();
 };
 
+const hexToRgb = (hex: string): [number, number, number] => {
+	const normalized = hex.startsWith("#") ? hex.slice(1) : hex;
+	const value = Number.parseInt(normalized, 16);
+	return [(value >> 16) & 255, (value >> 8) & 255, value & 255];
+};
+
+const rgbToHex = (r: number, g: number, b: number): string =>
+	`#${[r, g, b]
+		.map((value) => Math.max(0, Math.min(255, Math.round(value))).toString(16).padStart(2, "0"))
+		.join("")}`;
+
+const blendHex = (base: string, overlay: string, amount: number): string => {
+	const [br, bg, bb] = hexToRgb(base);
+	const [or, og, ob] = hexToRgb(overlay);
+	return rgbToHex(
+		br + (or - br) * amount,
+		bg + (og - bg) * amount,
+		bb + (ob - bb) * amount,
+	);
+};
+
+const pickBackground = (palette: Palette): string =>
+	palette.raw["base"] ??
+	palette.raw["background"] ??
+	palette.raw["bg"] ??
+	palette.raw["bg0"] ??
+	palette.raw["base03"] ??
+	palette.raw["crust"] ??
+	palette.semantic.separator;
+
+const toPiTheme = (ctx: ThemeSwitcherContext, palette: Palette): Theme => {
+	const ThemeCtor = ctx.ui.theme.constructor as new (
+		fgColors: Record<string, string | number>,
+		bgColors: Record<string, string | number>,
+		mode: "truecolor" | "256color",
+		options?: { name?: string; sourcePath?: string },
+	) => Theme;
+	const background = pickBackground(palette);
+	const selectedBg = blendHex(background, palette.semantic.accent, palette.variant === "dark" ? 0.18 : 0.1);
+	const userMessageBg = blendHex(background, palette.semantic.separator, palette.variant === "dark" ? 0.28 : 0.12);
+	const customMessageBg = blendHex(background, palette.semantic.highlight, palette.variant === "dark" ? 0.18 : 0.1);
+	const toolPendingBg = blendHex(background, palette.semantic.info, palette.variant === "dark" ? 0.12 : 0.08);
+	const toolSuccessBg = blendHex(background, palette.semantic.success, palette.variant === "dark" ? 0.14 : 0.1);
+	const toolErrorBg = blendHex(background, palette.semantic.error, palette.variant === "dark" ? 0.14 : 0.1);
+
+	return new ThemeCtor(
+		{
+			accent: palette.semantic.accent,
+			border: palette.semantic.border,
+			borderAccent: palette.semantic.highlight,
+			borderMuted: palette.semantic.separator,
+			success: palette.semantic.success,
+			error: palette.semantic.error,
+			warning: palette.semantic.warning,
+			muted: palette.semantic.muted,
+			dim: palette.semantic.dim,
+			text: palette.semantic.text,
+			thinkingText: palette.semantic.muted,
+			userMessageText: palette.semantic.text,
+			customMessageText: palette.semantic.text,
+			customMessageLabel: palette.semantic.label,
+			toolTitle: palette.semantic.header,
+			toolOutput: palette.semantic.value,
+			mdHeading: palette.semantic.header,
+			mdLink: palette.semantic.accent,
+			mdLinkUrl: palette.semantic.muted,
+			mdCode: palette.semantic.accent,
+			mdCodeBlock: palette.semantic.text,
+			mdCodeBlockBorder: palette.semantic.border,
+			mdQuote: palette.semantic.muted,
+			mdQuoteBorder: palette.semantic.border,
+			mdHr: palette.semantic.separator,
+			mdListBullet: palette.semantic.accent,
+			toolDiffAdded: palette.semantic.success,
+			toolDiffRemoved: palette.semantic.error,
+			toolDiffContext: palette.semantic.muted,
+			syntaxComment: palette.raw["comment"] ?? palette.semantic.muted,
+			syntaxKeyword: palette.raw["blue"] ?? palette.semantic.accent,
+			syntaxFunction: palette.raw["yellow"] ?? palette.semantic.header,
+			syntaxVariable: palette.raw["cyan"] ?? palette.semantic.info,
+			syntaxString: palette.raw["green"] ?? palette.semantic.success,
+			syntaxNumber: palette.raw["orange"] ?? palette.semantic.warning,
+			syntaxType: palette.raw["purple"] ?? palette.semantic.highlight,
+			syntaxOperator: palette.semantic.text,
+			syntaxPunctuation: palette.semantic.text,
+			thinkingOff: palette.semantic.separator,
+			thinkingMinimal: palette.semantic.muted,
+			thinkingLow: palette.semantic.accent,
+			thinkingMedium: palette.semantic.info,
+			thinkingHigh: palette.semantic.highlight,
+			thinkingXhigh: palette.semantic.error,
+			bashMode: palette.semantic.success,
+		},
+		{
+			selectedBg,
+			userMessageBg,
+			customMessageBg,
+			toolPendingBg,
+			toolSuccessBg,
+			toolErrorBg,
+		},
+		"truecolor",
+		{ name: palette.name },
+	);
+};
+
+export const resolveThemeTarget = (
+	ctx: ThemeSwitcherContext,
+	name: string,
+): string | Theme => {
+	const installed = ctx.ui.getTheme?.(name);
+	if (installed !== undefined) {
+		return name;
+	}
+	return toPiTheme(ctx, getPalette(name));
+};
+
 export const applyTheme = (
 	ctx: ThemeSwitcherContext,
 	name: string,
@@ -133,14 +253,12 @@ export const applyTheme = (
 	Effect.gen(function* () {
 		syncThemeStateFromUi(state, ctx.ui.theme.name);
 
-		yield* Effect.try({
-			try: () => {
-				getPalette(name);
-			},
+		const target = yield* Effect.try({
+			try: () => resolveThemeTarget(ctx, name),
 			catch: () => new ThemeNotFoundError({ name }),
 		});
 
-		const result = ctx.ui.setTheme(name);
+		const result = ctx.ui.setTheme(target);
 		if (!result.success) {
 			yield* Effect.fail(
 				new ThemeLoadError({

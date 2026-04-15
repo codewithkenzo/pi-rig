@@ -1,15 +1,33 @@
 import { describe, expect, it } from "bun:test";
+import type { Theme } from "@mariozechner/pi-coding-agent";
 import { Cause, Effect, Exit } from "effect";
 import { BUILTIN_PALETTES, PALETTE_MAP } from "../../../shared/theme/index.js";
 import { makeThemeState, applyTheme, syncThemeStateFromUi } from "../src/state.js";
 import { ThemeLoadError, ThemeNotFoundError } from "../src/types.js";
 
+class MockTheme {
+	name: string | undefined;
+
+	constructor(
+		_fgColors?: Record<string, string | number>,
+		_bgColors?: Record<string, string | number>,
+		_mode?: string,
+		options?: { name?: string },
+	) {
+		this.name = options?.name;
+	}
+}
+
 const makeCtx = (result: { success: boolean; error?: string }) => {
 	const emitted: Array<{ event: string; payload?: unknown }> = [];
+	const setThemeCalls: Array<string | Theme> = [];
 	const ctx = {
 		ui: {
-			setTheme: () => result,
-			theme: { name: "catppuccin-mocha" },
+			setTheme: (theme: string | Theme) => {
+				setThemeCalls.push(theme);
+				return result;
+			},
+			theme: new MockTheme(undefined, undefined, undefined, { name: "catppuccin-mocha" }) as Theme,
 		},
 		events: {
 			emit: (event: string, payload?: unknown) => {
@@ -17,7 +35,7 @@ const makeCtx = (result: { success: boolean; error?: string }) => {
 			},
 		},
 	};
-	return { ctx, emitted };
+	return { ctx, emitted, setThemeCalls };
 };
 
 describe("makeThemeState", () => {
@@ -89,12 +107,14 @@ describe("makeThemeState", () => {
 describe("applyTheme", () => {
 	it("updates state and emits theme:changed on success", async () => {
 		const state = makeThemeState("catppuccin-mocha");
-		const { ctx, emitted } = makeCtx({ success: true });
+		const { ctx, emitted, setThemeCalls } = makeCtx({ success: true });
 
 		const exit = await Effect.runPromiseExit(applyTheme(ctx, "dracula", state));
 
 		expect(Exit.isSuccess(exit)).toBe(true);
 		expect(state.getActive()).toBe("dracula");
+		expect(typeof setThemeCalls[0]).not.toBe("string");
+		expect((setThemeCalls[0] as Theme | undefined)?.name).toBe("dracula");
 		expect(emitted).toEqual([{ event: "theme:changed", payload: { theme: "dracula" } }]);
 	});
 

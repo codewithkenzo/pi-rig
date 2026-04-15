@@ -1,12 +1,29 @@
 import { describe, expect, it } from "bun:test";
+import type { Theme } from "@mariozechner/pi-coding-agent";
 import { makeThemeState } from "../src/state.js";
 import { handleThemeCommand } from "../src/commands.js";
+
+class MockTheme {
+	name: string | undefined;
+
+	constructor(
+		_fgColors?: Record<string, string | number>,
+		_bgColors?: Record<string, string | number>,
+		_mode?: string,
+		options?: { name?: string },
+	) {
+		this.name = options?.name;
+	}
+}
+
+const getThemeName = (value: string | Theme): string =>
+	typeof value === "string" ? value : (value.name ?? "unnamed-theme");
 
 const makeCtx = (themeName = "catppuccin-mocha") => {
 	const messages: string[] = [];
 	const selections: Array<string | undefined> = [];
 	const setThemeCalls: string[] = [];
-	const theme = { name: themeName };
+	const theme = new MockTheme(undefined, undefined, undefined, { name: themeName }) as Theme & { name: string | undefined };
 	return {
 		messages,
 		selections,
@@ -21,9 +38,10 @@ const makeCtx = (themeName = "catppuccin-mocha") => {
 				select: async () => selections.shift(),
 				setWidget: () => undefined,
 				setStatus: () => undefined,
-				setTheme: (nextTheme: string) => {
-					setThemeCalls.push(nextTheme);
-					theme.name = nextTheme;
+				setTheme: (nextTheme: string | Theme) => {
+					const resolved = getThemeName(nextTheme);
+					setThemeCalls.push(resolved);
+					theme.name = resolved;
 					return { success: true };
 				},
 			},
