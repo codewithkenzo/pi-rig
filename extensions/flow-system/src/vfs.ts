@@ -45,14 +45,18 @@ export const stageSkills = (paths: string[], cwd = process.cwd()): Effect.Effect
 						let p = inflight.get(resolvedPath);
 						if (p === undefined) {
 							p = (async () => {
-								const text = await Bun.file(resolvedPath).text();
-								if (cache.size >= MAX_CACHE_SIZE) {
-									const oldest = cache.keys().next().value;
-									if (oldest !== undefined) cache.delete(oldest);
+								try {
+									const text = await Bun.file(resolvedPath).text();
+									if (cache.size >= MAX_CACHE_SIZE) {
+										const oldest = cache.keys().next().value;
+										if (oldest !== undefined) cache.delete(oldest);
+									}
+									cache.set(resolvedPath, text);
+									return text;
+								} finally {
+									// Always clear — if the read fails, future callers must be able to retry.
+									inflight.delete(resolvedPath);
 								}
-								cache.set(resolvedPath, text);
-								inflight.delete(resolvedPath);
-								return text;
 							})();
 							inflight.set(resolvedPath, p);
 						}

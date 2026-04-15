@@ -43,7 +43,8 @@ const normalizeStaleRestoredJobs = (
 ): FlowJob[] =>
 	jobs.map((job) => {
 		if (job.status !== "pending" && job.status !== "running") {
-			return job;
+			// Clone terminal jobs too — caller must not share references with internal queue state.
+			return { ...job };
 		}
 		return {
 			...job,

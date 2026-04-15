@@ -23,6 +23,8 @@ export interface ProgressUpdate {
 export interface FlowProgressTracker {
 	readonly toolCount: number;
 	apply(event: FlowProgressEvent): ProgressUpdate | undefined;
+	/** Flush any pending (throttled) assistant text that was never emitted. Returns undefined if nothing was pending. */
+	flush(): ProgressUpdate | undefined;
 }
 
 const clipText = (text: string, maxChars: number): string => {
@@ -102,6 +104,18 @@ export const createFlowProgressTracker = (options?: ProgressTrackerOptions): Flo
 				return fromProgress(event.detail);
 			}
 			return fromAssistant(event.detail);
+		},
+		flush() {
+			if (pendingAssistantText === undefined || pendingAssistantText === lastAssistantPublishedText) {
+				return undefined;
+			}
+			const toPublish = pendingAssistantText;
+			lastAssistantPublishedText = toPublish;
+			pendingAssistantText = undefined;
+			return {
+				summary: toPublish,
+				extras: { toolCount, lastProgress: toPublish, lastAssistantText: toPublish },
+			};
 		},
 	};
 };

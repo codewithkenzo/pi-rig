@@ -24,6 +24,8 @@ export const FlowProfileSchema = Type.Object({
 	name: Type.String({ minLength: 1, maxLength: 64 }),
 	description: Type.Optional(Type.String()),
 	reasoning_level: ReasoningLevelSchema,
+	// TODO: wire to pi CLI flag once upstream exposes a supported iteration-limit argument.
+	// Currently validated and stored but not passed to the subprocess.
 	max_iterations: Type.Number({ minimum: 1, maximum: 200 }),
 	toolsets: Type.Array(Type.String()),
 	skills: Type.Array(Type.String()),

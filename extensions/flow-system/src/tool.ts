@@ -205,12 +205,15 @@ export function makeFlowTool(queue: FlowQueueService, runFlow: ExecuteFlowFn = e
 						);
 						if (Exit.isSuccess(exit)) {
 							const finishedAt = Date.now();
+							const flushed = tracker.flush();
 							await Effect.runPromise(
 								queue.setStatus(job.id, "done", {
 									finishedAt,
 									output: exit.value,
 									toolCount: tracker.toolCount,
 									lastProgress: "done",
+									// Flush any throttled assistant text that never made it out.
+									...(flushed !== undefined ? { lastAssistantText: flushed.extras.lastAssistantText } : {}),
 								}),
 							);
 							ctx.ui.notify(
@@ -319,12 +322,14 @@ export function makeFlowTool(queue: FlowQueueService, runFlow: ExecuteFlowFn = e
 
 				if (Exit.isSuccess(exit)) {
 					const finishedAt = Date.now();
+					const flushed = tracker.flush();
 					await Effect.runPromise(
 						queue.setStatus(job.id, "done", {
 							finishedAt,
 							output: exit.value,
 							toolCount: tracker.toolCount,
 							lastProgress: "done",
+							...(flushed !== undefined ? { lastAssistantText: flushed.extras.lastAssistantText } : {}),
 						}),
 					);
 					return {
