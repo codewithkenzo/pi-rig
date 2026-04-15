@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { Value } from "@sinclair/typebox/value";
 import { Effect } from "effect";
 import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { makeQueue } from "../src/queue.js";
@@ -129,5 +130,82 @@ describe("flow_run tool cancellation", () => {
 		const lastAssistantText = jobs[0]?.lastAssistantText ?? "";
 		expect(lastAssistantText.length).toBeLessThan(220);
 		expect(lastAssistantText.endsWith("…")).toBe(true);
+	});
+
+	it("persists recentTools on running and terminal updates", async () => {
+		const queue = await Effect.runPromise(makeQueue());
+
+		const fakeExecute = ({ onProgress }: ExecuteOptions) =>
+			Effect.sync(() => {
+				onProgress?.({ _tag: "tool_start", toolName: "read", detail: "starting read" });
+				onProgress?.({ _tag: "tool_end", toolName: "read", detail: "done read" });
+				return "ok";
+			});
+
+		const tool = makeFlowTool(queue, fakeExecute);
+		await tool.execute(
+			"tool-recent-tools",
+			{ profile: "explore", task: "collect tools" },
+			undefined,
+			undefined,
+			makeCtx(),
+		);
+
+		const jobs = await Effect.runPromise(queue.getAll());
+		expect(jobs[0]?.status).toBe("done");
+		expect(jobs[0]?.recentTools).toEqual(["read…", "read done"]);
+	});
+
+	it("uses effective metadata from executor callbacks for terminal job state", async () => {
+		const queue = await Effect.runPromise(makeQueue());
+		const fakeExecute = ({ onModelFallback, onAgentPromptUnavailable }: ExecuteOptions) =>
+			Effect.sync(() => {
+				onModelFallback?.();
+				onAgentPromptUnavailable?.();
+				return "ok";
+			});
+
+		const tool = makeFlowTool(queue, fakeExecute);
+		await tool.execute(
+			"tool-effective-meta",
+			{ profile: "explore", task: "meta test" },
+			undefined,
+			undefined,
+			makeCtx(),
+		);
+
+		const jobs = await Effect.runPromise(queue.getAll());
+		expect(jobs[0]?.status).toBe("done");
+		expect((jobs[0]?.model ?? "").trim()).toBe("");
+		expect((jobs[0]?.agent ?? "").trim()).toBe("");
+	});
+
+	it("keeps schema/runtime compatibility for legacy and explicit call shapes", async () => {
+		const queue = await Effect.runPromise(makeQueue());
+		const tool = makeFlowTool(queue, () => Effect.succeed("ok"));
+
+		expect(
+			Value.Check(tool.parameters, {
+				profile: "explore",
+				task: "legacy shape",
+			}),
+		).toBe(true);
+		expect(
+			Value.Check(tool.parameters, {
+				profile: "explore",
+				task: "explicit shape",
+				cwd: ".",
+				background: false,
+			}),
+		).toBe(true);
+
+		const result = await tool.execute(
+			"tool-schema-fallback",
+			{ profile: "explore", task: "runtime fallback" },
+			undefined,
+			undefined,
+			makeCtx(),
+		);
+		expect(result.details).toMatchObject({ status: "done" });
 	});
 });

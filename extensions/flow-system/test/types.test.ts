@@ -16,7 +16,6 @@ describe("FlowProfileSchema", () => {
 		const valid = {
 			name: "coder",
 			reasoning_level: "medium",
-			max_iterations: 35,
 			toolsets: ["code_execution"],
 			skills: [],
 		};
@@ -28,9 +27,11 @@ describe("FlowProfileSchema", () => {
 			name: "debug",
 			description: "Root-cause analysis",
 			reasoning_level: "high",
-			max_iterations: 20,
 			toolsets: [],
 			skills: ["kenzo-effect-ts"],
+			model: "gpt-5.3-codex",
+			models: ["gpt-5.3-codex", "gpt-5.4", "claude-opus-4-6"],
+			agent: "musashi",
 			system_prompt_prefix: "You are a debugger.",
 		};
 		expect(Value.Check(FlowProfileSchema, valid)).toBe(true);
@@ -40,7 +41,6 @@ describe("FlowProfileSchema", () => {
 		const invalid = {
 			name: "",
 			reasoning_level: "low",
-			max_iterations: 10,
 			toolsets: [],
 			skills: [],
 		};
@@ -51,7 +51,6 @@ describe("FlowProfileSchema", () => {
 		const invalid = {
 			name: "a".repeat(65),
 			reasoning_level: "low",
-			max_iterations: 10,
 			toolsets: [],
 			skills: [],
 		};
@@ -62,31 +61,30 @@ describe("FlowProfileSchema", () => {
 		const invalid = {
 			name: "explore",
 			reasoning_level: "extreme",
-			max_iterations: 11,
 			toolsets: [],
 			skills: [],
 		};
 		expect(Value.Check(FlowProfileSchema, invalid)).toBe(false);
 	});
 
-	it("rejects a profile with max_iterations below minimum:1", () => {
-		const invalid = {
+	it("accepts profiles with extra compatibility fields (normalized later in loadProfiles)", () => {
+		const compatible = {
 			name: "explore",
 			reasoning_level: "low",
-			max_iterations: 0,
 			toolsets: [],
 			skills: [],
+			max_iterations: 12,
 		};
-		expect(Value.Check(FlowProfileSchema, invalid)).toBe(false);
+		expect(Value.Check(FlowProfileSchema, compatible)).toBe(true);
 	});
 
-	it("rejects a profile with max_iterations above maximum:200", () => {
+	it("rejects models arrays above maxItems:3", () => {
 		const invalid = {
-			name: "explore",
-			reasoning_level: "low",
-			max_iterations: 201,
-			toolsets: [],
+			name: "research",
+			reasoning_level: "medium",
+			toolsets: ["web"],
 			skills: [],
+			models: ["a", "b", "c", "d"],
 		};
 		expect(Value.Check(FlowProfileSchema, invalid)).toBe(false);
 	});

@@ -1,21 +1,34 @@
 import { Cause } from "effect";
 import { FlowCancelledError, SkillLoadError, SubprocessError } from "./types.js";
 
-export function isFlowCancelledCause(cause: Cause.Cause<unknown>): boolean {
-	for (const reason of cause.reasons) {
-		if (!Cause.isFailReason(reason)) continue;
-		if (reason.error instanceof FlowCancelledError) {
-			return true;
-		}
+const isFlowCancelledError = (value: unknown): value is FlowCancelledError => {
+	if (value instanceof FlowCancelledError) {
+		return true;
+	}
+	if (
+		value !== null &&
+		typeof value === "object" &&
+		"_tag" in value &&
+		(value as { _tag: unknown })._tag === "FlowCancelledError"
+	) {
+		return true;
+	}
+	if (value instanceof Error && value.name === "FlowCancelledError") {
+		return true;
+	}
+	if (typeof value === "string") {
+		return value.includes("FlowCancelledError");
 	}
 	return false;
+};
+
+export function isFlowCancelledCause(cause: Cause.Cause<unknown>): boolean {
+	return Cause.prettyErrors(cause).some((error) => isFlowCancelledError(error));
 }
 
 export function formatFlowError(cause: Cause.Cause<unknown>): string {
-	for (const reason of cause.reasons) {
-		if (!Cause.isFailReason(reason)) continue;
-		const err = reason.error;
-		if (err instanceof FlowCancelledError) {
+	for (const err of Cause.prettyErrors(cause)) {
+		if (isFlowCancelledError(err)) {
 			return err.reason;
 		}
 		if (err instanceof SubprocessError) {

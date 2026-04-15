@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { Value } from "@sinclair/typebox/value";
 import { Effect } from "effect";
 import { makeQueue } from "../src/queue.js";
 import { makeFlowBatchTool } from "../src/batch-tool.js";
@@ -94,5 +95,59 @@ describe("flow_batch cancellation", () => {
 		expect(startedCount).toBe(0);
 		expect(result.details).toMatchObject({ status: "cancelled", cancelCount: 2, successCount: 0, failCount: 0 });
 		expect(jobs.map((job) => job.status)).toEqual(["cancelled", "cancelled"]);
+	});
+
+	it("persists recentTools on batch items", async () => {
+		const queue = await Effect.runPromise(makeQueue());
+
+		const fakeExecute = ({ onProgress }: ExecuteOptions) =>
+			Effect.sync(() => {
+				onProgress?.({ _tag: "tool_start", toolName: "grep", detail: "start grep" });
+				onProgress?.({ _tag: "tool_end", toolName: "grep", detail: "done grep" });
+				return "batch ok";
+			});
+
+		const tool = makeFlowBatchTool(queue, fakeExecute);
+		const result = await tool.execute(
+			"batch-recent-tools",
+			{
+				items: [{ profile: "explore", task: "job with tools" }],
+				parallel: false,
+			},
+			undefined,
+			undefined,
+			{},
+		);
+
+		expect(result.details).toMatchObject({ status: "done", successCount: 1 });
+		const jobs = await Effect.runPromise(queue.getAll());
+		expect(jobs[0]?.status).toBe("done");
+		expect(jobs[0]?.recentTools).toEqual(["grep…", "grep done"]);
+	});
+
+	it("keeps schema/runtime compatibility for legacy and explicit batch call shapes", async () => {
+		const queue = await Effect.runPromise(makeQueue());
+		const tool = makeFlowBatchTool(queue, () => Effect.succeed("ok"));
+
+		expect(
+			Value.Check(tool.parameters, {
+				items: [{ profile: "explore", task: "legacy shape" }],
+			}),
+		).toBe(true);
+		expect(
+			Value.Check(tool.parameters, {
+				items: [{ profile: "explore", task: "explicit shape", cwd: "." }],
+				parallel: false,
+			}),
+		).toBe(true);
+
+		const result = await tool.execute(
+			"batch-schema-fallback",
+			{ items: [{ profile: "explore", task: "runtime fallback" }] },
+			undefined,
+			undefined,
+			{},
+		);
+		expect(result.details).toMatchObject({ status: "done", successCount: 1 });
 	});
 });

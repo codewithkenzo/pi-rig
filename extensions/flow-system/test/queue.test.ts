@@ -5,16 +5,37 @@ import { FlowCancelledError, JobNotFoundError } from "../src/types.js";
 import type { FlowJob } from "../src/types.js";
 
 describe("FlowQueueService", () => {
-	it("enqueue creates a pending job with correct profile and task", async () => {
+	it("enqueue honors concurrency cap and can leave capacity for pending jobs", async () => {
 		const queue = await Effect.runPromise(makeQueue());
-		const job = await Effect.runPromise(queue.enqueue("explore", "list files"));
+		const [jobOne, jobTwo] = await Promise.all([
+			Effect.runPromise(queue.enqueue("explore", "first job")),
+			Effect.runPromise(queue.enqueue("coder", "second job")),
+		]);
 
-		expect(job.status).toBe("pending");
-		expect(job.profile).toBe("explore");
-		expect(job.task).toBe("list files");
-		expect(typeof job.id).toBe("string");
-		expect(job.id.length).toBeGreaterThan(0);
-		expect(typeof job.createdAt).toBe("number");
+		expect(jobOne.status).toBe("running");
+		expect(jobTwo.status).toBe("running");
+	});
+
+	it("enqueue creates pending jobs when maxConcurrent is 1 and one job is already running", async () => {
+		const queue = await Effect.runPromise(makeQueue({ maxConcurrent: 1 }));
+		const first = await Effect.runPromise(queue.enqueue("explore", "root scan"));
+		const second = await Effect.runPromise(queue.enqueue("explore", "nested scan"));
+
+		expect(first.status).toBe("running");
+		expect(second.status).toBe("pending");
+	});
+
+	it("promotes pending jobs after terminal transition", async () => {
+		const queue = await Effect.runPromise(makeQueue({ maxConcurrent: 1 }));
+		const first = await Effect.runPromise(queue.enqueue("explore", "root scan"));
+		const second = await Effect.runPromise(queue.enqueue("debug", "nested scan"));
+
+		expect(first.status).toBe("running");
+		expect(second.status).toBe("pending");
+
+		await Effect.runPromise(queue.setStatus(first.id, "done", { finishedAt: Date.now() }));
+		const all = await Effect.runPromise(queue.getAll());
+		expect(all.find((job) => job.id === second.id)?.status).toBe("running");
 	});
 
 	it("enqueue stores cwd when provided", async () => {

@@ -1,4 +1,6 @@
 import { dirname, join } from "node:path";
+import { homedir } from "node:os";
+import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, ExtensionContext, SessionStartEvent } from "@mariozechner/pi-coding-agent";
 import type { CustomEntry } from "@mariozechner/pi-coding-agent";
@@ -7,15 +9,48 @@ import { makeQueue } from "./src/queue.js";
 import { makeFlowTool } from "./src/tool.js";
 import { makeFlowBatchTool } from "./src/batch-tool.js";
 import { registerFlowCommands } from "./src/commands.js";
-import { FLOW_ENTRY_TYPE, FlowStateEntrySchema } from "./src/types.js";
-import type { FlowStateEntry } from "./src/types.js";
+import {
+	FLOW_ENTRY_TYPE,
+	FlowStateEntrySchema,
+	FlowSystemConfigSchema,
+	type FlowStateEntry,
+	type FlowSystemConfig,
+} from "./src/types.js";
 import { Value } from "@sinclair/typebox/value";
 import { attachFlowUi } from "./src/ui.js";
 
 const baseDir = dirname(fileURLToPath(import.meta.url));
+const FLOW_SYSTEM_CONFIG_FILE = "flow-system.json";
+
+const loadFlowSystemConfig = (): FlowSystemConfig => {
+	const cwd = typeof process.cwd === "function" ? process.cwd() : baseDir;
+	const resolvedCwd: string = cwd === undefined ? baseDir : cwd;
+	const locations = [
+		join(homedir(), ".pi", FLOW_SYSTEM_CONFIG_FILE),
+		join(resolvedCwd, ".pi", FLOW_SYSTEM_CONFIG_FILE),
+	];
+	const config: FlowSystemConfig = {};
+
+	for (const location of locations) {
+		if (!existsSync(location)) {
+			continue;
+		}
+		try {
+			const data = JSON.parse(readFileSync(location, "utf8"));
+			if (Value.Check(FlowSystemConfigSchema, data)) {
+				Object.assign(config, data);
+			} else {
+				console.warn(`[flow-system] Invalid ${location}; using defaults`);
+			}
+		} catch (error) {
+			console.warn(`[flow-system] Failed to load ${location}:`, error);
+		}
+	}
+	return config;
+};
 
 export default async function (pi: ExtensionAPI): Promise<void> {
-	const queue = await Effect.runPromise(makeQueue());
+	const queue = await Effect.runPromise(makeQueue(loadFlowSystemConfig()));
 	const skillDir = join(baseDir, "..", "skills", "flow-system");
 	let detachUi: (() => void) | undefined;
 
