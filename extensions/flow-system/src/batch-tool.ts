@@ -251,12 +251,15 @@ export function makeFlowBatchTool(queue: FlowQueueService, runFlow: ExecuteFlowF
 				);
 
 				if (Exit.isSuccess(exit)) {
+					const finishedAt = Date.now();
+					const flushed = tracker.flush();
 					await Effect.runPromise(
 						queue.setStatus(job.id, "done", {
-							finishedAt: Date.now(),
+							finishedAt,
 							output: exit.value,
 							toolCount: tracker.toolCount,
 							lastProgress: "done",
+							...(flushed !== undefined ? { lastAssistantText: flushed.extras.lastAssistantText } : {}),
 						}),
 					);
 					return {

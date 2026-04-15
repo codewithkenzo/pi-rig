@@ -17,7 +17,7 @@ export interface FlowQueueService {
 	getAll(): Effect.Effect<FlowJob[]>;
 	peek(): FlowQueue;
 	subscribe(listener: (queue: FlowQueue) => void): () => void;
-	cancel(id: string): Effect.Effect<void, JobNotFoundError>;
+	cancel(id: string): Effect.Effect<"cancelled" | "already_terminal", JobNotFoundError>;
 	bindAbort(id: string, abort: () => void): Effect.Effect<FlowJobStatus, JobNotFoundError>;
 	clearAbort(id: string): Effect.Effect<void>;
 	setStatus(
@@ -136,7 +136,7 @@ export const makeQueue = (): Effect.Effect<FlowQueueService> =>
 			};
 		};
 
-		const cancel = (id: string): Effect.Effect<void, JobNotFoundError> =>
+		const cancel = (id: string): Effect.Effect<"cancelled" | "already_terminal", JobNotFoundError> =>
 			Effect.gen(function* () {
 				const outcome = yield* Ref.modify(
 					ref,
@@ -164,12 +164,14 @@ export const makeQueue = (): Effect.Effect<FlowQueueService> =>
 					},
 				);
 				if (outcome._tag === "missing") {
-					yield* Effect.fail(new JobNotFoundError({ id }));
+					return yield* Effect.fail(new JobNotFoundError({ id }));
 				}
 				if (outcome._tag === "updated") {
 					runAbort(id);
 					publish(outcome.next);
+					return "cancelled" as const;
 				}
+				return "already_terminal" as const;
 			});
 
 		const bindAbort = (id: string, abort: () => void): Effect.Effect<FlowJobStatus, JobNotFoundError> =>

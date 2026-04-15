@@ -66,7 +66,7 @@ export const stageSkills = (paths: string[], cwd = process.cwd()): Effect.Effect
 				},
 				catch: (e) => new SkillLoadError({ path: p, reason: String(e) }),
 			}),
-		{ concurrency: "unbounded" },
+		{ concurrency: 8 },
 	).pipe(Effect.map((parts) => parts.join("\n\n---\n\n")));
 
 export const writeTempSkillFile = (content: string): Effect.Effect<string> =>

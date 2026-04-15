@@ -28,7 +28,7 @@ export const FlowProfileSchema = Type.Object({
 	// Currently validated and stored but not passed to the subprocess.
 	max_iterations: Type.Number({ minimum: 1, maximum: 200 }),
 	toolsets: Type.Array(Type.String()),
-	skills: Type.Array(Type.String()),
+	skills: Type.Array(Type.String(), { maxItems: 32 }),
 	system_prompt_prefix: Type.Optional(Type.String()),
 });
 

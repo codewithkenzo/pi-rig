@@ -390,6 +390,8 @@ export function registerFlowCommands(pi: ExtensionAPI, queue: FlowQueueService, 
 
 					if (result._tag === "Failure") {
 						await ctx.ui.notify(C.red(`✗  Job not found: ${id}`));
+					} else if (result.success === "already_terminal") {
+						await ctx.ui.notify(C.yellow(`⚠  Job ${id} already finished.`));
 					} else {
 						await ctx.ui.notify(C.gray(`⊘  Cancelled: ${id}`));
 					}
