@@ -360,7 +360,7 @@ export const executeFlow = ({
 		Effect.flatMap(() =>
 			Effect.acquireUseRelease(
 				// Acquire: stage skills → write temp file → return path
-				stageSkills(profile.skills).pipe(
+				stageSkills(profile.skills, cwd).pipe(
 					Effect.flatMap((content) => writeTempSkillFile(content)),
 				),
 				// Use: run subprocess with skill file

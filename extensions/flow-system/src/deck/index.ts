@@ -74,8 +74,14 @@ export const showFlowDeck = async (
 
 			const unsubscribe = queue.subscribe((next: FlowQueue) => {
 				cachedTheme = loadTheme(cwd);
+				const prevId = state.selected_id;
 				state = { ...state, snapshot: next };
 				state = clampSelection(state);
+				// If clampSelection changed the selection (job disappeared), reset the feed
+				// so stale lines from the old job don't bleed into the new selection.
+				if (state.selected_id !== prevId) {
+					state = resetFeed(state);
+				}
 				state = updateFeedFromSnapshot(state);
 				syncTicker();
 				tui.requestRender();

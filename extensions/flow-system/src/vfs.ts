@@ -12,15 +12,17 @@ const isWithinRoot = (candidate: string, root: string): boolean => {
 	return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
 };
 
-export const stageSkills = (paths: string[]): Effect.Effect<string, SkillLoadError> =>
+export const stageSkills = (paths: string[], cwd = process.cwd()): Effect.Effect<string, SkillLoadError> =>
 	Effect.forEach(
 		paths,
 		(p) =>
 			Effect.tryPromise({
 				try: async () => {
+					// Relative paths resolve against the job's cwd, not the host process cwd.
 					// Resolve symlinks before the root check — prevents symlink-bypass attacks
 					// where a link inside an allowed root points outside it.
-					const resolvedPath = await fs.realpath(path.resolve(p));
+					const rawResolved = path.isAbsolute(p) ? p : path.resolve(cwd, p);
+					const resolvedPath = await fs.realpath(rawResolved);
 					const allowedRoots = [
 						await fs.realpath(path.resolve(os.homedir(), ".pi")).catch(() => path.resolve(os.homedir(), ".pi")),
 						await fs.realpath(path.resolve(process.cwd())).catch(() => path.resolve(process.cwd())),

@@ -71,11 +71,11 @@ export const makeQueue = (): Effect.Effect<FlowQueueService> =>
 
 		const publish = (next: FlowQueue): void => {
 			current = next;
-			// Clone before delivery — listeners must not mutate internal queue state.
-			const snapshot = cloneQueue(next);
+			// Each listener gets its own clone — prevents one listener's mutation
+			// from corrupting the snapshot seen by subsequent listeners.
 			for (const listener of listeners) {
 				try {
-					listener(snapshot);
+					listener(cloneQueue(next));
 				} catch (error) {
 					console.warn("flow queue listener error", error);
 				}
@@ -172,22 +172,29 @@ export const makeQueue = (): Effect.Effect<FlowQueueService> =>
 
 		const bindAbort = (id: string, abort: () => void): Effect.Effect<FlowJobStatus, JobNotFoundError> =>
 			Effect.gen(function* () {
+				// Register optimistically before reading status — closes the TOCTOU window
+				// where cancel() could fire between the status read and the aborts.set,
+				// leaving the abort registered but never called.
+				aborts.set(id, abort);
 				const status = yield* Ref.get(ref).pipe(
 					Effect.flatMap((state) => {
 						const job = state.jobs.find((candidate) => candidate.id === id);
 						if (job === undefined) {
+							aborts.delete(id); // clean up stale registration
 							return Effect.fail(new JobNotFoundError({ id }));
 						}
 						return Effect.succeed(job.status);
 					}),
 				);
-				if (status === "pending" || status === "running") {
-					aborts.set(id, abort);
-				} else if (status === "cancelled") {
-					try {
-						abort();
-					} catch (error) {
-						console.warn("flow queue abort handler error", error);
+				// Job already reached a terminal state before we registered — fire and deregister.
+				if (isTerminalStatus(status)) {
+					aborts.delete(id);
+					if (status === "cancelled") {
+						try {
+							abort();
+						} catch (error) {
+							console.warn("flow queue abort handler error", error);
+						}
 					}
 				}
 				return status;
@@ -250,8 +257,10 @@ export const makeQueue = (): Effect.Effect<FlowQueueService> =>
 					: jobs;
 			const next: FlowQueue = { jobs: normalizedJobs, mode: "sequential" };
 			return Effect.gen(function* () {
-				aborts.clear();
+				// Establish the new Ref state first so any concurrent reads see consistent
+				// data before abort handles are released.
 				yield* Ref.set(ref, next);
+				aborts.clear();
 				publish(next);
 			});
 		};

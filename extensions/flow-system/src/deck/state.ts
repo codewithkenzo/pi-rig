@@ -5,7 +5,9 @@ import { stripAnsi } from "../../../../shared/ui/hud.js";
 import type { FlowQueue } from "../types.js";
 
 // Strip control bytes that would corrupt the TUI render (but preserve printable chars).
-const FEED_CONTROL_RE = /[\x00-\x08\x0b\x0c\x0e-\x1f]/g;
+// Keeps \x09 (tab) and \x0a (LF); strips everything else in 0x00-0x1f including \x0d (\r).
+// \r without a fix would cause the terminal cursor to jump to column 0, overwriting the line.
+const FEED_CONTROL_RE = /[\x00-\x08\x0b-\x1f]/g;
 
 const sanitizeFeed = (text: string): string =>
 	stripAnsi(text).replace(FEED_CONTROL_RE, "");
