@@ -139,8 +139,8 @@ export const showFlowDeck = async (
 						const list = jobList();
 						const idx = list.findIndex((j) => j.id === state.selected_id);
 						if (idx > 0) {
-							// Reset feed so stale lines from the previous job don't bleed in.
-							state = resetFeed({ ...state, selected_id: list[idx - 1]!.id });
+							// Reset feed then immediately repopulate from the new job's current snapshot.
+							state = updateFeedFromSnapshot(resetFeed({ ...state, selected_id: list[idx - 1]!.id }));
 						}
 						flashKey("↑");
 						tui.requestRender();
@@ -151,7 +151,7 @@ export const showFlowDeck = async (
 						const list = jobList();
 						const idx = list.findIndex((j) => j.id === state.selected_id);
 						if (idx >= 0 && idx < list.length - 1) {
-							state = resetFeed({ ...state, selected_id: list[idx + 1]!.id });
+							state = updateFeedFromSnapshot(resetFeed({ ...state, selected_id: list[idx + 1]!.id }));
 						}
 						flashKey("↓");
 						tui.requestRender();

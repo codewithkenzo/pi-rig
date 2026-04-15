@@ -18,11 +18,15 @@ const isWide = (cp: number): boolean =>
 	(cp >= 0xff01 && cp <= 0xff60) ||  // Fullwidth Latin
 	(cp >= 0xffe0 && cp <= 0xffe6);    // Fullwidth signs
 
+// OSC sequences (\x1b]...\x07 or \x1b]...\x1b\) are zero-width escape data.
+// stripAnsi strips CSI/SGR but not OSC — pre-strip here to avoid over-counting.
+const OSC_RE = /\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g;
+
 /**
- * Visible column width of a string — strips ANSI, counts wide chars as 2.
+ * Visible column width of a string — strips ANSI and OSC sequences, counts wide chars as 2.
  */
 export const visibleWidth = (text: string): number => {
-	const plain = stripAnsi(text);
+	const plain = stripAnsi(text.replace(OSC_RE, ""));
 	let w = 0;
 	for (const ch of plain) {
 		w += isWide(ch.codePointAt(0) ?? 0) ? 2 : 1;

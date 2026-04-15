@@ -6,8 +6,10 @@ import { SkillLoadError } from "./types.js";
 
 // In-process skill file cache — avoids re-reading disk for the same path within a session.
 // Capped at MAX_CACHE_SIZE entries; oldest entry is evicted on overflow (insertion-order LRU).
+// inflight deduplicates concurrent misses for the same path — only one read fires per path.
 const MAX_CACHE_SIZE = 128;
 const cache = new Map<string, string>();
+const inflight = new Map<string, Promise<string>>();
 
 const isWithinRoot = (candidate: string, root: string): boolean => {
 	const rel = path.relative(root, candidate);
@@ -39,12 +41,22 @@ export const stageSkills = (paths: string[], cwd = process.cwd()): Effect.Effect
 					}
 
 					if (!cache.has(resolvedPath)) {
-						if (cache.size >= MAX_CACHE_SIZE) {
-							// Evict oldest entry (Map preserves insertion order)
-							const oldest = cache.keys().next().value;
-							if (oldest !== undefined) cache.delete(oldest);
+						// Deduplicate concurrent misses — only one disk read per path at a time.
+						let p = inflight.get(resolvedPath);
+						if (p === undefined) {
+							p = (async () => {
+								const text = await Bun.file(resolvedPath).text();
+								if (cache.size >= MAX_CACHE_SIZE) {
+									const oldest = cache.keys().next().value;
+									if (oldest !== undefined) cache.delete(oldest);
+								}
+								cache.set(resolvedPath, text);
+								inflight.delete(resolvedPath);
+								return text;
+							})();
+							inflight.set(resolvedPath, p);
 						}
-						cache.set(resolvedPath, await Bun.file(resolvedPath).text());
+						await p;
 					}
 					return cache.get(resolvedPath) as string;
 				},

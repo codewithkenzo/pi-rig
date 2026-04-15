@@ -255,7 +255,8 @@ export const makeQueue = (): Effect.Effect<FlowQueueService> =>
 			const normalizedJobs =
 				options?.normalizeStaleActive === true
 					? normalizeStaleRestoredJobs(jobs, options.restoredAt ?? Date.now())
-					: jobs;
+					// Always clone — caller must not share references with internal queue state.
+					: jobs.map((j) => ({ ...j }));
 			const next: FlowQueue = { jobs: normalizedJobs, mode: "sequential" };
 			return Effect.gen(function* () {
 				// Establish the new Ref state first so any concurrent reads see consistent

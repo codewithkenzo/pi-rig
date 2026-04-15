@@ -151,9 +151,6 @@ export const runSubprocess = (
 		// Thinking level
 		args.push("--thinking", profile.reasoning_level);
 
-		// Iteration cap from profile
-		args.push("--max-iterations", String(profile.max_iterations));
-
 		// Toolsets — map abstract names to pi CLI tool names
 		const tools = resolveToolsets(profile.toolsets);
 		if (tools.length > 0) {
@@ -170,8 +167,8 @@ export const runSubprocess = (
 			args.push("--system-prompt", profile.system_prompt_prefix);
 		}
 
-		// Task is the final positional argument; -- prevents leading-dash tasks being parsed as flags
-		args.push("--", task);
+		// Task is the final positional argument
+		args.push(task);
 
 		const bin = process.argv[1] ?? "pi";
 		let child: ReturnType<typeof spawn> | undefined;
