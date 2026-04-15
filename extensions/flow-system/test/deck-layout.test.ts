@@ -1,0 +1,104 @@
+import { describe, it, expect } from "bun:test";
+import { visibleWidth, truncateToWidth, zipColumns } from "../src/deck/layout.js";
+
+describe("visibleWidth", () => {
+	it("measures plain ASCII", () => {
+		expect(visibleWidth("hello")).toBe(5);
+	});
+
+	it("returns 0 for empty string", () => {
+		expect(visibleWidth("")).toBe(0);
+	});
+
+	it("strips ANSI before measuring", () => {
+		expect(visibleWidth("\x1b[32mhello\x1b[0m")).toBe(5);
+	});
+
+	it("counts CJK chars as 2 columns", () => {
+		// 日 is U+65E5, in CJK Unified (0x4e00–0x9fff)
+		expect(visibleWidth("日")).toBe(2);
+		expect(visibleWidth("日本")).toBe(4);
+	});
+
+	it("counts ASCII chars as 1", () => {
+		expect(visibleWidth("abc")).toBe(3);
+	});
+});
+
+describe("truncateToWidth", () => {
+	it("pads short text to exact width with spaces", () => {
+		const result = truncateToWidth("hi", 10);
+		expect(result).toBe("hi        ");
+		expect(result.length).toBe(10);
+	});
+
+	it("returns text padded to exact width when exactly right length", () => {
+		const result = truncateToWidth("hello", 5);
+		expect(result).toBe("hello");
+		expect(result.length).toBe(5);
+	});
+
+	it("truncates long text with ellipsis", () => {
+		const result = truncateToWidth("hello world extra text", 10);
+		expect(result.length).toBe(10);
+		expect(result).toContain("…");
+	});
+
+	it("strips ANSI when measuring and truncating", () => {
+		const result = truncateToWidth("\x1b[32mhello\x1b[0m", 10);
+		// plain "hello" = 5 chars, padded to 10
+		expect(result).toBe("hello     ");
+		expect(result.length).toBe(10);
+	});
+
+	it("handles empty string", () => {
+		const result = truncateToWidth("", 5);
+		expect(result).toBe("     ");
+		expect(result.length).toBe(5);
+	});
+});
+
+describe("zipColumns — width safety", () => {
+	it("merges equal-length columns at 96 cols", () => {
+		const left = ["profile", "status", "tools", "started", "running", "task"];
+		const right = ["event 1", "event 2", "event 3", "event 4", "event 5", "event 6"];
+		const rows = zipColumns(left, right, 38, 96, " │ ");
+		expect(rows).toHaveLength(6);
+		rows.forEach((r) => {
+			// Each row should be exactly leftWidth + sep + rightWidth = 38 + 3 + 55 = 96 chars
+			// (sep = " │ " = 3 chars)
+			expect(r.length).toBe(96);
+		});
+	});
+
+	it("pads shorter column with empty lines at 60 cols", () => {
+		const left = ["a"];
+		const right = ["x", "y", "z"];
+		const rows = zipColumns(left, right, 20, 60, "|");
+		expect(rows).toHaveLength(3);
+		// First row has content on both sides
+		expect(rows[0]).toContain("a");
+		expect(rows[0]).toContain("x");
+		// Second row has empty left column padded
+		expect(rows[1]).not.toContain("a");
+	});
+
+	it("renders at 120 cols without crashing", () => {
+		const left = Array.from({ length: 6 }, (_, i) => `left-row-${i}`);
+		const right = Array.from({ length: 6 }, (_, i) => `right-row-${i}`);
+		const rows = zipColumns(left, right, 48, 120, " │ ");
+		expect(rows).toHaveLength(6);
+		rows.forEach((r) => expect(typeof r).toBe("string"));
+	});
+
+	it("compact mode (single column width = 58) does not crash", () => {
+		// simulate compact mode where caller doesn't zip but each line is just truncated
+		const rows = zipColumns(["session profile", "status"], [], 30, 60, " | ");
+		expect(rows).toHaveLength(2);
+	});
+
+	it("separator is included in each row", () => {
+		const rows = zipColumns(["L"], ["R"], 10, 25, " | ");
+		expect(rows[0]).toContain(" | ");
+	});
+});

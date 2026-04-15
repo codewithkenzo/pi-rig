@@ -6,7 +6,7 @@ import { executeFlow, type ExecuteOptions, type FlowProgressEvent } from "./exec
 import { formatFlowError, isFlowCancelledCause } from "./errors.js";
 import type { FlowJob } from "./types.js";
 import { showFlowProfilePicker } from "./picker.js";
-import { showFlowOverlay } from "./overlay.js";
+import { showFlowDeck } from "./deck/index.js";
 
 type ExecuteFlowFn = typeof executeFlow;
 
@@ -279,6 +279,17 @@ const selectAndRunFlow = async (
 	await runFlowFromCommand(queue, ctx, selectedProfile, trimmedTask, runFlow);
 };
 
+const showFlowManager = async (queue: FlowQueueService, ctx: FlowUiContext): Promise<void> => {
+	const hasCustom = typeof (ctx.ui as { custom?: unknown }).custom === "function";
+	if (hasCustom) {
+		return showFlowDeck(queue, ctx);
+	}
+	// Text-only fallback when pi-tui custom overlay is unavailable
+	const snap = await Effect.runPromise(queue.snapshot());
+	const lines = snap.jobs.map((job) => `${STATUS_ICON[job.status] ?? "?"} ${job.profile} · ${job.task}`);
+	await ctx.ui.notify(lines.length > 0 ? lines.join("\n") : "No flow jobs.");
+};
+
 export function registerFlowCommands(pi: ExtensionAPI, queue: FlowQueueService, runFlow: ExecuteFlowFn = executeFlow): void {
 	pi.registerCommand("flow", {
 		description: "Manage flow jobs. Subcommands: manage, status, cancel, profiles, run, pick",
@@ -289,7 +300,7 @@ export function registerFlowCommands(pi: ExtensionAPI, queue: FlowQueueService, 
 
 			switch (sub) {
 				case "manage": {
-					await showFlowOverlay(queue, ctx);
+					await showFlowManager(queue, ctx);
 					break;
 				}
 
@@ -454,7 +465,7 @@ export function registerFlowCommands(pi: ExtensionAPI, queue: FlowQueueService, 
 	pi.registerShortcut("alt+shift+f", {
 		description: "Manage running flows",
 		handler: async (ctx) => {
-			await showFlowOverlay(queue, ctx);
+			await showFlowManager(queue, ctx);
 		},
 	});
 }
