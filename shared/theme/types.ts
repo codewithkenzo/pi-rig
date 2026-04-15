@@ -35,9 +35,8 @@ export const PaletteSchema = Type.Object({
   source: Type.Optional(
     Type.Union([Type.Literal("builtin"), Type.Literal("hermes"), Type.Literal("custom"), Type.Literal("pi-theme-switcher")])
   ),
-  semantic: Type.Record(SemanticTokenSchema, Type.String()),  // token → hex
-  raw: Type.Record(Type.String(), Type.String()),             // named colors
-  /** Animation frames imported from hermes skin (optional) */
+  semantic: Type.Record(SemanticTokenSchema, Type.String()),
+  raw: Type.Record(Type.String(), Type.String()),
   animations: Type.Optional(Type.Object({
     runningFrames:    Type.Array(Type.String()),
     toolFrames:       Type.Array(Type.String()),

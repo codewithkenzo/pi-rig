@@ -1,7 +1,5 @@
 import type { Palette, SemanticToken } from "./types.js";
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
 const semantic = (
   accent: string, success: string, error: string, warning: string,
   muted: string, dim: string, text: string, border: string,
@@ -22,8 +20,6 @@ const defaultAnimations: Palette["animations"] = {
   pendingSymbol:   "○",
   spinnerInterval: 0.15,
 };
-
-// ─── Popular built-in palettes ────────────────────────────────────────────────
 
 export const catppuccinMocha: Palette = {
   name: "catppuccin-mocha",
@@ -316,14 +312,6 @@ export const solarizedLight: Palette = {
   animations: defaultAnimations,
 };
 
-// ─── Hermes skins ─────────────────────────────────────────────────────────────
-
-// Mapping: hermes color roles → semantic tokens
-// ui_accent → accent, ui_ok → success, ui_error → error, ui_warn → warning
-// banner_dim → muted, status_bar_text → dim, banner_text → text
-// banner_border → border+separator, banner_accent → highlight
-// ui_label → info+label, status_bar_good → active, banner_dim → inactive
-// banner_title → header, banner_text → value
 
 export const hermesCadet: Palette = {
   name: "cadet",
@@ -622,8 +610,6 @@ export const hermesVesper: Palette = {
   },
 };
 
-// ─── Registry ─────────────────────────────────────────────────────────────────
-
 export const BUILTIN_PALETTES: readonly Palette[] = [
   // Popular
   catppuccinMocha, catppuccinLatte,
@@ -646,7 +632,6 @@ export const getPalette = (name: string): Palette => {
   return p;
 };
 
-/** Override specific semantic tokens on top of a base palette. */
 export const fromOverrides = (
   base: Palette,
   overrides: Partial<Record<SemanticToken, string>>,

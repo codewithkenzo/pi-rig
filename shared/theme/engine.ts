@@ -24,8 +24,6 @@ export interface ThemeEngine {
   readonly mode: ColorMode;
 }
 
-// ─── Hex utilities ────────────────────────────────────────────────────────────
-
 export const hexToRgb = (hex: string): [number, number, number] => {
   const h = hex.replace("#", "");
   const num = parseInt(h, 16);
@@ -45,11 +43,8 @@ const truecolorBg = (hex: string, text: string): string => {
 const ANSI_STRIP_RE = /\x1b\[[0-9;]*m/g;
 const stripAnsi = (text: string): string => text.replace(ANSI_STRIP_RE, "");
 
-// ─── 256-color approximation ──────────────────────────────────────────────────
-
 const hex256 = (hex: string, text: string): string => {
   const [r, g, b] = hexToRgb(hex);
-  // Map to xterm 216-color cube (index 16–231)
   const idx =
     16 +
     36 * Math.round((r / 255) * 5) +
@@ -57,8 +52,6 @@ const hex256 = (hex: string, text: string): string => {
     Math.round((b / 255) * 5);
   return `\x1b[38;5;${idx}m${text}\x1b[0m`;
 };
-
-// ─── Engine factory ───────────────────────────────────────────────────────────
 
 const engineCache = new Map<string, ThemeEngine>();
 
@@ -69,7 +62,7 @@ const buildEngine = (palette: Palette, mode: ColorMode): ThemeEngine => {
     if (mode === "none") return text;
     if (mode === "truecolor") return truecolorFg(hex, text);
     if (mode === "256") return hex256(hex, text);
-    return text; // 16-color fallback — let terminal pick
+    return text;
   };
 
   const applyBg = (hex: string, text: string): string => {
