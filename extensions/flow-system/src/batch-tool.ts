@@ -7,6 +7,7 @@ import { executeFlow, type ExecuteOptions, type FlowProgressEvent } from "./exec
 import type { FlowJob } from "./types.js";
 import { formatFlowError, isFlowCancelledCause } from "./errors.js";
 import { renderFlowBatchCall, renderFlowBatchResult, type FlowRenderDetails } from "./renderers.js";
+import { createFlowProgressTracker } from "./progress.js";
 
 type ExecuteFlowFn = typeof executeFlow;
 
@@ -32,11 +33,14 @@ const summarize = (text: string): string => {
 const updateProgress = (
 	queue: FlowQueueService,
 	jobId: string,
-	toolCount: number,
-	lastProgress: string,
+	extras: {
+		toolCount: number;
+		lastProgress: string;
+		lastAssistantText?: string;
+	},
 ): void => {
 	void Effect.runPromise(
-		queue.setStatus(jobId, "running", { toolCount, lastProgress }).pipe(Effect.result, Effect.asVoid),
+		queue.setStatus(jobId, "running", extras).pipe(Effect.result, Effect.asVoid),
 	);
 };
 
@@ -214,34 +218,25 @@ export function makeFlowBatchTool(queue: FlowQueueService, runFlow: ExecuteFlowF
 				}
 
 				const profile = profileExit.value;
-				let toolCount = 0;
+				const tracker = createFlowProgressTracker();
 
 				await Effect.runPromise(
-					queue.setStatus(job.id, "running", { startedAt: Date.now(), toolCount, lastProgress: "starting" }),
+					queue.setStatus(job.id, "running", { startedAt: Date.now(), toolCount: tracker.toolCount, lastProgress: "starting" }),
 				);
 				const onProgress = (event: FlowProgressEvent): void => {
-					if (event._tag === "tool_start") {
-						toolCount += 1;
-						updateProgress(queue, job.id, toolCount, event.detail);
-					} else if (event._tag === "assistant_text") {
-						void Effect.runPromise(
-							queue.setStatus(job.id, "running", {
-								toolCount,
-								lastProgress: event.detail,
-								lastAssistantText: event.detail,
-							}).pipe(Effect.result, Effect.asVoid),
-						);
-					} else {
-						updateProgress(queue, job.id, toolCount, event.detail);
+					const update = tracker.apply(event);
+					if (update === undefined) {
+						return;
 					}
-					emitUpdate(onUpdate, `${item.profile}: ${event.detail}`, {
+					updateProgress(queue, job.id, update.extras);
+					emitUpdate(onUpdate, `${item.profile}: ${update.summary}`, {
 						jobId: job.id,
 						index,
 						count: items.length,
 						profile: item.profile,
 						phase: "progress",
-						toolCount,
-						summary: event.detail,
+						toolCount: tracker.toolCount,
+						summary: update.summary,
 					} satisfies FlowRenderDetails);
 				};
 
@@ -260,7 +255,7 @@ export function makeFlowBatchTool(queue: FlowQueueService, runFlow: ExecuteFlowF
 						queue.setStatus(job.id, "done", {
 							finishedAt: Date.now(),
 							output: exit.value,
-							toolCount,
+							toolCount: tracker.toolCount,
 							lastProgress: "done",
 						}),
 					);
@@ -274,7 +269,7 @@ export function makeFlowBatchTool(queue: FlowQueueService, runFlow: ExecuteFlowF
 				}
 
 				if (isFlowCancelledCause(exit.cause)) {
-					await markCancelled(queue, job.id, toolCount);
+					await markCancelled(queue, job.id, tracker.toolCount);
 					return {
 						id: job.id,
 						profile: item.profile,
@@ -289,7 +284,7 @@ export function makeFlowBatchTool(queue: FlowQueueService, runFlow: ExecuteFlowF
 					queue.setStatus(job.id, "failed", {
 						finishedAt: Date.now(),
 						error: errText,
-						toolCount,
+						toolCount: tracker.toolCount,
 						lastProgress: "failed",
 					}),
 				);

@@ -22,6 +22,26 @@ A collection of pi agent extensions (https://github.com/badlogic/pi-mono). Each 
 
 ---
 
+## Priority Workflow
+
+For non-trivial work:
+1. check `tk` / `.tickets/` first
+2. read local markdown context (`AGENTS.md`, `README.md`, plans, sprint tickets)
+3. load matching skills
+4. use mcporter-backed research only when repo facts are insufficient
+
+Research lane order:
+1. repo search
+2. Context7 docs
+3. Exa fetch / zread
+4. grep.app / `gh search code`
+5. Exa web
+
+Notes:
+- `tk` is the prevailing project memory/lifecycle lane for now
+- markdown is the durable context lane
+- mcporter is a dev-ops research lane, not a product extension in this repo
+
 ## Extension Conventions
 
 1. Default export is `async (pi: ExtensionAPI) => Promise<void>`
@@ -102,10 +122,12 @@ bun test             # run tests
 
 ## Skills
 
-- `kenzo-pi-extensions` — pi ExtensionAPI reference (tools, events, commands, sub-agents)
-- `kenzo-pi-flow-stack` — stack patterns (Effect + VFS + TypeBox + built-in profiles)
-- `kenzo-house-spec` — repo/global ownership and sync rules for Kenzo docs and skills
-- `kenzo-publishing-voice` — authentic, transparent public writing guidance for Kenzo projects
+- `kenzo-pi-extensions` — pi ExtensionAPI reference
+- `kenzo-pi-flow-stack` — Effect + VFS + TypeBox + flow patterns
+- `kenzo-house-spec` — repo/global ownership + mirroring rules
+- `kenzo-publishing-voice` — public writing guidance
+- `kenzo-tk-cli` — task tracking + lifecycle memory
+- `kenzo-research-tools` / `kenzo-mcporter` — external research lane routing
 
 ## Documentation
 

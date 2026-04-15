@@ -91,4 +91,43 @@ describe("flow_run tool cancellation", () => {
 		expect(jobs).toHaveLength(1);
 		expect(jobs[0]?.status).toBe("cancelled");
 	});
+
+	it("throttles and clips high-frequency assistant text progress updates", async () => {
+		const queue = await Effect.runPromise(makeQueue());
+		const longText = "assistant update ".repeat(40);
+		const updateLines: string[] = [];
+
+		const fakeExecute = ({ onProgress }: ExecuteOptions) =>
+			Effect.sync(() => {
+				onProgress?.({ _tag: "assistant_text", detail: `${longText} a` });
+				onProgress?.({ _tag: "assistant_text", detail: `${longText} b` });
+				onProgress?.({ _tag: "assistant_text", detail: `${longText} c` });
+				return "done";
+			});
+
+		const tool = makeFlowTool(queue, fakeExecute);
+		const result = await tool.execute(
+			"tool-throttle",
+			{ profile: "explore", task: "stream text" },
+			undefined,
+			(update) => {
+				const text = update.content[0];
+				if (text?.type === "text") {
+					updateLines.push(text.text);
+				}
+			},
+			makeCtx(),
+		);
+
+		expect(result.details).toMatchObject({ status: "done" });
+
+		const progressMessages = updateLines.filter((line) => line.startsWith("explore:"));
+		expect(progressMessages).toHaveLength(1);
+		expect(progressMessages[0]?.length).toBeLessThan(220);
+
+		const jobs = await Effect.runPromise(queue.getAll());
+		const lastAssistantText = jobs[0]?.lastAssistantText ?? "";
+		expect(lastAssistantText.length).toBeLessThan(220);
+		expect(lastAssistantText.endsWith("…")).toBe(true);
+	});
 });

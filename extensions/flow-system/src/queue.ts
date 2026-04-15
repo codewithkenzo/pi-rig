@@ -2,6 +2,14 @@ import { Effect, Ref } from "effect";
 import type { FlowJob, FlowJobStatus, FlowQueue } from "./types.js";
 import { JobNotFoundError } from "./types.js";
 
+export interface RestoreOptions {
+	normalizeStaleActive?: boolean;
+	restoredAt?: number;
+}
+
+const STALE_RESTORE_PROGRESS = "stale restore: previous process not live";
+const STALE_RESTORE_ERROR = "Restored active job has no live process; retry/replay is required.";
+
 // ── Public interface ──────────────────────────────────────────────────────────
 
 export interface FlowQueueService {
@@ -18,7 +26,7 @@ export interface FlowQueueService {
 		extras?: Partial<FlowJob>,
 	): Effect.Effect<void, JobNotFoundError>;
 	snapshot(): Effect.Effect<FlowQueue>;
-	restoreFrom(jobs: FlowJob[]): Effect.Effect<void>;
+	restoreFrom(jobs: FlowJob[], options?: RestoreOptions): Effect.Effect<void>;
 }
 
 type QueueMutation =
@@ -28,6 +36,23 @@ type QueueMutation =
 
 const isTerminalStatus = (status: FlowJobStatus): boolean =>
 	status === "done" || status === "failed" || status === "cancelled";
+
+const normalizeStaleRestoredJobs = (
+	jobs: readonly FlowJob[],
+	restoredAt: number,
+): FlowJob[] =>
+	jobs.map((job) => {
+		if (job.status !== "pending" && job.status !== "running") {
+			return job;
+		}
+		return {
+			...job,
+			status: "failed",
+			finishedAt: job.finishedAt ?? restoredAt,
+			lastProgress: STALE_RESTORE_PROGRESS,
+			error: job.error ?? STALE_RESTORE_ERROR,
+		};
+	});
 
 // ── Factory ───────────────────────────────────────────────────────────────────
 
@@ -210,8 +235,12 @@ export const makeQueue = (): Effect.Effect<FlowQueueService> =>
 
 		const snapshot = (): Effect.Effect<FlowQueue> => Ref.get(ref);
 
-		const restoreFrom = (jobs: FlowJob[]): Effect.Effect<void> => {
-			const next: FlowQueue = { jobs, mode: "sequential" };
+		const restoreFrom = (jobs: FlowJob[], options?: RestoreOptions): Effect.Effect<void> => {
+			const normalizedJobs =
+				options?.normalizeStaleActive === true
+					? normalizeStaleRestoredJobs(jobs, options.restoredAt ?? Date.now())
+					: jobs;
+			const next: FlowQueue = { jobs: normalizedJobs, mode: "sequential" };
 			return Effect.gen(function* () {
 				aborts.clear();
 				yield* Ref.set(ref, next);

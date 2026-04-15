@@ -257,6 +257,63 @@ describe("FlowQueueService", () => {
 		expect(snap.mode).toBe("sequential");
 	});
 
+	it("restoreFrom can normalize stale pending/running jobs into non-live failed jobs", async () => {
+		const queue = await Effect.runPromise(makeQueue());
+		const restoredAt = 1700000004321;
+
+		const restoredJobs: FlowJob[] = [
+			{
+				id: "restored-pending",
+				profile: "explore",
+				task: "pending task",
+				status: "pending",
+				createdAt: 1700000000000,
+			},
+			{
+				id: "restored-running",
+				profile: "debug",
+				task: "running task",
+				status: "running",
+				createdAt: 1700000000100,
+				startedAt: 1700000000200,
+				lastAssistantText: "partial stream text",
+			},
+			{
+				id: "restored-done",
+				profile: "coder",
+				task: "done task",
+				status: "done",
+				createdAt: 1700000000300,
+				finishedAt: 1700000000400,
+				output: "ok",
+			},
+		];
+
+		await Effect.runPromise(
+			queue.restoreFrom(restoredJobs, { normalizeStaleActive: true, restoredAt }),
+		);
+
+		const snap = await Effect.runPromise(queue.snapshot());
+		expect(snap.jobs).toHaveLength(3);
+
+		const pending = snap.jobs[0];
+		const running = snap.jobs[1];
+		const done = snap.jobs[2];
+
+		expect(pending?.status).toBe("failed");
+		expect(pending?.finishedAt).toBe(restoredAt);
+		expect(pending?.lastProgress).toContain("stale");
+		expect(pending?.error).toContain("live process");
+
+		expect(running?.status).toBe("failed");
+		expect(running?.finishedAt).toBe(restoredAt);
+		expect(running?.lastProgress).toContain("stale");
+		expect(running?.error).toContain("live process");
+
+		expect(done?.status).toBe("done");
+		expect(done?.output).toBe("ok");
+	});
+
 	it("each queue instance is independent", async () => {
 		const q1 = await Effect.runPromise(makeQueue());
 		const q2 = await Effect.runPromise(makeQueue());

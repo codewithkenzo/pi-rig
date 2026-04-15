@@ -36,7 +36,9 @@ export default async function (pi: ExtensionAPI): Promise<void> {
 			.at(-1);
 
 		if (last?.data !== undefined) {
-			await Effect.runPromise(queue.restoreFrom(last.data.jobs));
+			await Effect.runPromise(
+				queue.restoreFrom(last.data.jobs, { normalizeStaleActive: true, restoredAt: Date.now() }),
+			);
 		}
 		detachUi?.();
 		if (ctx.hasUI) {

@@ -6,6 +6,7 @@ import { getProfile } from "./profiles.js";
 import { executeFlow, type ExecuteOptions, type FlowProgressEvent } from "./executor.js";
 import { formatFlowError, isFlowCancelledCause } from "./errors.js";
 import { renderFlowRunCall, renderFlowRunResult, type FlowRenderDetails } from "./renderers.js";
+import { createFlowProgressTracker } from "./progress.js";
 
 type ExecuteFlowFn = typeof executeFlow;
 
@@ -34,10 +35,13 @@ const summarize = (text: string): string => {
 const applyProgress = (
 	queue: FlowQueueService,
 	jobId: string,
-	status: "running" | "done" | "failed",
-	extras: { toolCount: number; lastProgress: string },
+	extras: {
+		toolCount: number;
+		lastProgress: string;
+		lastAssistantText?: string;
+	},
 ): void => {
-	void Effect.runPromise(queue.setStatus(jobId, status, extras).pipe(Effect.result, Effect.asVoid));
+	void Effect.runPromise(queue.setStatus(jobId, "running", extras).pipe(Effect.result, Effect.asVoid));
 };
 
 const markCancelled = async (
@@ -185,28 +189,16 @@ export function makeFlowTool(queue: FlowQueueService, runFlow: ExecuteFlowFn = e
 
 				void (async () => {
 					const startedAt = Date.now();
-					let toolCount = 0;
+					const tracker = createFlowProgressTracker();
 					try {
 						await Effect.runPromise(
-							queue.setStatus(job.id, "running", { startedAt, toolCount, lastProgress: "starting" }),
+							queue.setStatus(job.id, "running", { startedAt, toolCount: tracker.toolCount, lastProgress: "starting" }),
 						);
 						const onProgress = (event: FlowProgressEvent): void => {
-							if (event._tag === "tool_start") {
-								toolCount += 1;
-								applyProgress(queue, job.id, "running", { toolCount, lastProgress: event.detail });
-								return;
+							const update = tracker.apply(event);
+							if (update !== undefined) {
+								applyProgress(queue, job.id, update.extras);
 							}
-							if (event._tag === "assistant_text") {
-								void Effect.runPromise(
-									queue.setStatus(job.id, "running", {
-										toolCount,
-										lastProgress: event.detail,
-										lastAssistantText: event.detail,
-									}).pipe(Effect.result, Effect.asVoid),
-								);
-								return;
-							}
-							applyProgress(queue, job.id, "running", { toolCount, lastProgress: event.detail });
 						};
 						const exit = await Effect.runPromiseExit(
 							runFlow({ task, profile, cwd, onProgress, signal: jobController.signal } satisfies ExecuteOptions),
@@ -217,7 +209,7 @@ export function makeFlowTool(queue: FlowQueueService, runFlow: ExecuteFlowFn = e
 								queue.setStatus(job.id, "done", {
 									finishedAt,
 									output: exit.value,
-									toolCount,
+									toolCount: tracker.toolCount,
 									lastProgress: "done",
 								}),
 							);
@@ -226,7 +218,7 @@ export function makeFlowTool(queue: FlowQueueService, runFlow: ExecuteFlowFn = e
 								"info",
 							);
 						} else if (isFlowCancelledCause(exit.cause)) {
-							await markCancelled(queue, job.id, toolCount);
+							await markCancelled(queue, job.id, tracker.toolCount);
 							ctx.ui.notify(`⊘ ${profileName} cancelled`, "warning");
 						} else {
 							const finishedAt = Date.now();
@@ -234,7 +226,7 @@ export function makeFlowTool(queue: FlowQueueService, runFlow: ExecuteFlowFn = e
 								queue.setStatus(job.id, "failed", {
 									finishedAt,
 									error: formatFlowError(exit.cause),
-									toolCount,
+									toolCount: tracker.toolCount,
 									lastProgress: "failed",
 								}),
 							);
@@ -244,7 +236,7 @@ export function makeFlowTool(queue: FlowQueueService, runFlow: ExecuteFlowFn = e
 						const errorText = describeError(error);
 						try {
 							if (jobController.signal.aborted) {
-								await markCancelled(queue, job.id, toolCount);
+								await markCancelled(queue, job.id, tracker.toolCount);
 							} else {
 								await Effect.runPromise(
 									queue.setStatus(job.id, "failed", {
@@ -287,7 +279,7 @@ export function makeFlowTool(queue: FlowQueueService, runFlow: ExecuteFlowFn = e
 				};
 			}
 
-			let toolCount = 0;
+			const tracker = createFlowProgressTracker();
 			const startedAt = Date.now();
 			const cancelFromSignal = (): void => {
 				cancelJob(queue, job.id);
@@ -296,7 +288,7 @@ export function makeFlowTool(queue: FlowQueueService, runFlow: ExecuteFlowFn = e
 
 			try {
 				await Effect.runPromise(
-					queue.setStatus(job.id, "running", { startedAt, toolCount, lastProgress: "starting" }),
+					queue.setStatus(job.id, "running", { startedAt, toolCount: tracker.toolCount, lastProgress: "starting" }),
 				);
 				emitUpdate(onUpdate, `Running flow ${job.id} (${profileName})…`, {
 					jobId: job.id,
@@ -305,26 +297,17 @@ export function makeFlowTool(queue: FlowQueueService, runFlow: ExecuteFlowFn = e
 				} satisfies FlowRenderDetails);
 
 				const onProgress = (event: FlowProgressEvent): void => {
-					if (event._tag === "tool_start") {
-						toolCount += 1;
-						applyProgress(queue, job.id, "running", { toolCount, lastProgress: event.detail });
-					} else if (event._tag === "assistant_text") {
-						void Effect.runPromise(
-							queue.setStatus(job.id, "running", {
-								toolCount,
-								lastProgress: event.detail,
-								lastAssistantText: event.detail,
-							}).pipe(Effect.result, Effect.asVoid),
-						);
-					} else {
-						applyProgress(queue, job.id, "running", { toolCount, lastProgress: event.detail });
+					const update = tracker.apply(event);
+					if (update === undefined) {
+						return;
 					}
-					emitUpdate(onUpdate, `${profileName}: ${event.detail}`, {
+					applyProgress(queue, job.id, update.extras);
+					emitUpdate(onUpdate, `${profileName}: ${update.summary}`, {
 						jobId: job.id,
 						profile: profileName,
 						phase: "progress",
-						toolCount,
-						summary: event.detail,
+						toolCount: tracker.toolCount,
+						summary: update.summary,
 					} satisfies FlowRenderDetails);
 				};
 
@@ -338,7 +321,7 @@ export function makeFlowTool(queue: FlowQueueService, runFlow: ExecuteFlowFn = e
 						queue.setStatus(job.id, "done", {
 							finishedAt,
 							output: exit.value,
-							toolCount,
+							toolCount: tracker.toolCount,
 							lastProgress: "done",
 						}),
 					);
@@ -349,7 +332,7 @@ export function makeFlowTool(queue: FlowQueueService, runFlow: ExecuteFlowFn = e
 							profile: profileName,
 							background: false,
 							status: "done",
-							toolCount,
+							toolCount: tracker.toolCount,
 							durationMs: finishedAt - startedAt,
 							summary: summarize(exit.value),
 						} satisfies FlowRenderDetails,
@@ -358,20 +341,20 @@ export function makeFlowTool(queue: FlowQueueService, runFlow: ExecuteFlowFn = e
 
 				if (isFlowCancelledCause(exit.cause)) {
 					const finishedAt = Date.now();
-					await markCancelled(queue, job.id, toolCount);
-					return cancelledResult(profileName, job.id, false, toolCount, finishedAt - startedAt);
+					await markCancelled(queue, job.id, tracker.toolCount);
+					return cancelledResult(profileName, job.id, false, tracker.toolCount, finishedAt - startedAt);
 				}
 
 				const errText = formatFlowError(exit.cause);
 				const finishedAt = Date.now();
 				await Effect.runPromise(
-					queue.setStatus(job.id, "failed", {
-						finishedAt,
-						error: errText,
-						toolCount,
-						lastProgress: "failed",
-					}),
-				);
+						queue.setStatus(job.id, "failed", {
+							finishedAt,
+							error: errText,
+							toolCount: tracker.toolCount,
+							lastProgress: "failed",
+						}),
+					);
 				return {
 					content: [{ type: "text" as const, text: `Flow failed: ${errText}` }],
 					details: {
@@ -379,7 +362,7 @@ export function makeFlowTool(queue: FlowQueueService, runFlow: ExecuteFlowFn = e
 						profile: profileName,
 						background: false,
 						status: "failed",
-						toolCount,
+						toolCount: tracker.toolCount,
 						durationMs: finishedAt - startedAt,
 						summary: errText,
 					} satisfies FlowRenderDetails,
