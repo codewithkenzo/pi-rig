@@ -18,8 +18,13 @@ export const stageSkills = (paths: string[]): Effect.Effect<string, SkillLoadErr
 		(p) =>
 			Effect.tryPromise({
 				try: async () => {
-					const resolvedPath = path.resolve(p);
-					const allowedRoots = [path.resolve(os.homedir(), ".pi"), path.resolve(process.cwd())];
+					// Resolve symlinks before the root check — prevents symlink-bypass attacks
+					// where a link inside an allowed root points outside it.
+					const resolvedPath = await fs.realpath(path.resolve(p));
+					const allowedRoots = [
+						await fs.realpath(path.resolve(os.homedir(), ".pi")).catch(() => path.resolve(os.homedir(), ".pi")),
+						await fs.realpath(path.resolve(process.cwd())).catch(() => path.resolve(process.cwd())),
+					];
 					const allowed = allowedRoots.some((root) => isWithinRoot(resolvedPath, root));
 
 					if (!allowed) {

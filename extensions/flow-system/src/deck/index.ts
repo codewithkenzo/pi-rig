@@ -12,6 +12,7 @@ import {
 	makeInitialDeckState,
 	clampSelection,
 	updateFeedFromSnapshot,
+	resetFeed,
 	type DeckState,
 } from "./state.js";
 import { DECK_ICONS } from "./icons.js";
@@ -53,7 +54,10 @@ export const showFlowDeck = async (
 			let state: DeckState = makeInitialDeckState(queue.peek());
 			const ticker = new AnimationTicker();
 
-			const theme = () => loadTheme(cwd);
+			// Cache theme to avoid sync disk I/O on every render tick (4–8 fps).
+			// Refreshed on each queue update — theme changes are rare vs render frequency.
+			let cachedTheme = loadTheme(cwd);
+			const theme = () => cachedTheme;
 
 			const syncTicker = (): void => {
 				const { config } = theme();
@@ -69,6 +73,7 @@ export const showFlowDeck = async (
 			};
 
 			const unsubscribe = queue.subscribe((next: FlowQueue) => {
+				cachedTheme = loadTheme(cwd);
 				state = { ...state, snapshot: next };
 				state = clampSelection(state);
 				state = updateFeedFromSnapshot(state);
@@ -128,7 +133,8 @@ export const showFlowDeck = async (
 						const list = jobList();
 						const idx = list.findIndex((j) => j.id === state.selected_id);
 						if (idx > 0) {
-							state = { ...state, selected_id: list[idx - 1]!.id, scroll_offset: 0 };
+							// Reset feed so stale lines from the previous job don't bleed in.
+							state = resetFeed({ ...state, selected_id: list[idx - 1]!.id });
 						}
 						flashKey("↑");
 						tui.requestRender();
@@ -139,7 +145,7 @@ export const showFlowDeck = async (
 						const list = jobList();
 						const idx = list.findIndex((j) => j.id === state.selected_id);
 						if (idx >= 0 && idx < list.length - 1) {
-							state = { ...state, selected_id: list[idx + 1]!.id, scroll_offset: 0 };
+							state = resetFeed({ ...state, selected_id: list[idx + 1]!.id });
 						}
 						flashKey("↓");
 						tui.requestRender();

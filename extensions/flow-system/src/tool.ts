@@ -258,7 +258,9 @@ export function makeFlowTool(queue: FlowQueueService, runFlow: ExecuteFlowFn = e
 							summary: errorText,
 						} satisfies FlowRenderDetails);
 					} finally {
-						await Effect.runPromise(queue.clearAbort(job.id));
+						// Suppress errors — clearAbort is fire-and-forget; an error here
+						// must not produce an unhandled rejection from the detached IIFE.
+						await Effect.runPromise(queue.clearAbort(job.id)).catch(() => {});
 					}
 				})();
 

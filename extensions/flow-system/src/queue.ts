@@ -56,6 +56,12 @@ const normalizeStaleRestoredJobs = (
 
 // ── Factory ───────────────────────────────────────────────────────────────────
 
+/** Shallow-clone a FlowQueue so external holders cannot mutate internal state. */
+const cloneQueue = (q: FlowQueue): FlowQueue => ({
+	...q,
+	jobs: q.jobs.map((j) => ({ ...j })),
+});
+
 export const makeQueue = (): Effect.Effect<FlowQueueService> =>
 	Effect.gen(function* () {
 		const ref = yield* Ref.make<FlowQueue>({ jobs: [], mode: "sequential" });
@@ -65,9 +71,11 @@ export const makeQueue = (): Effect.Effect<FlowQueueService> =>
 
 		const publish = (next: FlowQueue): void => {
 			current = next;
+			// Clone before delivery — listeners must not mutate internal queue state.
+			const snapshot = cloneQueue(next);
 			for (const listener of listeners) {
 				try {
-					listener(next);
+					listener(snapshot);
 				} catch (error) {
 					console.warn("flow queue listener error", error);
 				}
@@ -110,14 +118,14 @@ export const makeQueue = (): Effect.Effect<FlowQueueService> =>
 			});
 
 		const getAll = (): Effect.Effect<FlowJob[]> =>
-			Ref.get(ref).pipe(Effect.map((s) => s.jobs));
+			Ref.get(ref).pipe(Effect.map((s) => s.jobs.map((j) => ({ ...j }))));
 
-		const peek = (): FlowQueue => current;
+		const peek = (): FlowQueue => cloneQueue(current);
 
 		const subscribe = (listener: (queue: FlowQueue) => void): (() => void) => {
 			listeners.add(listener);
 			try {
-				listener(current);
+				listener(cloneQueue(current));
 			} catch (error) {
 				console.warn("flow queue listener error", error);
 			}
@@ -233,7 +241,7 @@ export const makeQueue = (): Effect.Effect<FlowQueueService> =>
 				}
 			});
 
-		const snapshot = (): Effect.Effect<FlowQueue> => Ref.get(ref);
+		const snapshot = (): Effect.Effect<FlowQueue> => Ref.get(ref).pipe(Effect.map(cloneQueue));
 
 		const restoreFrom = (jobs: FlowJob[], options?: RestoreOptions): Effect.Effect<void> => {
 			const normalizedJobs =
