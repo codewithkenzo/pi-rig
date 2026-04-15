@@ -157,6 +157,8 @@ const pickBackground = (palette: Palette): string =>
 	palette.raw["crust"] ??
 	palette.semantic.separator;
 
+const themeCache = new Map<string, Theme>();
+
 const toPiTheme = (ctx: ThemeSwitcherContext, palette: Palette): Theme => {
 	const ThemeCtor = ctx.ui.theme.constructor as new (
 		fgColors: Record<string, string | number>,
@@ -241,7 +243,13 @@ export const resolveThemeTarget = (
 	if (installed !== undefined) {
 		return name;
 	}
-	return toPiTheme(ctx, getPalette(name));
+	const cached = themeCache.get(name);
+	if (cached !== undefined) {
+		return cached;
+	}
+	const theme = toPiTheme(ctx, getPalette(name));
+	themeCache.set(name, theme);
+	return theme;
 };
 
 export const applyTheme = (

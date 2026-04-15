@@ -33,7 +33,7 @@ export const PaletteSchema = Type.Object({
   variant: Type.Union([Type.Literal("dark"), Type.Literal("light")]),
   description: Type.Optional(Type.String()),
   source: Type.Optional(
-    Type.Union([Type.Literal("builtin"), Type.Literal("hermes"), Type.Literal("custom")])
+    Type.Union([Type.Literal("builtin"), Type.Literal("hermes"), Type.Literal("custom"), Type.Literal("pi-theme-switcher")])
   ),
   semantic: Type.Record(SemanticTokenSchema, Type.String()),  // token → hex
   raw: Type.Record(Type.String(), Type.String()),             // named colors

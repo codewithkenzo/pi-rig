@@ -1,5 +1,6 @@
 import type { ExtensionUIContext } from "@mariozechner/pi-coding-agent";
 import { AnimationTicker, PALETTE_MAP, createEngine, getPalette, loadTheme, shimmer, spin, withMotion } from "../../../shared/theme/index.js";
+import type { Palette, ThemeConfig } from "../../../shared/theme/types.js";
 import { ellipsize, fitAnsiLine, hintLine, joinCompact, metric, tag } from "../../../shared/ui/hud.js";
 import { resolveThemeName, type ThemeState } from "./state.js";
 
@@ -39,8 +40,9 @@ export const renderThemeWidgetLines = (
 	state: ThemeState,
 	cwd: string,
 	animationState = { frame: 0, startedAt: Date.now() },
+	cachedThemeResult?: { config: ThemeConfig; palette: Palette },
 ): string[] => {
-	const { config, palette: configuredPalette } = loadTheme(cwd);
+	const { config, palette: configuredPalette } = cachedThemeResult ?? loadTheme(cwd);
 	let activeTheme = state.getActive();
 	if (!PALETTE_MAP.has(activeTheme)) {
 		const resolved = resolveThemeName(activeTheme, configuredPalette.name);
@@ -74,7 +76,7 @@ export const renderThemeWidgetLines = (
 		`${spinner} ${bold(title)}${engine.fg("muted", " · ")}${tag(engine, "accent", activeTheme)} ${engine.fg("muted", "→")} ${tag(engine, "value", nextTheme)}`,
 		joinCompact(engine, [
 			tag(engine, palette.variant === "dark" ? "label" : "warning", palette.variant),
-			tag(engine, "muted", palette.source ?? "builtin"),
+			tag(engine, "muted", palette.source ?? "unknown"),
 			palette.description !== undefined ? engine.fg("muted", ellipsize(palette.description, 38)) : undefined,
 		]),
 		swatches,
@@ -95,9 +97,10 @@ const makeLinesComponent = (getLines: () => string[]): LinesComponent => {
 
 export const createThemeWidgetFactory = (state: ThemeState, cwd: string) =>
 	(tui: WidgetTui): LinesComponent => {
-		const { config } = loadTheme(cwd);
+		const themeResult = loadTheme(cwd);
+		const { config } = themeResult;
 		const ticker = new AnimationTicker();
-		const component = makeLinesComponent(() => renderThemeWidgetLines(state, cwd, ticker.current));
+		const component = makeLinesComponent(() => renderThemeWidgetLines(state, cwd, ticker.current, themeResult));
 		const shouldAnimate = config.animation.enabled && !config.animation.reducedMotion;
 
 		if (shouldAnimate) {

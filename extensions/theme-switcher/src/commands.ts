@@ -1,6 +1,6 @@
 import { Effect } from "effect";
 import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
-import { getPalette } from "../../../shared/theme/index.js";
+import { getPalette, PALETTE_MAP, createEngine } from "../../../shared/theme/index.js";
 import type { ThemeState } from "./state.js";
 import { applyTheme, syncThemeStateFromUi } from "./state.js";
 import { ThemeLoadError, ThemeNotFoundError } from "./types.js";
@@ -64,10 +64,17 @@ const runThemePick = async (ctx: ThemeUiContext, state: ThemeState): Promise<voi
 		state.setActive(picked);
 	}
 
-	await ctx.ui.notify(`Active theme set to ${state.getActive()}.`);
+	const activeName = state.getActive();
+	const palette = PALETTE_MAP.get(activeName);
+	const engine = palette ? createEngine(palette, "truecolor") : undefined;
+	const label = engine
+		? `${engine.fg("success", "✓")} Theme set to ${engine.fg("accent", activeName)}`
+		: `✓ Theme set to ${activeName}`;
+	await ctx.ui.notify(label);
 };
 
 const runThemeCycle = async (ctx: ThemeUiContext, state: ThemeState): Promise<void> => {
+	const prev = state.getActive();
 	const next = state.getNextName();
 	const applied = await applyThemeDirectly(next, ctx, state);
 	if (!applied.ok) {
@@ -75,7 +82,12 @@ const runThemeCycle = async (ctx: ThemeUiContext, state: ThemeState): Promise<vo
 		return;
 	}
 
-	await ctx.ui.notify(`Cycled to ${state.getActive()}.`);
+	const nextPalette = PALETTE_MAP.get(state.getActive());
+	const nextEngine = nextPalette ? createEngine(nextPalette, "truecolor") : undefined;
+	const msg = nextEngine
+		? `${nextEngine.fg("success", "✓")} ${nextEngine.fg("muted", prev)} → ${nextEngine.fg("accent", state.getActive())}`
+		: `✓ ${prev} → ${state.getActive()}`;
+	await ctx.ui.notify(msg);
 };
 
 export const handleThemeCommand = async (
@@ -131,7 +143,13 @@ export const handleThemeCommand = async (
 				return;
 			}
 
-			await ctx.ui.notify(`Active theme set to ${state.getActive()}.`);
+			const activeName = state.getActive();
+			const palette = PALETTE_MAP.get(activeName);
+			const engine = palette ? createEngine(palette, "truecolor") : undefined;
+			const label = engine
+				? `${engine.fg("success", "✓")} Theme set to ${engine.fg("accent", activeName)}`
+				: `✓ Theme set to ${activeName}`;
+			await ctx.ui.notify(label);
 			return;
 		}
 		case "cycle": {

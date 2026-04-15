@@ -25,7 +25,7 @@ const getAvailableThemeNames = (ctx: ThemePickerContext): string[] => {
 const buildItems = (activeTheme: string, availableNames: string[]): SelectItem[] =>
 	availableNames.map((name) => {
 		const palette = PALETTE_MAP.get(name);
-		const meta = [palette?.variant, palette?.source ?? "builtin"].filter(Boolean).join(" · ");
+		const meta = [palette?.variant, palette?.source ?? "unknown"].filter(Boolean).join(" · ");
 		const description = [meta, palette?.description].filter(Boolean).join(" — ");
 		return {
 			value: name,
@@ -61,6 +61,8 @@ export const showThemePicker = async (
 	return custom<string | null>(
 		(tui, _theme, _kb, done) => {
 			const themeNow = () => ctx.ui.theme;
+			let previewTimer: ReturnType<typeof setTimeout> | undefined;
+
 			const selectList = new SelectList(items, Math.min(items.length, 10), {
 				selectedPrefix: (text) => themeNow().fg("accent", text),
 				selectedText: (text) => themeNow().fg("accent", text),
@@ -72,17 +74,23 @@ export const showThemePicker = async (
 				if (item.value === previewTheme) {
 					return;
 				}
-				if (applyPreview(item.value)) {
-					tui.requestRender(true);
-				}
+				if (previewTimer !== undefined) clearTimeout(previewTimer);
+				previewTimer = setTimeout(() => {
+					if (applyPreview(item.value)) {
+						tui.requestRender(true);
+					}
+				}, 120);
 			};
 			selectList.onSelect = (item) => {
+				if (previewTimer !== undefined) clearTimeout(previewTimer);
 				if (item.value !== previewTheme && !applyPreview(item.value)) {
 					return;
 				}
-				done(item.value);
+				tui.requestRender(true);
+				setTimeout(() => done(item.value), 80);
 			};
 			selectList.onCancel = () => {
+				if (previewTimer !== undefined) clearTimeout(previewTimer);
 				if (previewTheme !== originalTheme) {
 					ctx.ui.setTheme(resolveThemeTarget({ ui: ctx.ui }, originalTheme));
 					previewTheme = originalTheme;
@@ -111,7 +119,7 @@ export const showThemePicker = async (
 						const engine = createEngine(palette, "truecolor");
 						rows.push(
 							truncateToWidth(
-								theme.fg("muted", `${palette.name} · ${palette.variant}/${palette.source ?? "builtin"}`),
+								theme.fg("muted", `${palette.name} · ${palette.variant}/${palette.source ?? "unknown"}`),
 								width,
 							),
 							truncateToWidth(

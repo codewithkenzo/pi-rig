@@ -22,7 +22,7 @@ export {
   renderPalettePreview, renderPaletteList, renderPaletteEntry,
 } from "./preview.js";
 export {
-  // Built-in palettes
+  // Extension palettes
   catppuccinMocha, catppuccinLatte,
   nord, dracula,
   tokyoNight, gruvboxDark, oneDark,

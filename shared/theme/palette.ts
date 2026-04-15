@@ -29,7 +29,7 @@ export const catppuccinMocha: Palette = {
   name: "catppuccin-mocha",
   variant: "dark",
   description: "Catppuccin Mocha — soothing pastel dark theme",
-  source: "builtin",
+  source: "pi-theme-switcher",
   semantic: semantic(
     "#89b4fa",  // accent    → blue
     "#a6e3a1",  // success   → green
@@ -66,7 +66,7 @@ export const catppuccinLatte: Palette = {
   name: "catppuccin-latte",
   variant: "light",
   description: "Catppuccin Latte — soothing pastel light theme",
-  source: "builtin",
+  source: "pi-theme-switcher",
   semantic: semantic(
     "#1e66f5",  // accent    → blue
     "#40a02b",  // success   → green
@@ -99,7 +99,7 @@ export const nord: Palette = {
   name: "nord",
   variant: "dark",
   description: "Nord — arctic, north-bluish color palette",
-  source: "builtin",
+  source: "pi-theme-switcher",
   semantic: semantic(
     "#88c0d0",  // accent    → nord8 (frost)
     "#a3be8c",  // success   → nord14 (aurora green)
@@ -132,7 +132,7 @@ export const dracula: Palette = {
   name: "dracula",
   variant: "dark",
   description: "Dracula — dark theme for code editors and terminals",
-  source: "builtin",
+  source: "pi-theme-switcher",
   semantic: semantic(
     "#bd93f9",  // accent    → purple
     "#50fa7b",  // success   → green
@@ -164,7 +164,7 @@ export const tokyoNight: Palette = {
   name: "tokyo-night",
   variant: "dark",
   description: "Tokyo Night — a clean dark theme inspired by Tokyo's night",
-  source: "builtin",
+  source: "pi-theme-switcher",
   semantic: semantic(
     "#7aa2f7",  // accent    → blue
     "#9ece6a",  // success   → green
@@ -203,7 +203,7 @@ export const gruvboxDark: Palette = {
   name: "gruvbox-dark",
   variant: "dark",
   description: "Gruvbox Dark — retro groove color scheme",
-  source: "builtin",
+  source: "pi-theme-switcher",
   semantic: semantic(
     "#458588",  // accent    → aqua
     "#b8bb26",  // success   → green
@@ -239,7 +239,7 @@ export const oneDark: Palette = {
   name: "one-dark",
   variant: "dark",
   description: "One Dark — Atom's iconic dark theme",
-  source: "builtin",
+  source: "pi-theme-switcher",
   semantic: semantic(
     "#61afef",  // accent    → blue
     "#98c379",  // success   → green
@@ -271,7 +271,7 @@ export const solarizedDark: Palette = {
   name: "solarized-dark",
   variant: "dark",
   description: "Solarized Dark — precision colors for machines and people",
-  source: "builtin",
+  source: "pi-theme-switcher",
   semantic: semantic(
     "#268bd2",  // accent    → blue
     "#859900",  // success   → green
@@ -305,7 +305,7 @@ export const solarizedLight: Palette = {
   name: "solarized-light",
   variant: "light",
   description: "Solarized Light — the light variant",
-  source: "builtin",
+  source: "pi-theme-switcher",
   semantic: semantic(
     "#268bd2", "#859900", "#dc322f", "#b58900",
     "#93a1a1", "#eee8d5", "#586e75", "#eee8d5",

@@ -52,7 +52,7 @@ export const renderThemeStatus = (activeTheme: string): string[] => {
 	];
 
 	if (theme !== undefined) {
-		lines.unshift(`  ${theme.name} (${theme.variant}, ${theme.source ?? "builtin"})`);
+		lines.unshift(`  ${theme.name} (${theme.variant}, ${theme.source ?? "unknown"})`);
 		if (theme.description) {
 			lines.push(`  ${theme.description}`);
 		}
@@ -73,7 +73,7 @@ export const buildThemeContextNote = (activeTheme: string): string => {
 	const theme = PALETTE_MAP.get(activeTheme);
 	const parts = [
 		`[theme-switcher] active theme: ${activeTheme}`,
-		theme !== undefined ? `(${theme.variant}, ${theme.source ?? "builtin"})` : "",
+		theme !== undefined ? `(${theme.variant}, ${theme.source ?? "unknown"})` : "",
 	];
 	return parts.filter(Boolean).join(" ");
 };

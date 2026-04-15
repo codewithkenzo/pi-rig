@@ -60,7 +60,9 @@ const hex256 = (hex: string, text: string): string => {
 
 // ─── Engine factory ───────────────────────────────────────────────────────────
 
-export const createEngine = (palette: Palette, mode: ColorMode): ThemeEngine => {
+const engineCache = new Map<string, ThemeEngine>();
+
+const buildEngine = (palette: Palette, mode: ColorMode): ThemeEngine => {
   const resolve = (token: SemanticToken): string => palette.semantic[token];
 
   const applyFg = (hex: string, text: string): string => {
@@ -91,4 +93,13 @@ export const createEngine = (palette: Palette, mode: ColorMode): ThemeEngine => 
     rawBg: (hex, text) => applyBg(hex, text),
     strip: stripAnsi,
   };
+};
+
+export const createEngine = (palette: Palette, mode: ColorMode): ThemeEngine => {
+  const key = `${palette.name}:${mode}`;
+  const cached = engineCache.get(key);
+  if (cached !== undefined) return cached;
+  const engine = buildEngine(palette, mode);
+  engineCache.set(key, engine);
+  return engine;
 };
