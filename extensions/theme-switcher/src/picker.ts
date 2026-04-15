@@ -62,6 +62,7 @@ export const showThemePicker = async (
 		(tui, _theme, _kb, done) => {
 			const themeNow = () => ctx.ui.theme;
 			let previewTimer: ReturnType<typeof setTimeout> | undefined;
+			let closed = false;
 
 			const selectList = new SelectList(items, Math.min(items.length, 10), {
 				selectedPrefix: (text) => themeNow().fg("accent", text),
@@ -71,11 +72,12 @@ export const showThemePicker = async (
 				noMatch: (text) => themeNow().fg("warning", text),
 			});
 			selectList.onSelectionChange = (item) => {
-				if (item.value === previewTheme) {
+				if (closed || item.value === previewTheme) {
 					return;
 				}
 				if (previewTimer !== undefined) clearTimeout(previewTimer);
 				previewTimer = setTimeout(() => {
+					if (closed) return;
 					if (applyPreview(item.value)) {
 						tui.requestRender(true);
 					}
@@ -86,11 +88,13 @@ export const showThemePicker = async (
 				if (item.value !== previewTheme && !applyPreview(item.value)) {
 					return;
 				}
+				closed = true;
 				tui.requestRender(true);
 				setTimeout(() => done(item.value), 80);
 			};
 			selectList.onCancel = () => {
 				if (previewTimer !== undefined) clearTimeout(previewTimer);
+				closed = true;
 				if (previewTheme !== originalTheme) {
 					ctx.ui.setTheme(resolveThemeTarget({ ui: ctx.ui }, originalTheme));
 					previewTheme = originalTheme;

@@ -96,6 +96,7 @@ const buildEngine = (palette: Palette, mode: ColorMode): ThemeEngine => {
 };
 
 export const createEngine = (palette: Palette, mode: ColorMode): ThemeEngine => {
+  if (palette.name === "custom") return buildEngine(palette, mode);
   const key = `${palette.name}:${mode}`;
   const cached = engineCache.get(key);
   if (cached !== undefined) return cached;
