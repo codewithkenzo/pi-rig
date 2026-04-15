@@ -1,7 +1,14 @@
 // deck/state.ts — plain TypeScript state, no Effect, no Ref
 // Lives only for the duration of the overlay session.
 
+import { stripAnsi } from "../../../../shared/ui/hud.js";
 import type { FlowQueue } from "../types.js";
+
+// Strip control bytes that would corrupt the TUI render (but preserve printable chars).
+const FEED_CONTROL_RE = /[\x00-\x08\x0b\x0c\x0e-\x1f]/g;
+
+const sanitizeFeed = (text: string): string =>
+	stripAnsi(text).replace(FEED_CONTROL_RE, "");
 
 export interface FeedLine {
 	text: string;
@@ -47,7 +54,7 @@ export const clampSelection = (state: DeckState): DeckState => {
 };
 
 const appendLine = (state: DeckState, text: string, ts: number): DeckState => {
-	const trimmed = text.trim();
+	const trimmed = sanitizeFeed(text).trim();
 	if (trimmed.length === 0) return state;
 	const prev = state.feed.lines.at(-1);
 	if (prev?.text === trimmed) return state;

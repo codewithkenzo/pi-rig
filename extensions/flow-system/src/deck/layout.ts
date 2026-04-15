@@ -53,9 +53,44 @@ export const truncateToWidth = (text: string, width: number): string => {
 };
 
 /**
+ * Fit an ANSI-colored string into exactly `width` visible columns.
+ * Preserves all ANSI escape sequences in the output (unlike truncateToWidth).
+ * Pads with spaces when shorter; truncates with "…" when longer.
+ */
+export const fitAnsiColumn = (text: string, width: number): string => {
+	const vw = visibleWidth(text);
+	if (vw <= width) {
+		return text + " ".repeat(width - vw);
+	}
+	// Walk through the raw string, copy ANSI sequences verbatim, truncate visible chars.
+	let result = "";
+	let visW = 0;
+	let i = 0;
+	while (i < text.length) {
+		// Consume ANSI escape sequence verbatim
+		if (text[i] === "\x1b" && text[i + 1] === "[") {
+			const m = /^\x1b\[[0-9;]*[A-Za-z]/.exec(text.slice(i));
+			if (m !== null) {
+				result += m[0];
+				i += m[0].length;
+				continue;
+			}
+		}
+		const cp = text.codePointAt(i) ?? 0;
+		const cw = isWide(cp) ? 2 : 1;
+		if (visW + cw > width - 1) break;
+		result += String.fromCodePoint(cp);
+		visW += cw;
+		i += cp > 0xffff ? 2 : 1;
+	}
+	return result + "\x1b[0m" + "…" + " ".repeat(Math.max(0, width - visW - 1));
+};
+
+/**
  * Merge two column arrays into a single array of rows.
  * Each row: left (padded to leftWidth) + separator + right (padded to rightWidth).
  * The right column receives the remaining width after separator.
+ * ANSI colors/animations in each cell are preserved.
  */
 export const zipColumns = (
 	left: string[],
@@ -70,8 +105,8 @@ export const zipColumns = (
 	const result: string[] = [];
 
 	for (let i = 0; i < rows; i++) {
-		const l = truncateToWidth(left[i] ?? "", leftWidth);
-		const r = truncateToWidth(right[i] ?? "", rightWidth);
+		const l = fitAnsiColumn(left[i] ?? "", leftWidth);
+		const r = fitAnsiColumn(right[i] ?? "", rightWidth);
 		result.push(`${l}${separator}${r}`);
 	}
 

@@ -130,6 +130,7 @@ export const showFlowDeck = async (
 						if (idx > 0) {
 							state = { ...state, selected_id: list[idx - 1]!.id, scroll_offset: 0 };
 						}
+						flashKey("↑");
 						tui.requestRender();
 						return;
 					}
@@ -140,6 +141,7 @@ export const showFlowDeck = async (
 						if (idx >= 0 && idx < list.length - 1) {
 							state = { ...state, selected_id: list[idx + 1]!.id, scroll_offset: 0 };
 						}
+						flashKey("↓");
 						tui.requestRender();
 						return;
 					}
@@ -147,12 +149,14 @@ export const showFlowDeck = async (
 					// Scroll output
 					if (data === PGUP || data === SHIFT_UP) {
 						state = { ...state, scroll_offset: Math.max(0, state.scroll_offset - SCROLL_STEP) };
+						flashKey("PgUp");
 						tui.requestRender();
 						return;
 					}
 
 					if (data === PGDN || data === SHIFT_DN) {
 						state = { ...state, scroll_offset: state.scroll_offset + SCROLL_STEP };
+						flashKey("PgDn");
 						tui.requestRender();
 						return;
 					}

@@ -282,9 +282,13 @@ const selectAndRunFlow = async (
 const showFlowManager = async (queue: FlowQueueService, ctx: FlowUiContext): Promise<void> => {
 	const hasCustom = typeof (ctx.ui as { custom?: unknown }).custom === "function";
 	if (hasCustom) {
-		return showFlowDeck(queue, ctx);
+		try {
+			return await showFlowDeck(queue, ctx);
+		} catch (err) {
+			console.warn("[flow-deck] overlay init failed, falling back to text:", err);
+		}
 	}
-	// Text-only fallback when pi-tui custom overlay is unavailable
+	// Text-only fallback — also reached when deck init throws
 	const snap = await Effect.runPromise(queue.snapshot());
 	const lines = snap.jobs.map((job) => `${STATUS_ICON[job.status] ?? "?"} ${job.profile} · ${job.task}`);
 	await ctx.ui.notify(lines.length > 0 ? lines.join("\n") : "No flow jobs.");
