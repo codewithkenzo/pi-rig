@@ -4,9 +4,6 @@ import * as path from "node:path";
 import * as os from "node:os";
 import { SkillLoadError } from "./types.js";
 
-// In-process skill file cache — avoids re-reading disk for the same path within a session.
-// Capped at MAX_CACHE_SIZE entries; oldest entry is evicted on overflow (insertion-order LRU).
-// inflight deduplicates concurrent misses for the same path — only one read fires per path.
 const MAX_CACHE_SIZE = 128;
 const cache = new Map<string, string>();
 const inflight = new Map<string, Promise<string>>();
@@ -22,14 +19,10 @@ export const stageSkills = (paths: string[], cwd = process.cwd()): Effect.Effect
 		(p) =>
 			Effect.tryPromise({
 				try: async () => {
-					// Relative paths resolve against the job's cwd, not the host process cwd.
-					// Resolve symlinks before the root check — prevents symlink-bypass attacks
-					// where a link inside an allowed root points outside it.
 					const rawResolved = path.isAbsolute(p) ? p : path.resolve(cwd, p);
 					const resolvedPath = await fs.realpath(rawResolved);
 					const allowedRoots = [
 						await fs.realpath(path.resolve(os.homedir(), ".pi")).catch(() => path.resolve(os.homedir(), ".pi")),
-						// Use job cwd (not host process.cwd()) so skills relative to the job dir pass.
 						await fs.realpath(path.resolve(cwd)).catch(() => path.resolve(cwd)),
 					];
 					const allowed = allowedRoots.some((root) => isWithinRoot(resolvedPath, root));
@@ -41,7 +34,6 @@ export const stageSkills = (paths: string[], cwd = process.cwd()): Effect.Effect
 					}
 
 					if (!cache.has(resolvedPath)) {
-						// Deduplicate concurrent misses — only one disk read per path at a time.
 						let p = inflight.get(resolvedPath);
 						if (p === undefined) {
 							p = (async () => {
@@ -54,7 +46,6 @@ export const stageSkills = (paths: string[], cwd = process.cwd()): Effect.Effect
 									cache.set(resolvedPath, text);
 									return text;
 								} finally {
-									// Always clear — if the read fails, future callers must be able to retry.
 									inflight.delete(resolvedPath);
 								}
 							})();
@@ -78,5 +69,4 @@ export const writeTempSkillFile = (content: string): Effect.Effect<string> =>
 	});
 
 export const cleanupTempFile = (file: string): Effect.Effect<void> =>
-	// Remove the entire temp dir in one call — handles partial writes and non-empty dirs.
 	Effect.promise(() => fs.rm(path.dirname(file), { recursive: true, force: true }));

@@ -1,12 +1,6 @@
-// deck/state.ts — plain TypeScript state, no Effect, no Ref
-// Lives only for the duration of the overlay session.
-
 import { stripAnsi } from "../../../../shared/ui/hud.js";
 import type { FlowQueue } from "../types.js";
 
-// Strip control bytes that would corrupt the TUI render (but preserve printable chars).
-// Keeps \x09 (tab) and \x0a (LF); strips everything else in 0x00-0x1f including \x0d (\r).
-// \r without a fix would cause the terminal cursor to jump to column 0, overwriting the line.
 const FEED_CONTROL_RE = /[\x00-\x08\x0b-\x1f]/g;
 
 const sanitizeFeed = (text: string): string =>
@@ -64,17 +58,12 @@ const appendLine = (state: DeckState, text: string, ts: number): DeckState => {
 	return { ...state, feed: { ...state.feed, lines } };
 };
 
-/**
- * Clear the activity feed and scroll position — call whenever selected_id changes
- * so stale lines from the previous job don't bleed into the new selection.
- */
 export const resetFeed = (state: DeckState): DeckState => ({
 	...state,
 	scroll_offset: 0,
 	feed: { lines: [], last_progress: undefined, last_assistant: undefined },
 });
 
-/** Pull new progress/assistant text from the selected job into the feed. */
 export const updateFeedFromSnapshot = (state: DeckState): DeckState => {
 	const job = state.snapshot.jobs.find((j) => j.id === state.selected_id);
 	if (job === undefined) return state;

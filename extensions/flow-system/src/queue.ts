@@ -10,8 +10,6 @@ export interface RestoreOptions {
 const STALE_RESTORE_PROGRESS = "stale restore: previous process not live";
 const STALE_RESTORE_ERROR = "Restored active job has no live process; retry/replay is required.";
 
-// ── Public interface ──────────────────────────────────────────────────────────
-
 export interface FlowQueueService {
 	enqueue(profile: string, task: string, cwd?: string): Effect.Effect<FlowJob>;
 	getAll(): Effect.Effect<FlowJob[]>;
@@ -55,10 +53,6 @@ const normalizeStaleRestoredJobs = (
 		};
 	});
 
-// ── Factory ───────────────────────────────────────────────────────────────────
-
-// Hard cap on the number of jobs kept in memory. When exceeded, oldest terminal
-// (done/failed/cancelled) jobs are pruned first; active jobs are always retained.
 const MAX_JOBS = 200;
 
 const pruneJobs = (jobs: readonly FlowJob[]): FlowJob[] => {
@@ -67,12 +61,10 @@ const pruneJobs = (jobs: readonly FlowJob[]): FlowJob[] => {
 	}
 	const active = jobs.filter((j) => j.status === "pending" || j.status === "running");
 	const terminal = jobs.filter((j) => j.status !== "pending" && j.status !== "running");
-	// Keep as many terminal jobs as possible up to the cap, preferring newest.
 	const keepTerminal = terminal.slice(Math.max(0, terminal.length - (MAX_JOBS - active.length)));
 	return [...active, ...keepTerminal].map((j) => ({ ...j }));
 };
 
-/** Shallow-clone a FlowQueue so external holders cannot mutate internal state. */
 const cloneQueue = (q: FlowQueue): FlowQueue => ({
 	...q,
 	jobs: q.jobs.map((j) => ({ ...j })),
@@ -87,8 +79,6 @@ export const makeQueue = (): Effect.Effect<FlowQueueService> =>
 
 		const publish = (next: FlowQueue): void => {
 			current = next;
-			// Each listener gets its own clone — prevents one listener's mutation
-			// from corrupting the snapshot seen by subsequent listeners.
 			for (const listener of listeners) {
 				try {
 					listener(cloneQueue(next));
@@ -130,7 +120,6 @@ export const makeQueue = (): Effect.Effect<FlowQueueService> =>
 					jobs: pruneJobs([...state.jobs, job]),
 				}));
 				publish(next);
-				// Return a clone — the live object is inside the Ref; callers must not share the reference.
 				return { ...job };
 			});
 
@@ -191,9 +180,6 @@ export const makeQueue = (): Effect.Effect<FlowQueueService> =>
 
 		const bindAbort = (id: string, abort: () => void): Effect.Effect<FlowJobStatus, JobNotFoundError> =>
 			Effect.gen(function* () {
-				// Register optimistically before reading status — closes the TOCTOU window
-				// where cancel() could fire between the status read and the aborts.set,
-				// leaving the abort registered but never called.
 				aborts.set(id, abort);
 				const status = yield* Ref.get(ref).pipe(
 					Effect.flatMap((state) => {
@@ -205,7 +191,6 @@ export const makeQueue = (): Effect.Effect<FlowQueueService> =>
 						return Effect.succeed(job.status);
 					}),
 				);
-				// Job already reached a terminal state before we registered — fire and deregister.
 				if (isTerminalStatus(status)) {
 					aborts.delete(id);
 					if (status === "cancelled") {
@@ -273,12 +258,9 @@ export const makeQueue = (): Effect.Effect<FlowQueueService> =>
 			const normalizedJobs =
 				options?.normalizeStaleActive === true
 					? normalizeStaleRestoredJobs(jobs, options.restoredAt ?? Date.now())
-					// Always clone — caller must not share references with internal queue state.
 					: jobs.map((j) => ({ ...j }));
 			const next: FlowQueue = { jobs: normalizedJobs, mode: "sequential" };
 			return Effect.gen(function* () {
-				// Establish the new Ref state first so any concurrent reads see consistent
-				// data before abort handles are released.
 				yield* Ref.set(ref, next);
 				aborts.clear();
 				publish(next);

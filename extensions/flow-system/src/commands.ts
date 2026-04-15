@@ -10,7 +10,6 @@ import { showFlowDeck } from "./deck/index.js";
 
 type ExecuteFlowFn = typeof executeFlow;
 
-// Strip ANSI, OSC, and C0 control chars from job-derived text before display in notifications.
 const OSC_CMD_RE = /\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g;
 const ANSI_CMD_RE = /\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g;
 const CONTROL_CMD_RE = /[\x00-\x08\x0b-\x1f]/g;

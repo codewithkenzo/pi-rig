@@ -1,5 +1,3 @@
-// deck/footer.ts — Zone 4: keybind pills with 120ms press feedback
-
 import type { ThemeEngine } from "../../../../shared/theme/engine.js";
 import type { KeyFlashState } from "./state.js";
 

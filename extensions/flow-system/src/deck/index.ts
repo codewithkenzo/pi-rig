@@ -1,6 +1,3 @@
-// deck/index.ts — showFlowDeck() — 3-zone TUI overlay
-// Call showFlowManager() in commands.ts (not this directly) for the capability gate.
-
 import { Effect } from "effect";
 import type { ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
 import { Key, matchesKey } from "@mariozechner/pi-tui";
@@ -23,7 +20,6 @@ import { renderFooter } from "./footer.js";
 
 type CustomFn = NonNullable<ExtensionCommandContext["ui"]["custom"]>;
 
-// ANSI key sequences
 const PGUP    = "\x1b[5~";
 const PGDN    = "\x1b[6~";
 const SHIFT_UP = "\x1b[1;2A";
@@ -77,8 +73,6 @@ export const showFlowDeck = async (
 				const prevId = state.selected_id;
 				state = { ...state, snapshot: next };
 				state = clampSelection(state);
-				// If clampSelection changed the selection (job disappeared), reset the feed
-				// so stale lines from the old job don't bleed into the new selection.
 				if (state.selected_id !== prevId) {
 					state = resetFeed(state);
 				}
@@ -123,7 +117,6 @@ export const showFlowDeck = async (
 						return;
 					}
 
-					// Cancel selected job
 					if (data === "c" || data === "C") {
 						const job = selectedJob();
 						if (job !== undefined) {
@@ -134,12 +127,10 @@ export const showFlowDeck = async (
 						return;
 					}
 
-					// Selection navigation
 					if (matchesKey(data, Key.up)) {
 						const list = jobList();
 						const idx = list.findIndex((j) => j.id === state.selected_id);
 						if (idx > 0) {
-							// Reset feed then immediately repopulate from the new job's current snapshot.
 							state = updateFeedFromSnapshot(resetFeed({ ...state, selected_id: list[idx - 1]!.id }));
 						}
 						flashKey("↑");
@@ -158,7 +149,6 @@ export const showFlowDeck = async (
 						return;
 					}
 
-					// Scroll output
 					if (data === PGUP || data === SHIFT_UP) {
 						state = { ...state, scroll_offset: Math.max(0, state.scroll_offset - SCROLL_STEP) };
 						flashKey("PgUp");

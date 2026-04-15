@@ -1,6 +1,3 @@
-// deck/summary.ts — Zone 3: scrollable output panel
-// sanitize() is exported for tests.
-
 import { basename } from "node:path";
 import type { ThemeEngine } from "../../../../shared/theme/engine.js";
 import type { Palette, ThemeConfig } from "../../../../shared/theme/types.js";
@@ -9,7 +6,6 @@ import { breathe, withMotion, type AnimationState } from "../../../../shared/the
 import type { FlowJob } from "../types.js";
 import { truncateToWidth } from "./layout.js";
 
-// Keeps \x09 (tab) and \x0a (LF); strips everything else in 0x00-0x1f including \x0d (\r).
 const CONTROL_RE = /[\x00-\x08\x0b-\x1f]/g;
 
 export const sanitize = (text: string): string =>

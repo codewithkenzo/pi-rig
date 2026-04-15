@@ -1,11 +1,4 @@
-// deck/layout.ts — Width helpers and two-column layout.
-// Uses visibleWidth() (not fitAnsiLine) because fitAnsiLine doesn't pad.
-
 import { stripAnsi } from "../../../../shared/ui/hud.js";
-
-// ─── Wide-char lookup ─────────────────────────────────────────────────────────
-// Returns 2 for CJK/fullwidth codepoints, 1 otherwise.
-// Nerd Font glyphs are typically 1-wide in patched terminals.
 
 const isWide = (cp: number): boolean =>
 	(cp >= 0x1100 && cp <= 0x115f) ||  // Hangul Jamo
@@ -18,13 +11,8 @@ const isWide = (cp: number): boolean =>
 	(cp >= 0xff01 && cp <= 0xff60) ||  // Fullwidth Latin
 	(cp >= 0xffe0 && cp <= 0xffe6);    // Fullwidth signs
 
-// OSC sequences (\x1b]...\x07 or \x1b]...\x1b\) are zero-width escape data.
-// stripAnsi strips CSI/SGR but not OSC — pre-strip here to avoid over-counting.
 const OSC_RE = /\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g;
 
-/**
- * Visible column width of a string — strips ANSI and OSC sequences, counts wide chars as 2.
- */
 export const visibleWidth = (text: string): number => {
 	const plain = stripAnsi(text.replace(OSC_RE, ""));
 	let w = 0;
@@ -34,17 +22,12 @@ export const visibleWidth = (text: string): number => {
 	return w;
 };
 
-/**
- * Pad or truncate `text` to exactly `width` visible columns.
- * Always returns plain text (no ANSI). Suitable for column-aligned rows.
- */
 export const truncateToWidth = (text: string, width: number): string => {
 	const plain = stripAnsi(text);
 	const vw = visibleWidth(plain);
 	if (vw <= width) {
 		return plain + " ".repeat(width - vw);
 	}
-	// Trim chars until we fit, then add ellipsis
 	let result = "";
 	let w = 0;
 	for (const ch of plain) {
@@ -56,11 +39,6 @@ export const truncateToWidth = (text: string, width: number): string => {
 	return result + "…" + " ".repeat(Math.max(0, width - w - 1));
 };
 
-/**
- * Fit an ANSI-colored string into exactly `width` visible columns.
- * Preserves all ANSI escape sequences in the output (unlike truncateToWidth).
- * Pads with spaces when shorter; truncates with "…" when longer.
- */
 export const fitAnsiColumn = (text: string, width: number): string => {
 	const vw = visibleWidth(text);
 	if (vw <= width) {
@@ -71,7 +49,6 @@ export const fitAnsiColumn = (text: string, width: number): string => {
 	let visW = 0;
 	let i = 0;
 	while (i < text.length) {
-		// Consume CSI/SGR sequences verbatim: \x1b[ ... <letter>
 		if (text[i] === "\x1b" && text[i + 1] === "[") {
 			const m = /^\x1b\[[0-9;]*[A-Za-z]/.exec(text.slice(i));
 			if (m !== null) {
@@ -80,8 +57,6 @@ export const fitAnsiColumn = (text: string, width: number): string => {
 				continue;
 			}
 		}
-		// Consume OSC sequences verbatim: \x1b] ... BEL or \x1b] ... ST(\x1b\\)
-		// Without this, hyperlink escapes are consumed char-by-char and inflate visW.
 		if (text[i] === "\x1b" && text[i + 1] === "]") {
 			const rest = text.slice(i);
 			const bel = rest.indexOf("\x07");
@@ -109,12 +84,6 @@ export const fitAnsiColumn = (text: string, width: number): string => {
 	return result + "\x1b[0m" + "…" + " ".repeat(Math.max(0, width - visW - 1));
 };
 
-/**
- * Merge two column arrays into a single array of rows.
- * Each row: left (padded to leftWidth) + separator + right (padded to rightWidth).
- * The right column receives the remaining width after separator.
- * ANSI colors/animations in each cell are preserved.
- */
 export const zipColumns = (
 	left: string[],
 	right: string[],

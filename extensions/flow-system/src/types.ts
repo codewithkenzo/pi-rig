@@ -1,10 +1,6 @@
 import { Type, type Static } from "@sinclair/typebox";
 import { Data } from "effect";
 
-// ---------------------------------------------------------------------------
-// 1. ReasoningLevel
-// ---------------------------------------------------------------------------
-
 export const ReasoningLevelSchema = Type.Union([
 	Type.Literal("off"),
 	Type.Literal("minimal"),
@@ -15,10 +11,6 @@ export const ReasoningLevelSchema = Type.Union([
 ]);
 
 export type ReasoningLevel = Static<typeof ReasoningLevelSchema>;
-
-// ---------------------------------------------------------------------------
-// 2. FlowProfile
-// ---------------------------------------------------------------------------
 
 export const FlowProfileSchema = Type.Object({
 	name: Type.String({ minLength: 1, maxLength: 64 }),
@@ -34,10 +26,6 @@ export const FlowProfileSchema = Type.Object({
 
 export type FlowProfile = Static<typeof FlowProfileSchema>;
 
-// ---------------------------------------------------------------------------
-// 3. FlowJobStatus
-// ---------------------------------------------------------------------------
-
 export const FlowJobStatusSchema = Type.Union([
 	Type.Literal("pending"),
 	Type.Literal("running"),
@@ -47,10 +35,6 @@ export const FlowJobStatusSchema = Type.Union([
 ]);
 
 export type FlowJobStatus = Static<typeof FlowJobStatusSchema>;
-
-// ---------------------------------------------------------------------------
-// 4. FlowJob
-// ---------------------------------------------------------------------------
 
 export const FlowJobSchema = Type.Object({
 	id: Type.String(),
@@ -70,20 +54,12 @@ export const FlowJobSchema = Type.Object({
 
 export type FlowJob = Static<typeof FlowJobSchema>;
 
-// ---------------------------------------------------------------------------
-// 5. FlowQueue
-// ---------------------------------------------------------------------------
-
 export const FlowQueueSchema = Type.Object({
 	jobs: Type.Array(FlowJobSchema),
 	mode: Type.Union([Type.Literal("sequential"), Type.Literal("parallel")]),
 });
 
 export type FlowQueue = Static<typeof FlowQueueSchema>;
-
-// ---------------------------------------------------------------------------
-// 6. Tagged errors
-// ---------------------------------------------------------------------------
 
 export class ProfileNotFoundError extends Data.TaggedError("ProfileNotFoundError")<{
 	readonly name: string;
@@ -106,10 +82,6 @@ export class FlowCancelledError extends Data.TaggedError("FlowCancelledError")<{
 export class JobNotFoundError extends Data.TaggedError("JobNotFoundError")<{
 	readonly id: string;
 }> {}
-
-// ---------------------------------------------------------------------------
-// 7. FlowStateEntry constant + type
-// ---------------------------------------------------------------------------
 
 export const FLOW_ENTRY_TYPE = "flow_system_state" as const;
 

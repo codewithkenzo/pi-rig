@@ -5,8 +5,6 @@ import { Value } from "@sinclair/typebox/value";
 import { Effect } from "effect";
 import { type FlowProfile, FlowProfileSchema, ProfileNotFoundError } from "./types.js";
 
-// ── Built-in profiles ─────────────────────────────────────────────────────────
-
 export const BUILT_IN_PROFILES: readonly FlowProfile[] = [
 	{
 		name: "explore",
@@ -58,18 +56,6 @@ export const BUILT_IN_PROFILES: readonly FlowProfile[] = [
 	},
 ] as const;
 
-// ── Profile loading ───────────────────────────────────────────────────────────
-
-/**
- * Loads profiles by merging built-ins with optional user overrides.
- *
- * Sources (in order, later wins):
- *   1. ~/.pi/agent/flow-profiles.json
- *   2. <cwd>/.pi/flow-profiles.json
- *
- * Invalid JSON and non-existent files are silently skipped.
- * Items that fail TypeBox validation are silently skipped.
- */
 export function loadProfiles(cwd: string): FlowProfile[] {
 	const sources = [
 		path.join(os.homedir(), ".pi", "agent", "flow-profiles.json"),
@@ -95,12 +81,6 @@ export function loadProfiles(cwd: string): FlowProfile[] {
 	return Array.from(map.values());
 }
 
-// ── Effect accessor ───────────────────────────────────────────────────────────
-
-/**
- * Looks up a profile by name within the merged profile set.
- * Fails with ProfileNotFoundError if the name is not present.
- */
 export function getProfile(
 	name: string,
 	cwd: string,

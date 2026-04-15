@@ -1,9 +1,5 @@
-// deck/icons.ts — Nerd Font icons with ASCII fallback.
-// Set PI_ASCII_ICONS=1 to force the ASCII variant.
-
 const useNerdFont = (): boolean => process.env["PI_ASCII_ICONS"] !== "1";
 
-// Nerd Font codepoints (requires a patched font)
 const NERD = {
 	agent:   "\uf82a",   // nf-md-robot
 	tools:   "\udb84\udc0b",   // nf-md-tools (󱐋)
@@ -24,7 +20,6 @@ export type DeckIconKey = keyof typeof NERD;
 
 export const DECK_ICONS: Record<DeckIconKey, string> = useNerdFont() ? NERD : ASCII;
 
-// Status icons — always terminal-safe, never need Nerd Fonts
 export const STATUS_ICONS = {
 	running:   "▶",
 	pending:   "○",

@@ -1,5 +1,3 @@
-// deck/columns.ts — Zone 2: profile panel (left) + activity feed (right)
-
 import type { ThemeEngine } from "../../../../shared/theme/engine.js";
 import type { Palette, ThemeConfig } from "../../../../shared/theme/types.js";
 import { spin, breathe, withMotion, type AnimationState } from "../../../../shared/theme/animation.js";
@@ -11,8 +9,6 @@ import { zipColumns, truncateToWidth } from "./layout.js";
 
 const DEFAULT_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const;
 const FEED_DISPLAY_MAX = 7;
-
-// ─── Profile panel ─────────────────────────────────────────────────────────────
 
 const spinnerIcon = (
 	job: FlowJob,
@@ -110,8 +106,6 @@ const renderProfile = (
 	return [header, ...lines];
 };
 
-// ─── Activity feed ─────────────────────────────────────────────────────────────
-
 const relTs = (ts: number, startedAt: number | undefined): string => {
 	if (startedAt === undefined) return "+?s";
 	const diff = Math.max(0, Math.round((ts - startedAt) / 1000));
@@ -152,8 +146,6 @@ const renderFeed = (
 
 	return lines;
 };
-
-// ─── Zone composition ────────────────────────────────────────────────────────
 
 export const renderColumns = (
 	engine: ThemeEngine,

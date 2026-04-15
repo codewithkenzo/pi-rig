@@ -1,5 +1,3 @@
-// deck/header.ts — Zone 1: title bar, status badge, clock
-
 import type { ThemeEngine } from "../../../../shared/theme/engine.js";
 import type { Palette, ThemeConfig } from "../../../../shared/theme/types.js";
 import { shimmer, pulse, withMotion, type AnimationState } from "../../../../shared/theme/animation.js";
