@@ -83,7 +83,15 @@ extensions/flow-system/
   src/vfs.ts            Skill file staging with temp file lifecycle
   src/tool.ts           flow_run tool
   src/batch-tool.ts     flow_batch tool
-  src/commands.ts       /flow command handler
+  src/commands.ts       /flow command handler (showFlowManager capability gate)
+  src/deck/index.ts     showFlowDeck() — 3-zone TUI overlay factory
+  src/deck/state.ts     DeckState plain objects + feed dedup/sanitization
+  src/deck/icons.ts     DECK_ICONS (Nerd Font / ASCII fallback via PI_ASCII_ICONS=1)
+  src/deck/layout.ts    visibleWidth(), fitAnsiColumn(), zipColumns()
+  src/deck/header.ts    Zone 1 — title + badge + clock (shimmer/pulse)
+  src/deck/columns.ts   Zone 2 — profile panel + activity feed
+  src/deck/summary.ts   Zone 3 — scrollable subprocess output (sanitized)
+  src/deck/footer.ts    Zone 4 — keybind pills with key-flash feedback
 ```
 
 **Key patterns**:
@@ -92,6 +100,10 @@ extensions/flow-system/
 - `acquireUseRelease` for temp file cleanup (even on interruption)
 - Session persistence via custom entries (`agent_end` snapshot, `session_start` restore)
 - 6 built-in profiles: explore, research, coder, debug, browser, ambivalent
+- Deck TUI: `AnimationTicker` drives 4–8 fps render; `withMotion()` guards every animation primitive
+- `fitAnsiColumn(text, width)` — ANSI-preserving column fit; use instead of `truncateToWidth` for colored output
+- Feed sanitization: `stripAnsi() + FEED_CONTROL_RE` on ingest, not at render time
+- Overlay init failures fall back to text via `showFlowManager()` try/catch
 
 **Known issues** (from Codex review 2026-04-14):
 - TOCTOU race in `queue.ts` cancel/setStatus — should use `Ref.modify` for atomicity
