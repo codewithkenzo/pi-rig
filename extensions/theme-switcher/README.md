@@ -1,6 +1,6 @@
-# theme-switcher
+# Theme Switcher
 
-Pi extension for runtime theme switching.
+Theme Switcher is a Pi coding agent extension for runtime theme selection and preview.
 
 ## Current status
 
@@ -22,7 +22,7 @@ bun tsc --noEmit
 bun test
 ```
 
-`pi` should load the built runtime entry at `dist/index.js`, not the raw TypeScript source.
+The Pi coding agent should load the built runtime entry at `dist/index.js`, not the raw TypeScript source.
 
 ## Design source
 

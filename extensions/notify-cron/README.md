@@ -1,6 +1,6 @@
-# notify-cron
+# Notify Cron
 
-Destination-safe cron scheduling for plan/ticket/status notifications.
+Notify Cron is a Pi coding agent extension for destination-safe scheduled notifications.
 
 ## Features
 

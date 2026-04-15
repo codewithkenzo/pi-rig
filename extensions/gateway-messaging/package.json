@@ -1,7 +1,7 @@
 {
   "name": "@codewithkenzo/pi-gateway-messaging",
   "version": "0.1.0",
-  "description": "Telegram-first gateway messaging baseline with turn state, action payload validation, and tool-stream rollup formatting",
+  "description": "Telegram-first remote turn updates and action routing for the Pi coding agent",
   "type": "module",
   "main": "./dist/index.js",
   "extensions": ["./dist/index.js"],
@@ -13,6 +13,15 @@
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },
+  "keywords": [
+    "pi",
+    "pi-coding-agent",
+    "pi-package",
+    "telegram",
+    "gateway",
+    "messaging",
+    "remote-ops"
+  ],
   "dependencies": {
     "@sinclair/typebox": "^0.34.0"
   },

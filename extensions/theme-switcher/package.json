@@ -1,7 +1,7 @@
 {
   "name": "@codewithkenzo/pi-theme-switcher",
   "version": "0.1.0",
-  "description": "Theme switching bridge for pi agent extensions",
+  "description": "Runtime theme selection and preview for the Pi coding agent",
   "type": "module",
   "main": "./dist/index.js",
   "extensions": ["./dist/index.js"],
@@ -14,6 +14,15 @@
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },
+  "keywords": [
+    "pi",
+    "pi-coding-agent",
+    "pi-package",
+    "theme",
+    "theming",
+    "tui",
+    "workflow"
+  ],
   "dependencies": {
     "@mariozechner/pi-tui": "^0.63.1",
     "@sinclair/typebox": "^0.34.0",

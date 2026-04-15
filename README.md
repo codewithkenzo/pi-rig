@@ -1,97 +1,142 @@
-# @codewithkenzo/pi-plugins
+# Pi Rig
 
-Consumer-first extension suite for `pi`.
+A compact workflow stack for the Pi coding agent.
 
-If you want usable slash commands, theme switching, and Telegram/notification groundwork without hand-wiring every package, this repo is the install source.
+Pi Rig is a suite of extensions for the Pi coding agent, built for daily work with AI coding agents. It focuses on execution, messaging, routing, and workflow state in real workspaces: the areas where long runs, remote updates, queueing, and repeated iteration need to stay readable and reliable.
 
-## What you get
+## Install
 
-- `/flow` job orchestration (`flow_run`, `flow_batch`, `/flow run <profile> -- <task>`)
-- `/theme` runtime theme control (`theme_set`, `theme_list`, `theme_preview`, `/theme pick`)
-- `/gateway` diagnostics + Telegram-first turn/runtime baseline
-- `/notify-cron` scheduled notification baseline
-- bundled operator skills copied to `~/.pi/skills/*`
+### Recommended release path
 
-## Install (local repo)
+```bash
+bunx @codewithkenzo/pi-rig@latest
+# or
+npx @codewithkenzo/pi-rig@latest
+```
+
+Planned distribution channels include the installer package, source installs, and AUR packages once the release path is stable.
+
+The installer is designed to work well for both humans and agents:
+
+- interactive selection for manual setup
+- explicit flags for deterministic setup
+- install all packages or a selected subset
+- package labels and descriptions during selection
+
+### Current source path
+
+Until the published installer is live, install from this repository:
 
 ```bash
 bun run setup
 ```
 
-That will:
-1. build extensions
-2. copy bundled skills
-3. register extensions with `pi install ...`
+That command installs dependencies, builds the shipped extensions, copies bundled skills, and installs the extensions into the Pi coding agent.
 
-Then **restart pi** (new session) so new slash commands are loaded.
+Restart the Pi coding agent after setup so the command surfaces load in a fresh session.
 
-## 60-second verification
+### Current source installer CLI
 
 ```bash
-pi list
+bun run --filter @codewithkenzo/pi-rig build
+node packages/pi-installer/dist/cli.js
 ```
 
-You should see:
-- `.../extensions/flow-system`
-- `.../extensions/theme-switcher`
-- `.../extensions/gateway-messaging`
-- `.../extensions/notify-cron`
-
-Open pi and run:
-
-```text
-/flow profiles
-/theme list
-/gateway status
-/notify-cron status
-```
-
-## If slash commands are missing
-
-Usually one of these:
-
-1. extension is not installed in `pi list`
-2. pi session was opened before install (restart pi)
-3. cwd-specific project settings differ from user settings
-
-Fast fix:
+Examples:
 
 ```bash
-pi install ./extensions/theme-switcher
-pi install ./extensions/flow-system
-pi install ./extensions/gateway-messaging
-pi install ./extensions/notify-cron
+node packages/pi-installer/dist/cli.js --all
+node packages/pi-installer/dist/cli.js --extensions flow-system,gateway-messaging
+node packages/pi-installer/dist/cli.js --dry-run
 ```
 
-Then start a fresh `pi` session and retry `/theme list`.
+## Included now
 
-## Telegram pairing guide
+| Label | Current source path | Surface | Summary |
+| --- | --- | --- | --- |
+| Pi Dispatch | `extensions/flow-system` | `flow_run`, `flow_batch`, `/flow` | Profile-based execution for queued runs, reusable task envelopes, and subagent work |
+| Theme Switcher | `extensions/theme-switcher` | `theme_set`, `theme_list`, `theme_preview`, `/theme` | Runtime theme switching and preview |
+| Gateway Messaging | `extensions/gateway-messaging` | `gateway_turn_preview`, `/gateway status` | Telegram-first messaging runtime with patch queues, action payloads, and turn-state formatting |
+| Notify Cron | `extensions/notify-cron` | `notify_cron_*`, `/notify-cron` | Scheduled notifications with explicit destinations and lease-aware ticking |
 
-For the practical operator path (pair bot, choose polling vs webhook, verify ingress + commands), use:
+## What Pi Rig helps with
 
-- `docs/TELEGRAM_PAIRING.md`
+- cleaner multi-step execution
+- lower-noise remote updates
+- stronger control over workflow state
+- queue-aware task handling
+- tighter workspace integration
+- installs that are simple enough for both humans and agents to operate
 
-## Status (April 14, 2026)
+## Package notes
 
-Implemented and usable now:
-- `flow-system`
-- `theme-switcher`
-- `gateway-messaging` baseline
-- `notify-cron` baseline
-- `gateway-ingress` package (`packages/gateway-ingress`) for Hono webhook/polling normalization contracts
+### Pi Dispatch
 
-Roadmap/master plan:
-- `.claude/plans/scalable-enchanting-rabbit.md`
+Pi Dispatch is the execution layer of the suite.
 
-Active sprint execution:
-- `.tickets/sprints/heavy-stepper/`
+Current focus:
 
-## Installer package target
+- named profiles
+- background and foreground runs
+- queue-aware orchestration
+- skill injection
+- execution-envelope hardening
+- structured preload and context injection
+- future plan-mode and sandbox integration
 
-Planned public entrypoint:
+### Theme Switcher
 
-```bash
-bunx @codewithkenzo/pi-installer@latest
-```
+Theme Switcher handles runtime theme selection, preview, and session-aware restore behavior.
 
-Until publish, use this repo + `bun run setup`.
+### Gateway Messaging
+
+Gateway Messaging handles turn formatting for remote delivery.
+
+Current focus:
+
+- single-message turn rendering
+- self-editing update model
+- structured action payloads
+- tool-stream rollups
+- lower-noise remote messaging
+- future inline controls and richer transport adapters
+
+### Notify Cron
+
+Notify Cron handles scheduled delivery with typed destinations, envelopes, and execution boundaries.
+
+## Planned areas
+
+Upcoming work in the suite includes:
+
+- flow-driven plan mode with structured phase transitions
+- sandboxed execution with a code-mode-compatible shape
+- filesystem-first memory with optional embedding backends
+- gateway-ready voice pipelines using live STT and STT/TTS flows
+- deeper structured data flow between execution, messaging, and notification layers
+
+## Documentation
+
+- [Documentation index](./docs/README.md)
+- [Install guide](./docs/INSTALL.md)
+- [Install prompts for agents](./docs/INSTALL_PROMPTS.md)
+- [Usage guide](./docs/USAGE.md)
+- [Telegram pairing guide](./docs/TELEGRAM_PAIRING.md)
+- [Metadata and package descriptions](./docs/METADATA.md)
+
+## Contributing
+
+Pi Rig is built to contribute useful Pi coding agent extension patterns back to the community.
+
+Good contributions are usually concrete and scoped:
+
+- reproducible bugs
+- contract and schema fixes
+- transport reliability improvements
+- packaging and install polish
+- focused UX improvements with clear behavior changes
+- tests that lock down failure-prone edges
+
+## Status
+
+The shipped packages are usable now. Public package release is still being tightened around installer polish, execution envelopes, and remote messaging UX.

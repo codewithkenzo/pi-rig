@@ -1,7 +1,7 @@
 {
   "name": "@codewithkenzo/pi-notify-cron",
   "version": "0.1.0",
-  "description": "Destination-safe cron scheduler for plan/ticket/status notifications",
+  "description": "Scheduled notifications and explicit destination routing for the Pi coding agent",
   "type": "module",
   "main": "./dist/index.js",
   "extensions": ["./dist/index.js"],
@@ -13,6 +13,15 @@
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },
+  "keywords": [
+    "pi",
+    "pi-coding-agent",
+    "pi-package",
+    "cron",
+    "notifications",
+    "routing",
+    "workflow"
+  ],
   "dependencies": {
     "@sinclair/typebox": "^0.34.0"
   },

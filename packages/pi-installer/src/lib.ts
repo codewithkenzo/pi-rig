@@ -153,8 +153,8 @@ export const runInstaller = async (
 	io: InstallerIO,
 ): Promise<InstallerResult> => {
 	io.log("");
-	io.log(COLORS.blue("  @codewithkenzo/pi-installer"));
-	io.log(COLORS.dim("  pi extension suite setup"));
+	io.log(COLORS.blue("  @codewithkenzo/pi-rig"));
+	io.log(COLORS.dim("  Pi coding agent workflow stack setup"));
 	io.log("");
 
 	if (!args.skipInstall) {
@@ -210,7 +210,7 @@ export const runInstaller = async (
 
 	const piBinary = await findPiBinary(args.piPath);
 	if (piBinary !== null) {
-		io.log(COLORS.blue(`  → Installing selected extensions into pi via ${piBinary}...`));
+		io.log(COLORS.blue(`  → Installing selected extensions into the Pi coding agent via ${piBinary}...`));
 		for (const result of results) {
 			if (!result.ready) continue;
 			await runCommand(piBinary, ["install", join(root, "extensions", result.name)], {
@@ -220,7 +220,7 @@ export const runInstaller = async (
 			});
 		}
 	} else {
-		io.log(COLORS.yellow("  ! pi binary not found — skipping pi install"));
+		io.log(COLORS.yellow("  ! Pi coding agent binary not found — skipping extension install"));
 	}
 
 	return { results, piPath: piBinary };

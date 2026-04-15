@@ -1,27 +1,92 @@
 # Install
 
-## Consumer quick path
+## Prerequisites
 
-From repo root:
+- [Bun](https://bun.sh)
+- [Pi coding agent](https://github.com/badlogic/pi-mono) installed and available on your machine
+- a fresh Pi coding agent session after install so new command surfaces load cleanly
+
+## Recommended release path
+
+Once the installer package is published, the intended install commands are:
+
+```bash
+bunx @codewithkenzo/pi-rig@latest
+# or
+npx @codewithkenzo/pi-rig@latest
+```
+
+The installer is being shaped for both humans and agents:
+
+- interactive selection for manual setup
+- explicit flags for deterministic setup
+- install all packages or a selected subset
+- package labels and descriptions during selection
+
+Planned distribution channels include the installer package, source installs, and AUR packages once the release path is stable.
+
+## Current source path
+
+Until the published installer path is live, install from this repository.
+
+From the repository root:
 
 ```bash
 bun run setup
 ```
 
-Then restart pi and verify:
+That flow:
+
+1. installs workspace dependencies
+2. typechecks shared code
+3. builds the selected extension packages
+4. copies bundled skills
+5. installs each extension into the Pi coding agent
+
+## Current source installer CLI
+
+If you want the selector flow from the repository today:
+
+```bash
+bun run --filter @codewithkenzo/pi-rig build
+node packages/pi-installer/dist/cli.js
+```
+
+Useful options:
+
+```bash
+node packages/pi-installer/dist/cli.js --all
+node packages/pi-installer/dist/cli.js --extensions flow-system,gateway-messaging
+node packages/pi-installer/dist/cli.js --dry-run
+node packages/pi-installer/dist/cli.js --no-skills
+node packages/pi-installer/dist/cli.js --pi-path /absolute/path/to/pi
+```
+
+## Individual package install from source
+
+```bash
+pi install ./extensions/flow-system
+pi install ./extensions/theme-switcher
+pi install ./extensions/gateway-messaging
+pi install ./extensions/notify-cron
+```
+
+Current source path to public label mapping:
+
+- `extensions/flow-system` → Pi Dispatch
+- `extensions/theme-switcher` → Theme Switcher
+- `extensions/gateway-messaging` → Gateway Messaging
+- `extensions/notify-cron` → Notify Cron
+
+## Verify the install
+
+Check the installed extensions:
 
 ```bash
 pi list
 ```
 
-You should see these extension paths:
-
-- `.../extensions/flow-system`
-- `.../extensions/theme-switcher`
-- `.../extensions/gateway-messaging`
-- `.../extensions/notify-cron`
-
-Open pi and check:
+Then open a fresh Pi coding agent session and run:
 
 ```text
 /flow profiles
@@ -32,69 +97,40 @@ Open pi and check:
 
 ## If commands are missing
 
+Usually one of these applies:
+
+1. the Pi coding agent was already open before the extension install completed
+2. the extension path is not present in `pi list`
+3. project-local Pi settings differ from user-level settings
+
+Fast recovery path:
+
 ```bash
-pi install ./extensions/theme-switcher
 pi install ./extensions/flow-system
+pi install ./extensions/theme-switcher
 pi install ./extensions/gateway-messaging
 pi install ./extensions/notify-cron
 ```
 
-Start a fresh pi session after install.
+Then start a fresh Pi coding agent session.
 
-## Telegram pairing
+## Provider auth
 
-Use `docs/TELEGRAM_PAIRING.md` for bot pairing + ingress mode setup.
+The installer does not handle provider login.
 
-## Detailed setup behavior
+- extensions reuse your existing Pi coding agent auth and provider setup
+- configure provider credentials with the normal Pi flow for your environment
 
-`bun run setup` does:
+## Development install loop
 
-1. installs workspace dependencies
-2. typechecks `shared/`
-3. discovers extension packages under `extensions/`
-4. installs, typechecks, and builds each selected extension
-5. copies bundled plugin skills into `~/.pi/skills/<plugin>/`
-6. runs `pi install <extension-path>` for each built extension
-
-Useful flags:
-
-```bash
-bun run setup -- --dry-run
-bun run setup -- --skip-install
-bun run setup -- --extensions flow-system,theme-switcher
-bun run setup -- --pi-path /absolute/path/to/pi
-```
-
-## Auth and provider setup
-
-The installer does not do provider login.
-
-- extension install is separate from model/provider auth
-- extensions reuse whatever pi already has configured
-- configure provider auth with normal pi env/API-key flow (`pi --help`)
-
-## Manual extension build/install
+Example with one extension:
 
 ```bash
 cd extensions/theme-switcher
 bun install
 bun run build
-bun tsc --noEmit
+bun run typecheck
 bun test
 
-# then from repo root (or absolute path):
-pi install ./extensions/theme-switcher
-```
-
-## Plan relay to Telegram (Hermes)
-
-```bash
-python3 bin/notify_plan_to_tg.py --file <plan-or-ticket.md> --agent <agent-name> --status <status>
-```
-
-Watcher mode:
-
-```bash
-bun run plan:watch:seed
-bun run plan:watch -- --source codex --telegram-target "telegram:<chat_id>:<thread_id>" --attach-file
+pi install /absolute/path/to/extensions/theme-switcher
 ```

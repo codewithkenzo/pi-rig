@@ -1,8 +1,8 @@
 # Usage
 
-## Quick verification in pi
+## Quick verification
 
-After `bun run setup`, open a fresh pi session and run:
+After installation, open a fresh Pi coding agent session and run:
 
 ```text
 /flow profiles
@@ -11,45 +11,102 @@ After `bun run setup`, open a fresh pi session and run:
 /notify-cron status
 ```
 
-If a command is missing, see `docs/INSTALL.md` troubleshooting section.
+If a command is missing, check the [install guide](./INSTALL.md).
 
-## Extension surfaces available now
+## Available surfaces
 
-### flow-system
+### Pi Dispatch
 
-- tools: `flow_run`, `flow_batch`
-- command: `/flow status | cancel <id> | profiles`
+Current source path: `extensions/flow-system`
 
-### theme-switcher
+Tools:
 
-- tools: `theme_set`, `theme_list`, `theme_preview`
-- command: `/theme status|set|list|preview|cycle`
+- `flow_run`
+- `flow_batch`
 
-### gateway-messaging
+Command:
 
-- tool: `gateway_turn_preview`
-- command: `/gateway status`
-- plus Discord diagnostics:
-  - `/gateway discord normalize <target>`
-  - `/gateway discord moderation <action> <role> <perm1,perm2> <audit_reason>`
+- `/flow status | cancel <id> | profiles`
 
-### notify-cron
+### Theme Switcher
 
-- tools: `notify_cron_upsert`, `notify_cron_tick`, `notify_cron_list`, `notify_cron_remove`
-- command: `/notify-cron status | tick`
+Current source path: `extensions/theme-switcher`
 
-## Telegram pairing
+Tools:
 
-For pairing + ingress mode setup (polling vs webhook), use:
+- `theme_set`
+- `theme_list`
+- `theme_preview`
 
-- `docs/TELEGRAM_PAIRING.md`
+Command:
 
-## Notes on current scope
+- `/theme status|set|list|preview|cycle`
 
-- `gateway-messaging` and `notify-cron` are implemented baselines.
-- `packages/gateway-ingress` provides ingress contract utilities and Hono webhook endpoint support.
-- The full multi-extension roadmap remains in `.claude/plans/scalable-enchanting-rabbit.md`.
+### Gateway Messaging
 
-## Ticket lane
+Current source path: `extensions/gateway-messaging`
 
-Active sprint work is tracked in `.tickets/sprints/heavy-stepper/`.
+Tool:
+
+- `gateway_turn_preview`
+
+Command:
+
+- `/gateway status`
+
+Discord diagnostics currently included:
+
+- `/gateway discord normalize <target>`
+- `/gateway discord moderation <action> <role> <perm1,perm2> <audit_reason>`
+
+### Notify Cron
+
+Current source path: `extensions/notify-cron`
+
+Tools:
+
+- `notify_cron_upsert`
+- `notify_cron_tick`
+- `notify_cron_list`
+- `notify_cron_remove`
+
+Command:
+
+- `/notify-cron status | tick`
+
+## Current package scope
+
+### Pi Dispatch
+
+Current role:
+
+- launch tasks with named profiles
+- run jobs in foreground or background
+- manage queued work through Pi surfaces
+
+### Gateway Messaging
+
+Current role:
+
+- format turn updates for remote delivery
+- keep one turn readable through a patch-oriented update model
+- carry structured action payloads and compact tool-stream summaries
+
+### Notify Cron
+
+Current role:
+
+- register scheduled jobs with explicit destinations
+- tick jobs in a lease-aware way
+- carry structured execution envelopes for downstream work
+
+### Theme Switcher
+
+Current role:
+
+- control the active theme at runtime
+- preview or cycle themes during a live Pi coding agent session
+
+## Telegram workflows
+
+For bot setup and ingress guidance, see the [Telegram pairing guide](./TELEGRAM_PAIRING.md).

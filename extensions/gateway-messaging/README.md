@@ -1,10 +1,10 @@
-# gateway-messaging
+# Gateway Messaging
 
-## Sprint-start scaffold
+## Current baseline
 
 This is a **sprint-start scaffold only** for Telegram-first gateway behavior. It intentionally implements the minimal control-plane pieces so downstream work can layer on transport and state persistence safely.
 
-Telegram-first baseline gateway-messaging extension for pi.
+Telegram-first baseline messaging extension for the Pi coding agent.
 
 ## What it does
 

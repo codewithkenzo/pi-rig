@@ -1,5 +1,5 @@
 {
-  "name": "@codewithkenzo/pi-plugins",
+  "name": "@codewithkenzo/pi-rig-workspace",
   "version": "0.1.0",
   "type": "module",
   "private": true,
@@ -9,7 +9,7 @@
     "extensions/*"
   ],
   "scripts": {
-    "build": "bun run --filter @codewithkenzo/pi-installer build && bun run --filter @codewithkenzo/pi-flow-system build && bun run --filter @codewithkenzo/pi-theme-switcher build && bun run --filter @codewithkenzo/pi-gateway-messaging build && bun run --filter @codewithkenzo/pi-notify-cron build",
+    "build": "bun run --filter @codewithkenzo/pi-rig build && bun run --filter @codewithkenzo/pi-dispatch build && bun run --filter @codewithkenzo/pi-theme-switcher build && bun run --filter @codewithkenzo/pi-gateway-messaging build && bun run --filter @codewithkenzo/pi-notify-cron build",
     "typecheck": "bun run --filter '*' typecheck",
     "test": "bun run --filter '*' test",
     "setup": "bun run bin/setup.ts",

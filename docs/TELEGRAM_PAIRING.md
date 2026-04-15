@@ -1,6 +1,6 @@
 # Telegram pairing guide (consumer path)
 
-This guide is for getting a real Telegram bot paired quickly so you can verify the extension surfaces in pi.
+This guide is for getting a real Telegram bot paired quickly so you can verify the extension surfaces in the Pi coding agent.
 
 ## What is shipped today
 
@@ -10,7 +10,7 @@ This guide is for getting a real Telegram bot paired quickly so you can verify t
 
 If you need full production bot behavior, treat this as the pairing + ingress baseline and extend from here.
 
-## 1) Install extensions and restart pi
+## 1) Install extensions and restart the Pi coding agent
 
 From repo root:
 
@@ -31,7 +31,7 @@ Expected extension paths:
 - `.../extensions/gateway-messaging`
 - `.../extensions/notify-cron`
 
-Then open a **fresh** pi session and run:
+Then open a **fresh** Pi coding agent session and run:
 
 ```text
 /gateway status
@@ -91,7 +91,7 @@ const app = createGatewayIngressApp({
 export default app;
 ```
 
-## 5) Quick slash-command checks in pi
+## 5) Quick slash-command checks in the Pi coding agent
 
 Once paired and installed:
 
@@ -108,12 +108,12 @@ pi install ./extensions/theme-switcher
 pi install ./extensions/flow-system
 ```
 
-Then restart pi.
+Then restart the Pi coding agent.
 
 ## 6) Troubleshooting checklist
 
 - `pi list` does not include extension path -> install it explicitly with `pi install ...`
-- commands still missing after install -> restart pi session
+- commands still missing after install -> restart the Pi coding agent session
 - command exists but no Telegram events -> verify token/secret and mode (polling vs webhook)
 - webhook 401 -> wrong `X-Telegram-Bot-Api-Secret-Token`
 - duplicate events unexpectedly -> check idempotency key source (`tg:<bot>:<update_id>`)

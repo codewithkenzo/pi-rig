@@ -1,6 +1,6 @@
-# flow-system
+# Pi Dispatch
 
-Pi agent extension that adds flow profiles, a job queue, and skill injection to pi subagent runs.
+Pi Dispatch is a Pi coding agent extension for profile-based execution, queued jobs, and skill-aware subagent runs.
 
 ## What it does
 
@@ -61,7 +61,7 @@ bun install
 bun run build
 ```
 
-Register in pi:
+Register in the Pi coding agent:
 
 ```
 /extension install /path/to/extensions/flow-system
@@ -70,7 +70,7 @@ Register in pi:
 ## Development
 
 ```bash
-bun run build       # runtime bundle for pi
+bun run build       # runtime bundle for the Pi coding agent
 bun tsc --noEmit   # typecheck
 bun test            # tests
 ```
