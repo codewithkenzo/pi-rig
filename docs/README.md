@@ -7,6 +7,7 @@
 - [Usage](./USAGE.md)
 - [Telegram pairing](./TELEGRAM_PAIRING.md)
 - [Metadata](./METADATA.md)
+- [Architecture notes](./architecture/next-spec-synthesis.md)
 
 ## Scope
 
