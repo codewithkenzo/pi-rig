@@ -10,6 +10,7 @@ import { showFlowProfilePicker } from "./picker.js";
 import { showFlowDeck } from "./deck/index.js";
 import { sanitizeFlowText } from "./sanitize.js";
 import { createProfileMetaHandlers } from "./profile-meta.js";
+import { waitForRunSlot } from "./scheduler.js";
 
 type ExecuteFlowFn = typeof executeFlow;
 
@@ -55,6 +56,13 @@ const DIVIDER = C.dim("─".repeat(52));
 const RUN_USAGE = "Usage: /flow run <profile> -- <task>";
 const DEFAULT_HELP = "Use: /flow manage | /flow status [id] | /flow cancel <id> | /flow profiles | /flow run <profile> -- <task> | /flow pick";
 type FlowUiContext = Pick<ExtensionCommandContext, "cwd" | "ui">;
+
+type FlowCommandRegistrationState = {
+	commandRegistered: boolean;
+	shortcutRegistered: boolean;
+	markCommandRegistered: () => void;
+	markShortcutRegistered: () => void;
+};
 
 const completeFlowArgs = (raw: string, queue: FlowQueueService, cwd: string): { label: string; value: string }[] | null => {
 	const trimmed = raw.trimStart();
@@ -168,6 +176,39 @@ const runFlowFromCommand = async (
 	});
 	const jobController = new AbortController();
 	await Effect.runPromise(queue.bindAbort(job.id, () => jobController.abort()));
+	const slotStatus = await waitForRunSlot(queue, job.id, jobController.signal);
+	if (slotStatus !== "running") {
+		if (slotStatus === "cancelled") {
+			const finishedAt = Date.now();
+			await Effect.runPromise(
+				queue.setStatus(job.id, "cancelled", {
+					...profileMeta.metaPatch(),
+					finishedAt,
+					toolCount: 0,
+					lastProgress: "cancelled",
+				}),
+			);
+			await ctx.ui.notify(
+				[`⊘ ${profileName} cancelled before run.`, C.dim(`ID: ${job.id}`)].join("\n"),
+				"warning",
+			);
+			return;
+		}
+
+		const finishedAt = Date.now();
+		await Effect.runPromise(
+			queue.setStatus(job.id, slotStatus, {
+				...profileMeta.metaPatch(),
+				finishedAt,
+				toolCount: 0,
+				lastProgress: "failed",
+				error: `Flow ${job.id} reached terminal status ${slotStatus} before execution.`,
+			}),
+		);
+		await ctx.ui.notify(`✗ ${profileName} failed before run.`, "error");
+		return;
+	}
+
 	const startedAt = Date.now();
 	const tracker = createFlowProgressTracker();
 
@@ -321,8 +362,19 @@ const showFlowManager = async (queue: FlowQueueService, ctx: FlowUiContext): Pro
 	await ctx.ui.notify(lines.length > 0 ? lines.join("\n") : "No flow jobs.");
 };
 
-export function registerFlowCommands(pi: ExtensionAPI, queue: FlowQueueService, runFlow: ExecuteFlowFn = executeFlow): void {
-	pi.registerCommand("flow", {
+export function registerFlowCommands(
+	pi: ExtensionAPI,
+	queue: FlowQueueService,
+	runFlow: ExecuteFlowFn = executeFlow,
+	registrationState: FlowCommandRegistrationState = {
+		commandRegistered: false,
+		shortcutRegistered: false,
+		markCommandRegistered: () => undefined,
+		markShortcutRegistered: () => undefined,
+	},
+): void {
+	if (!registrationState.commandRegistered) {
+		pi.registerCommand("flow", {
 		description: "Manage flow jobs. Subcommands: manage, status, cancel, profiles, run, pick",
 		getArgumentCompletions: (partial: string) => completeFlowArgs(partial, queue, process.cwd()),
 		handler: async (args: string, ctx) => {
@@ -495,11 +547,16 @@ export function registerFlowCommands(pi: ExtensionAPI, queue: FlowQueueService, 
 			}
 		},
 	});
+		registrationState.markCommandRegistered();
+	}
 
-	pi.registerShortcut("alt+shift+f", {
+	if (!registrationState.shortcutRegistered) {
+		pi.registerShortcut("alt+shift+f", {
 		description: "Manage running flows",
 		handler: async (ctx) => {
 			await showFlowManager(queue, ctx);
 		},
 	});
+		registrationState.markShortcutRegistered();
+	}
 }

@@ -27,7 +27,8 @@ type FlowSystemInitState = {
 	detachUi: (() => void) | undefined;
 	flowToolRegistered: boolean;
 	flowBatchToolRegistered: boolean;
-	commandsRegistered: boolean;
+	commandRegistered: boolean;
+	shortcutRegistered: boolean;
 	resourcesDiscoverRegistered: boolean;
 	sessionStartRegistered: boolean;
 	agentEndRegistered: boolean;
@@ -42,7 +43,8 @@ const makeFlowSystemState = (): FlowSystemInitState => ({
 	detachUi: undefined,
 	flowToolRegistered: false,
 	flowBatchToolRegistered: false,
-	commandsRegistered: false,
+	commandRegistered: false,
+	shortcutRegistered: false,
 	resourcesDiscoverRegistered: false,
 	sessionStartRegistered: false,
 	agentEndRegistered: false,
@@ -99,9 +101,22 @@ export default async function (pi: ExtensionAPI): Promise<void> {
 			pi.registerTool(makeFlowBatchTool(queue));
 			state.flowBatchToolRegistered = true;
 		}
-		if (!state.commandsRegistered) {
-			registerFlowCommands(pi, queue);
-			state.commandsRegistered = true;
+		if (!state.commandRegistered || !state.shortcutRegistered) {
+			registerFlowCommands(
+				pi,
+				queue,
+				undefined,
+				{
+					commandRegistered: state.commandRegistered,
+					shortcutRegistered: state.shortcutRegistered,
+					markCommandRegistered: () => {
+						state.commandRegistered = true;
+					},
+					markShortcutRegistered: () => {
+						state.shortcutRegistered = true;
+					},
+				},
+			);
 		}
 		if (!state.resourcesDiscoverRegistered) {
 			pi.on("resources_discover", () => ({

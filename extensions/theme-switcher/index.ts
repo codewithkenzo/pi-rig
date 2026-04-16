@@ -11,7 +11,9 @@ interface ThemeSwitcherInitState {
 	toolListRegistered: boolean;
 	toolPreviewRegistered: boolean;
 	commandsRegistered: boolean;
-	lifecycleRegistered: boolean;
+	resourcesDiscoverRegistered: boolean;
+	sessionStartRegistered: boolean;
+	agentEndRegistered: boolean;
 	initialized: boolean;
 }
 
@@ -23,7 +25,9 @@ const createState = (): ThemeSwitcherInitState => ({
 	toolListRegistered: false,
 	toolPreviewRegistered: false,
 	commandsRegistered: false,
-	lifecycleRegistered: false,
+	resourcesDiscoverRegistered: false,
+	sessionStartRegistered: false,
+	agentEndRegistered: false,
 	initialized: false,
 });
 
@@ -58,9 +62,21 @@ export default async function themeSwitcher(pi: ExtensionAPI): Promise<void> {
 			registerThemeCommands(pi, themeState);
 			state.commandsRegistered = true;
 		}
-		if (!state.lifecycleRegistered) {
-			registerThemeLifecycle(pi, themeState);
-			state.lifecycleRegistered = true;
+		if (!state.resourcesDiscoverRegistered || !state.sessionStartRegistered || !state.agentEndRegistered) {
+			registerThemeLifecycle(pi, themeState, {
+				resourcesDiscoverRegistered: state.resourcesDiscoverRegistered,
+				sessionStartRegistered: state.sessionStartRegistered,
+				agentEndRegistered: state.agentEndRegistered,
+				markResourcesDiscoverRegistered: () => {
+					state.resourcesDiscoverRegistered = true;
+				},
+				markSessionStartRegistered: () => {
+					state.sessionStartRegistered = true;
+				},
+				markAgentEndRegistered: () => {
+					state.agentEndRegistered = true;
+				},
+			});
 		}
 
 		state.initialized = true;

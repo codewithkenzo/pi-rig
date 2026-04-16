@@ -65,4 +65,41 @@ describe("flow-system index", () => {
 		expect(registerCommandCount).toBe(1);
 		expect(registerEventCount).toBe(4);
 	});
+
+	it("keeps command/shortcut idempotent when command registration helper fails mid-way", async () => {
+		let registerToolCount = 0;
+		let registerCommandCount = 0;
+		let registerShortcutCount = 0;
+		let registerEventCount = 0;
+
+		const pi = {
+			registerTool: () => {
+				registerToolCount += 1;
+				if (registerToolCount === 3) {
+					throw new Error("tool registration failure");
+				}
+			},
+			registerCommand: () => {
+				registerCommandCount += 1;
+			},
+			registerShortcut: () => {
+				registerShortcutCount += 1;
+				if (registerShortcutCount === 1) {
+					throw new Error("shortcut registration failure");
+				}
+			},
+			on: () => {
+				registerEventCount += 1;
+			},
+			appendEntry: () => undefined,
+		} as unknown as ExtensionAPI;
+
+		await expect(flowSystem(pi)).rejects.toThrow("shortcut registration failure");
+		await flowSystem(pi);
+
+		expect(registerToolCount).toBe(2);
+		expect(registerCommandCount).toBe(1);
+		expect(registerShortcutCount).toBe(2);
+		expect(registerEventCount).toBe(4);
+	});
 });

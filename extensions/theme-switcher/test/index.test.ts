@@ -77,6 +77,46 @@ describe("theme-switcher index", () => {
 		expect(registerToolCount).toBe(4);
 	});
 
+
+	it("keeps lifecycle registration idempotent when session_start registration fails then succeeds on retry", async () => {
+		let registerToolCount = 0;
+		let registerCommandCount = 0;
+		const registerEventCount: Record<string, number> = {
+			resources_discover: 0,
+			session_start: 0,
+			agent_end: 0,
+			other: 0,
+		};
+		let failSessionStart = true;
+
+		const pi = {
+			registerTool: () => {
+				registerToolCount += 1;
+			},
+			registerCommand: () => {
+				registerCommandCount += 1;
+			},
+			on: (event: string, _handler: unknown) => {
+				registerEventCount[event as keyof typeof registerEventCount] =
+					(registerEventCount[event as keyof typeof registerEventCount] ?? 0) + 1;
+				if (event === "session_start" && failSessionStart) {
+					failSessionStart = false;
+					throw new Error("session start registration failure");
+				}
+			},
+			appendEntry: () => undefined,
+		} as unknown as ExtensionAPI;
+
+		await expect(themeSwitcher(pi)).rejects.toThrow("session start registration failure");
+		await themeSwitcher(pi);
+
+		expect(registerToolCount).toBe(3);
+		expect(registerCommandCount).toBe(1);
+		expect(registerEventCount.resources_discover).toBe(1);
+		expect(registerEventCount.session_start).toBe(2);
+		expect(registerEventCount.agent_end).toBe(1);
+		expect(registerEventCount.other).toBe(0);
+	});
 	it("keeps project theme precedence over saved global preference", async () => {
 		const home = fs.mkdtempSync(path.join(os.tmpdir(), "theme-switcher-home-"));
 		const project = fs.mkdtempSync(path.join(os.tmpdir(), "theme-switcher-project-"));
