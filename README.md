@@ -30,14 +30,14 @@ Gateway Messaging and Notify Cron remain source-preview while packaging hardenin
 
 - `fs-sandbox` — execution isolation + policy boundaries
 - `pi-memory` — short/long/last-active memory lanes
-- `pi-board` — mission/task coordination surface
+- `pi-board` — mission/task coordination surface (planned to absorb interactive plan-mode workflow)
 - `pi-voice` — voice ingress + transcript workflows
 - `pi-diff` — structured change/delta workflows
 - `pi-rollback` — safe rollback/recovery workflows
 
 ### Planned feature phases in Pi Dispatch
 
-- interactive **plan mode** (`/plan` and gated execute flow)
+- interactive **plan mode** (`/plan` and gated execute flow), converging into the board workflow
 - deeper **VFS/preload** ergonomics and token-safe context injection
 - **sandbox adapter integration** for safer execution boundaries
 
