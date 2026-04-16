@@ -57,12 +57,12 @@ describe("theme-switcher index", () => {
 		expect(registerEventCount).toBe(3);
 	});
 
-	it("retries initialization on the same API instance after a failed first attempt", async () => {
+	it("retries initialization on the same API instance after a failed first attempt without duplicating completed steps", async () => {
 		let registerToolCount = 0;
 		const pi = {
 			registerTool: () => {
 				registerToolCount += 1;
-				if (registerToolCount === 1) {
+				if (registerToolCount === 2) {
 					throw new Error("temporary setup failure");
 				}
 			},
@@ -219,7 +219,7 @@ describe("theme-switcher index", () => {
 							name === "my-installed-theme"
 								? (new MockTheme(undefined, undefined, undefined, { name }) as Theme)
 								: undefined,
-						theme: new MockTheme(undefined, undefined, undefined, { name: "catppuccin-mocha" }) as Theme,
+							theme: new MockTheme(undefined, undefined, undefined, { name: "catppuccin-mocha" }) as Theme,
 					},
 				} as unknown as ExtensionContext,
 			);

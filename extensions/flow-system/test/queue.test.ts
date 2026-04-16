@@ -167,22 +167,48 @@ describe("FlowQueueService", () => {
 	});
 
 	it("cancel marks a pending job as cancelled", async () => {
-		const queue = await Effect.runPromise(makeQueue());
-		const job = await Effect.runPromise(queue.enqueue("explore", "scan dir"));
+		const queue = await Effect.runPromise(makeQueue({ maxConcurrent: 1 }));
+		await Effect.runPromise(queue.enqueue("explore", "running job"));
+		const pending = await Effect.runPromise(queue.enqueue("explore", "pending job"));
 
-		await Effect.runPromise(queue.cancel(job.id));
+		await Effect.runPromise(queue.cancel(pending.id));
 
 		const all = await Effect.runPromise(queue.getAll());
-		expect(all[0]?.status).toBe("cancelled");
+		expect(all.find((job) => job.id === pending.id)?.status).toBe("cancelled");
 	});
 
-	it("cancel marks a running job as cancelled", async () => {
+
+	it("does not promote pending jobs before running cancellations reach terminal state", async () => {
+		const queue = await Effect.runPromise(makeQueue({ maxConcurrent: 1 }));
+		const running = await Effect.runPromise(queue.enqueue("explore", "first"));
+		const pending = await Effect.runPromise(queue.enqueue("debug", "second"));
+
+		expect(running.status).toBe("running");
+		expect(pending.status).toBe("pending");
+
+		await Effect.runPromise(queue.cancel(running.id));
+		const afterCancelJobs = await Effect.runPromise(queue.getAll());
+		expect(afterCancelJobs.find((job) => job.id === pending.id)?.status).toBe("pending");
+
+		await Effect.runPromise(
+			queue.setStatus(running.id, "cancelled", { finishedAt: Date.now(), toolCount: 0 }),
+		);
+		const afterTerminal = await Effect.runPromise(queue.getAll());
+		expect(afterTerminal.find((job) => job.id === pending.id)?.status).toBe("running");
+	});
+
+	it("cancel marks running jobs as cancelling until terminal status is applied", async () => {
 		const queue = await Effect.runPromise(makeQueue());
 		const job = await Effect.runPromise(queue.enqueue("debug", "trace bug"));
 		await Effect.runPromise(queue.setStatus(job.id, "running"));
 
 		await Effect.runPromise(queue.cancel(job.id));
 
+		const interim = await Effect.runPromise(queue.getAll());
+		expect(interim[0]?.status).toBe("running");
+		expect(interim[0]?.lastProgress).toBe("cancelling");
+
+		await Effect.runPromise(queue.setStatus(job.id, "cancelled", { finishedAt: Date.now() }));
 		const all = await Effect.runPromise(queue.getAll());
 		expect(all[0]?.status).toBe("cancelled");
 	});
@@ -200,7 +226,8 @@ describe("FlowQueueService", () => {
 	});
 
 	it("bindAbort immediately aborts when the job is already cancelled", async () => {
-		const queue = await Effect.runPromise(makeQueue());
+		const queue = await Effect.runPromise(makeQueue({ maxConcurrent: 1 }));
+		await Effect.runPromise(queue.enqueue("debug", "running"));
 		const job = await Effect.runPromise(queue.enqueue("debug", "already cancelled"));
 		await Effect.runPromise(queue.cancel(job.id));
 

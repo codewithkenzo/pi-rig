@@ -2,30 +2,71 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { loadTheme } from "../../shared/theme/index.js";
 import { registerThemeCommands } from "./src/commands.js";
 import { registerThemeLifecycle } from "./src/lifecycle.js";
-import { loadThemePreference, makeThemeState } from "./src/state.js";
+import { loadThemePreference, makeThemeState, type ThemeState } from "./src/state.js";
 import { makeThemeListTool, makeThemePreviewTool, makeThemeSetTool } from "./src/tools.js";
 
-const initializedApis = new WeakSet<ExtensionAPI>();
+interface ThemeSwitcherInitState {
+	themeState: ThemeState | undefined;
+	toolSetRegistered: boolean;
+	toolListRegistered: boolean;
+	toolPreviewRegistered: boolean;
+	commandsRegistered: boolean;
+	lifecycleRegistered: boolean;
+	initialized: boolean;
+}
+
+const states = new WeakMap<ExtensionAPI, ThemeSwitcherInitState>();
+
+const createState = (): ThemeSwitcherInitState => ({
+	themeState: undefined,
+	toolSetRegistered: false,
+	toolListRegistered: false,
+	toolPreviewRegistered: false,
+	commandsRegistered: false,
+	lifecycleRegistered: false,
+	initialized: false,
+});
 
 export default async function themeSwitcher(pi: ExtensionAPI): Promise<void> {
-	if (initializedApis.has(pi)) {
+	const state = states.get(pi) ?? createState();
+
+	if (state.initialized) {
 		console.warn("[theme-switcher] Extension already initialized for this API instance; skipping duplicate registration.");
 		return;
 	}
 	try {
-		const { palette } = loadTheme(process.cwd());
-		const preferred = loadThemePreference();
-		const state = makeThemeState(preferred ?? palette.name);
+		if (state.themeState === undefined) {
+			const { palette } = loadTheme(process.cwd());
+			const preferred = loadThemePreference();
+			state.themeState = makeThemeState(preferred ?? palette.name);
+		}
+		const themeState = state.themeState;
 
-		pi.registerTool(makeThemeSetTool(state));
-		pi.registerTool(makeThemeListTool(state));
-		pi.registerTool(makeThemePreviewTool(state));
+		if (!state.toolSetRegistered) {
+			pi.registerTool(makeThemeSetTool(themeState));
+			state.toolSetRegistered = true;
+		}
+		if (!state.toolListRegistered) {
+			pi.registerTool(makeThemeListTool(themeState));
+			state.toolListRegistered = true;
+		}
+		if (!state.toolPreviewRegistered) {
+			pi.registerTool(makeThemePreviewTool(themeState));
+			state.toolPreviewRegistered = true;
+		}
+		if (!state.commandsRegistered) {
+			registerThemeCommands(pi, themeState);
+			state.commandsRegistered = true;
+		}
+		if (!state.lifecycleRegistered) {
+			registerThemeLifecycle(pi, themeState);
+			state.lifecycleRegistered = true;
+		}
 
-		registerThemeCommands(pi, state);
-		registerThemeLifecycle(pi, state);
-		initializedApis.add(pi);
+		state.initialized = true;
+		states.set(pi, state);
 	} catch (error) {
-		initializedApis.delete(pi);
+		states.set(pi, state);
 		throw error;
 	}
 }

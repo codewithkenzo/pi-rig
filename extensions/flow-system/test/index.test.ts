@@ -34,7 +34,7 @@ describe("flow-system index", () => {
 		expect(registerEventCount).toBe(4);
 	});
 
-	it("retries initialization on the same API instance after a failed first attempt", async () => {
+	it("retries initialization on the same API instance after a failed first attempt without duplicating completed steps", async () => {
 		let registerToolCount = 0;
 		let registerCommandCount = 0;
 		let registerEventCount = 0;
@@ -42,7 +42,7 @@ describe("flow-system index", () => {
 		const pi = {
 			registerTool: () => {
 				registerToolCount += 1;
-				if (registerToolCount === 1) {
+				if (registerToolCount === 2) {
 					throw new Error("temporary setup failure");
 				}
 			},

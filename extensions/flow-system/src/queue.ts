@@ -48,6 +48,12 @@ type QueueMutation =
 const isTerminalStatus = (status: FlowJobStatus): boolean =>
 	status === "done" || status === "failed" || status === "cancelled";
 
+const isRunningLike = (job: FlowJob, cancellingJobs: ReadonlySet<string>): boolean =>
+	job.status === "running" || cancellingJobs.has(job.id);
+
+const countRunningLike = (jobs: readonly FlowJob[], cancellingJobs: ReadonlySet<string>): number =>
+	jobs.filter((job) => isRunningLike(job, cancellingJobs)).length;
+
 const normalizeStaleRestoredJobs = (
 	jobs: readonly FlowJob[],
 	restoredAt: number,
@@ -98,8 +104,12 @@ const cloneQueue = (q: FlowQueue): FlowQueue => ({
 	jobs: q.jobs.map((j) => ({ ...j })),
 });
 
-const promotePendingJobs = (state: FlowQueue, maxConcurrent: number): FlowQueue => {
-	const runningCount = state.jobs.filter((job) => job.status === "running").length;
+const promotePendingJobs = (
+	state: FlowQueue,
+	maxConcurrent: number,
+	cancellingJobs: ReadonlySet<string>,
+): FlowQueue => {
+	const runningCount = countRunningLike(state.jobs, cancellingJobs);
 	if (runningCount >= maxConcurrent) {
 		return state;
 	}
@@ -120,8 +130,11 @@ const promotePendingJobs = (state: FlowQueue, maxConcurrent: number): FlowQueue 
 	return { ...state, jobs };
 };
 
-const isRunningCapReached = (state: FlowQueue, maxConcurrent: number): boolean =>
-	state.jobs.filter((job) => job.status === "running").length >= maxConcurrent;
+const isRunningCapReached = (
+	state: FlowQueue,
+	maxConcurrent: number,
+	cancellingJobs: ReadonlySet<string>,
+): boolean => countRunningLike(state.jobs, cancellingJobs) >= maxConcurrent;
 
 const applyOutputCap = (extras: Partial<FlowJob> | undefined): Partial<FlowJob> | undefined => {
 	if (extras?.output === undefined) {
@@ -145,11 +158,27 @@ const allowPendingToRunningTransition = (
 	job: FlowJob,
 	maxConcurrent: number,
 	nextStatus: FlowJobStatus,
+	cancellingJobs: ReadonlySet<string>,
 ): boolean => {
 	if (nextStatus !== "running" || job.status !== "pending") {
 		return true;
 	}
-	return state.jobs.filter((item) => item.status === "running").length < maxConcurrent;
+	return countRunningLike(state.jobs, cancellingJobs) < maxConcurrent;
+};
+
+const finalizeTerminalTransition = (
+	state: FlowQueue,
+	jobId: string,
+	maxConcurrent: number,
+	cancellingJobs: Set<string>,
+	status: FlowJobStatus,
+): FlowQueue => {
+	if (!isTerminalStatus(status)) {
+		return state;
+	}
+
+	cancellingJobs.delete(jobId);
+	return promotePendingJobs(state, maxConcurrent, cancellingJobs);
 };
 
 export const makeQueue = (options?: MakeQueueOptions): Effect.Effect<FlowQueueService> =>
@@ -159,6 +188,7 @@ export const makeQueue = (options?: MakeQueueOptions): Effect.Effect<FlowQueueSe
 		let current: FlowQueue = { jobs: [], mode: "sequential" };
 		const listeners = new Set<(queue: FlowQueue) => void>();
 		const aborts = new Map<string, () => void>();
+		const cancellingJobs = new Set<string>();
 
 		const publish = (next: FlowQueue): void => {
 			current = next;
@@ -193,7 +223,7 @@ export const makeQueue = (options?: MakeQueueOptions): Effect.Effect<FlowQueueSe
 				const job = yield* Ref.modify(
 					ref,
 					(state): readonly [FlowJob, FlowQueue] => {
-						const shouldRunNow = !isRunningCapReached(state, maxConcurrent);
+						const shouldRunNow = !isRunningCapReached(state, maxConcurrent, cancellingJobs);
 						const nextJob: FlowJob = {
 							id: crypto.randomUUID(),
 							profile,
@@ -211,9 +241,9 @@ export const makeQueue = (options?: MakeQueueOptions): Effect.Effect<FlowQueueSe
 						];
 					},
 				);
-				const next = yield* Ref.get(ref);
-				publish(next);
-				return { ...job };
+			const next = yield* Ref.get(ref);
+			publish(next);
+			return { ...job };
 			});
 
 		const getAll = (): Effect.Effect<FlowJob[]> =>
@@ -242,63 +272,67 @@ export const makeQueue = (options?: MakeQueueOptions): Effect.Effect<FlowQueueSe
 						if (job === undefined) {
 							return [{ _tag: "missing" }, s] as const;
 						}
-						if (job.status === "pending" || job.status === "running") {
-							const next = promotePendingJobs(
-								{
-									...s,
-									jobs: s.jobs.map((j) =>
-										j.id === id
-											? { ...j, status: "cancelled", lastProgress: "cancelled" }
-											: j,
-									),
-								},
-								maxConcurrent,
-							);
-							const nextWithCancelled = {
-								...next,
-								jobs: next.jobs,
+						if (job.status === "pending") {
+							const cancelledState = {
+								...s,
+								jobs: s.jobs.map((j) =>
+									j.id === id ? { ...j, status: "cancelled", lastProgress: "cancelled" } : j,
+								),
 							};
-							return [{ _tag: "updated", next: nextWithCancelled }, nextWithCancelled] as const;
+							return [
+								{ _tag: "updated", next: promotePendingJobs(cancelledState, maxConcurrent, cancellingJobs) },
+								promotePendingJobs(cancelledState, maxConcurrent, cancellingJobs),
+							] as const;
+						}
+						if (job.status === "running") {
+							cancellingJobs.add(id);
+							const next = {
+								...s,
+								jobs: s.jobs.map((j) =>
+									j.id === id ? { ...j, lastProgress: "cancelling" } : j,
+								),
+							};
+							return [{ _tag: "updated", next }, next] as const;
 						}
 						return [{ _tag: "unchanged" }, s] as const;
 					},
 				);
-				if (outcome._tag === "missing") {
+			if (outcome._tag === "missing") {
 					return yield* Effect.fail(new JobNotFoundError({ id }));
-				}
-				if (outcome._tag === "updated") {
-					runAbort(id);
-					publish(outcome.next);
-					return "cancelled" as const;
-				}
-				return "already_terminal" as const;
-			});
+			}
+			if (outcome._tag === "updated") {
+				runAbort(id);
+			publish(outcome.next);
+				return "cancelled" as const;
+			}
+			return "already_terminal" as const;
+		});
 
 		const bindAbort = (id: string, abort: () => void): Effect.Effect<FlowJobStatus, JobNotFoundError> =>
 			Effect.gen(function* () {
-				aborts.set(id, abort);
-				const status = yield* Ref.get(ref).pipe(
-					Effect.flatMap((state) => {
-						const job = state.jobs.find((candidate) => candidate.id === id);
-						if (job === undefined) {
-							aborts.delete(id); // clean up stale registration
-							return Effect.fail(new JobNotFoundError({ id }));
-						}
-						return Effect.succeed(job.status);
-					}),
-				);
-				if (isTerminalStatus(status)) {
-					aborts.delete(id);
-					if (status === "cancelled") {
-						try {
-							abort();
-						} catch (error) {
-							console.warn("flow queue abort handler error", error);
-						}
+			aborts.set(id, abort);
+			const status = yield* Ref.get(ref).pipe(
+				Effect.flatMap((state) => {
+					const job = state.jobs.find((candidate) => candidate.id === id);
+					if (job === undefined) {
+						aborts.delete(id); // clean up stale registration
+						return Effect.fail(new JobNotFoundError({ id }));
+					}
+					return Effect.succeed(job.status);
+				}),
+			);
+			if (isTerminalStatus(status)) {
+				aborts.delete(id);
+				if (status === "cancelled") {
+					try {
+						abort();
+					} catch (error) {
+						console.warn("flow queue abort handler error", error);
 					}
 				}
-				return status;
-			});
+			}
+			return status;
+		});
 
 		const clearAbort = (id: string): Effect.Effect<void> =>
 			Effect.sync(() => {
@@ -320,7 +354,7 @@ export const makeQueue = (options?: MakeQueueOptions): Effect.Effect<FlowQueueSe
 						}
 						if (isTerminalStatus(job.status)) {
 							if (job.status === "cancelled" && status === "cancelled" && extras !== undefined) {
-								const nextWithExtras = {
+								const nextState = {
 									...s,
 									jobs: s.jobs.map((entry) =>
 										entry.id === id
@@ -328,19 +362,26 @@ export const makeQueue = (options?: MakeQueueOptions): Effect.Effect<FlowQueueSe
 											: entry,
 									),
 								};
-								return [{ _tag: "updated", next: nextWithExtras }, nextWithExtras] as const;
+								const nextWithPromotion = finalizeTerminalTransition(
+									nextState,
+									id,
+									maxConcurrent,
+									cancellingJobs,
+									status,
+								);
+								return [{ _tag: "updated", next: nextWithPromotion }, nextWithPromotion] as const;
 							}
 							return [{ _tag: "unchanged" }, s] as const;
 						}
 
-						const nextStatus: FlowJobStatus = allowPendingToRunningTransition(
+						const shouldRunAsRequested = allowPendingToRunningTransition(
 							s,
 							job,
 							maxConcurrent,
-							status
-						)
-							? status
-							: "pending";
+							status,
+							cancellingJobs,
+						);
+						const nextStatus: FlowJobStatus = shouldRunAsRequested ? status : "pending";
 						const nextState = {
 							...s,
 							jobs: s.jobs.map((entry) =>
@@ -350,21 +391,21 @@ export const makeQueue = (options?: MakeQueueOptions): Effect.Effect<FlowQueueSe
 							),
 						};
 						const nextWithPromotion = isTerminalStatus(nextStatus)
-							? promotePendingJobs(nextState, maxConcurrent)
+							? finalizeTerminalTransition(nextState, id, maxConcurrent, cancellingJobs, nextStatus)
 							: nextState;
 						return [{ _tag: "updated", next: nextWithPromotion }, nextWithPromotion] as const;
 					},
 				);
-				if (outcome._tag === "missing") {
-					yield* Effect.fail(new JobNotFoundError({ id }));
+			if (outcome._tag === "missing") {
+				yield* Effect.fail(new JobNotFoundError({ id }));
+			}
+			if (outcome._tag === "updated") {
+				if (isTerminalStatus(status)) {
+					aborts.delete(id);
 				}
-				if (outcome._tag === "updated") {
-					if (isTerminalStatus(status)) {
-						aborts.delete(id);
-					}
-					publish(outcome.next);
-				}
-			});
+				publish(outcome.next);
+			}
+		});
 
 		const snapshot = (): Effect.Effect<FlowQueue> => Ref.get(ref).pipe(Effect.map(cloneQueue));
 
@@ -377,9 +418,21 @@ export const makeQueue = (options?: MakeQueueOptions): Effect.Effect<FlowQueueSe
 			return Effect.gen(function* () {
 				yield* Ref.set(ref, next);
 				aborts.clear();
+				cancellingJobs.clear();
 				publish(next);
 			});
 		};
 
-		return { enqueue, getAll, peek, subscribe, cancel, bindAbort, clearAbort, setStatus, snapshot, restoreFrom };
-	});
+		return {
+			enqueue,
+			getAll,
+			peek,
+			subscribe,
+			cancel,
+			bindAbort,
+			clearAbort,
+			setStatus,
+			snapshot,
+			restoreFrom,
+		};
+		});
