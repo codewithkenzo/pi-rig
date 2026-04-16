@@ -7,10 +7,9 @@ After installation, open a fresh Pi coding agent session and run:
 ```text
 /flow profiles
 /theme list
-/gateway status
-/notify-cron status
 ```
 
+If you installed additional source plugins manually, verify their commands too.
 If a command is missing, check the [install guide](./INSTALL.md).
 
 ## Available surfaces
@@ -42,7 +41,7 @@ Command:
 
 - `/theme status|set|list|preview|cycle`
 
-### Gateway Messaging
+### Gateway Messaging (source preview)
 
 Current source path: `extensions/gateway-messaging`
 
@@ -59,7 +58,7 @@ Discord diagnostics currently included:
 - `/gateway discord normalize <target>`
 - `/gateway discord moderation <action> <role> <perm1,perm2> <audit_reason>`
 
-### Notify Cron
+### Notify Cron (source preview)
 
 Current source path: `extensions/notify-cron`
 
@@ -84,7 +83,7 @@ Current role:
 - run jobs in foreground or background
 - manage queued work through Pi surfaces
 
-### Gateway Messaging
+### Gateway Messaging (coming soon in installer)
 
 Current role:
 
@@ -92,7 +91,7 @@ Current role:
 - keep one turn readable through a patch-oriented update model
 - carry structured action payloads and compact tool-stream summaries
 
-### Notify Cron
+### Notify Cron (coming soon in installer)
 
 Current role:
 

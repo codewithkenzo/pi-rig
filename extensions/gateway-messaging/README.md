@@ -1,78 +1,91 @@
 # Gateway Messaging
 
-## Current baseline
+Telegram-first turn updates and action routing for the Pi coding agent.
 
-This is a **sprint-start scaffold only** for Telegram-first gateway behavior. It intentionally implements the minimal control-plane pieces so downstream work can layer on transport and state persistence safely.
+Gateway Messaging formats agent turn output for remote delivery, maintains per-turn lifecycle state, and supports structured action payloads for downstream handling. It uses a patch-queue model so a single Telegram message stays updated throughout a turn rather than flooding the chat.
 
-Telegram-first baseline messaging extension for the Pi coding agent.
+## Surfaces
 
-## What it does
+| Type | Name | Purpose |
+|------|------|---------|
+| Tool | `gateway_turn_preview` | Preview or dispatch a turn update with optional action payload |
+| Command | `/gateway status` | Show gateway state and current turn info |
+| Command | `/gateway discord normalize <target>` | Normalize a Discord destination string |
+| Command | `/gateway discord moderation <action> <role> <perms> <reason>` | Validate a moderation action policy |
 
-- Registers one tool: `gateway_turn_preview`
-- Registers command: `/gateway status`
-- Tracks per-turn Telegram lifecycle state (`turnId`, `chatId`, phase, optional `messageId`)
-- Provides a single-message patch queue per turn with throttle interval + no-op skip
-  - superseded patches are dropped inside the throttle window
-  - last write always wins
-- Validates versioned inline action payloads (`GatewayTurnAction`) and provides parse/format helpers
-- Supports ticket action kinds: `retry`, `details`, `approve`, `cancel`
-- Coalesces tool-stream events into compact text with `formatToolStreamRollup`
-- Applies patch-mode policy (`edit_primary` vs `fallback_auxiliary`)
+## Architecture
 
-## Scope and limitations (current baseline)
+```
+index.ts              Extension entry — registers tool, commands, turn state
+src/
+  types.ts            TypeBox schemas + tagged errors
+  turn-state.ts       Per-turn lifecycle state (turnId, chatId, phase, messageId)
+  dispatcher.ts       Patch queue with throttle interval and no-op skip
+  actions.ts          GatewayTurnAction parse and format helpers
+  rollup.ts           Tool-stream event coalescing into compact text
+  text-policy.ts      Patch-mode policy (edit_primary vs fallback_auxiliary)
+  telegram-adapter.ts Telegram send/edit adapter surface
+  discord-adapter.ts  Discord destination parsing and moderation policy (pure)
+  deepgram.ts         STT/TTS voice hooks (feature-flag gated)
+  tool.ts             gateway_turn_preview implementation
+  commands.ts         /gateway command handler
+skills/
+  gateway-messaging/
+    SKILL.md          Bundled skill for agent context
+    references/
+      turn-flow.md    Turn lifecycle reference
+```
 
-This baseline is **Telegram-first** and intentionally narrow:
+## Patch queue model
 
-- queueing/dispatch/formatting with Telegram send/edit adapter support
-- primary-message strategy: send once, edit in place, replace when edit is rejected
-- no Discordeno transport integration yet (adapter is pure + diagnostics-only in this slice)
-- no persistent storage (all state is in-memory)
+Each turn gets a single-message patch queue:
 
-### HS-025: Discordeno adapter baseline (no live transport)
+- patches superseded inside the throttle window are dropped
+- last write always wins within the window
+- patch-mode policy decides whether to edit the primary message or fall back to auxiliary
 
-- adds Discord destination parsing contract for `discord:<channel_or_thread_id>`
-- supports optional `discord:<channel_id>:<thread_id>` normalization into runtime shape:
-  - `{ platform: "discord", kind: "channel" | "thread", id, threadId? }`
-- exposes moderation action policy enforcement (pure function) that requires:
-  - role gate
-  - permission gate
-  - non-empty audit reason for moderation actions
-- command diagnostics:
-  - `/gateway discord normalize <target>`
-  - `/gateway discord moderation <action> <role> <perm1,perm2> <audit_reason>`
+## Action payloads
 
-## Not yet covered in this sprint
+Supports versioned inline action payloads (`GatewayTurnAction`) with kinds: `retry`, `details`, `approve`, `cancel`.
 
-- Telegram send/edit transport wiring (`sendMessage`, `editMessageText`, media fallback)
-- Error/permission retry policy (backoff + dead-letter)
-- Durable turn state persistence and recovery across agent restarts
-- Multi-channel action handling outside Telegram
-- Any additional action kinds not in the ticket contract (`retry`, `details`, `approve`, `cancel`). Add only with explicit docs and tests before extending.
+## Feature flags
 
-## Optional operator auth policy
+### Auth policy
 
-For callback/action hardening in local deployments:
+```bash
+PI_GATEWAY_ALLOWED_ACTOR_IDS=u1,u2
+PI_GATEWAY_ACCESS_TOKEN=<shared-token>
+```
 
-- `PI_GATEWAY_ALLOWED_ACTOR_IDS=u1,u2`
-- `PI_GATEWAY_ACCESS_TOKEN=<shared-token>`
+When set, action execution requires a matching actor ID and/or token. When unset, the extension runs in open/dev mode.
 
-Policy behavior:
-- if unset -> open/dev mode
-- if set -> action execution requires allowed actor and/or matching token
+### Voice hooks (Deepgram)
 
-## Optional Deepgram hooks (feature flags)
+```bash
+PI_GATEWAY_DEEPGRAM_STT_ENABLED=true   # transcript summary injection (voice_transcript)
+PI_GATEWAY_DEEPGRAM_TTS_ENABLED=true   # TTS queue signal on final response (request_tts + final_text)
+```
 
-`gateway_turn_preview` supports voice hooks behind flags:
+## Install
 
-- `PI_GATEWAY_DEEPGRAM_STT_ENABLED=true` enables transcript summary injection (`voice_transcript`).
-- `PI_GATEWAY_DEEPGRAM_TTS_ENABLED=true` enables final-response TTS queue signal (`request_tts` + `final_text`).
+### From the Pi Rig suite
+
+```bash
+bun run setup
+```
+
+or individually:
+
+```bash
+pi install ./extensions/gateway-messaging
+```
 
 ## Development
 
 ```bash
 cd extensions/gateway-messaging
 bun install
-bun run build
-bun run typecheck
-bun test
+bun run build       # runtime bundle for the Pi coding agent
+bun run typecheck   # typecheck
+bun test            # tests
 ```

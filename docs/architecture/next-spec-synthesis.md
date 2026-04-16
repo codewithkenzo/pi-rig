@@ -1,60 +1,57 @@
-# Next spec synthesis (April 16, 2026)
+# Next spec synthesis (April 2026)
 
-Scope synthesized from:
-- master plan: `~/.claude/plans/scalable-enchanting-rabbit.md`
-- audit follow-up: `~/.claude/plans/pure-wibbling-kernighan.md`
-- sprint execution notes in `.tickets/pprk-*.md`
+This note summarizes near-term architecture direction for Pi Rig extensions.
 
-## Current extension situation (right now)
+## Current extension situation
 
 | Extension | Path | Status | Notes |
 |---|---|---|---|
-| Pi Dispatch | `extensions/flow-system` | Implemented, actively hardening | Queue, deck UI, execution envelope/preload, summary-phase indicator all landed |
-| Theme Switcher | `extensions/theme-switcher` | Implemented, stable | Ambiguous non-palette theme behavior confirmed intentional |
-| Gateway Messaging | `extensions/gateway-messaging` | Implemented baseline | Telegram-first turn formatting + adapter pipeline in place |
-| Notify Cron | `extensions/notify-cron` | Implemented baseline | Scheduler + dispatch validation shipped |
-| fs-sandbox | `extensions/fs-sandbox` | Planned (next greenfield) | Coordination contract already drafted |
-| pi-memory | `extensions/pi-memory` | Planned | Depends on fs-sandbox and mission-control fit |
-| pi-board | `extensions/pi-board` | Planned | Mission-control surface not started in this repo |
-| pi-voice | `extensions/pi-voice` | Planned | Voice pipeline lane still research-stage |
-| pi-diff | `extensions/pi-diff` | Planned | Diff/read-write optimization lane still research-stage |
+| Pi Dispatch | `extensions/flow-system` | Implemented, actively hardening | Queue, deck UI, and execution envelope lanes are in place |
+| Theme Switcher | `extensions/theme-switcher` | Implemented, stable | Runtime theme switching + preview |
+| Gateway Messaging | `extensions/gateway-messaging` | Implemented baseline | Telegram-first turn formatting + adapter pipeline |
+| Notify Cron | `extensions/notify-cron` | Implemented baseline | Scheduler + dispatch validation |
+| fs-sandbox | `extensions/fs-sandbox` | Planned | Execution isolation contract drafted |
+| pi-memory | `extensions/pi-memory` | Planned | Filesystem-first memory direction |
+| pi-board | `extensions/pi-board` | Planned | Task/mission-control layer |
+| pi-voice | `extensions/pi-voice` | Planned | Voice pipeline remains research-stage |
+| pi-diff | `extensions/pi-diff` | Planned | Structured diff lane remains research-stage |
+| pi-rollback | `extensions/pi-rollback` | Planned | Roll back risky extension/runtime changes with safer recovery flows |
 
 ## Strategic synthesis
 
 ### 1) Plan mode depth (Pi Dispatch)
 - Keep chat-first UX and compact status line as primary surface.
-- Treat plan mode as a strict phase machine (plan -> execute -> verify -> summarize).
-- `maxIterations` remains a soft constraint (prompt/hook nudging) until pi runtime exposes a hard flag.
+- Treat plan mode as a strict phase machine (`plan -> execute -> verify -> summarize`).
+- Keep `maxIterations` as a soft orchestration constraint until runtime adds hard caps.
 
-### 2) Gateway + Telegram + notify-cron hot features
+### 2) Gateway + Telegram + notify-cron
 - Keep gateway focused on low-noise operator updates (single-message edit model, compact tool rollups).
-- Keep notify-cron as lease-aware dispatcher with explicit destinations.
-- Next integration increment should be contract-first: gateway event schema + notify dispatch envelope compatibility.
+- Keep notify-cron lease-aware with explicit destinations.
+- Prioritize contract-first interoperability between gateway events and notify envelopes.
 
 ### 3) Diff/read-write optimization
-- Preserve current preload envelope in Pi Dispatch as the first token-saving layer.
-- Add pi-diff as a structured delta lane rather than replacing core read/write tools.
-- Scope first pi-diff spec around “before/after workspace snapshot + summary” contracts for agent trust.
+- Keep bounded preload envelopes as the first token-saving lane.
+- Add pi-diff as a structured delta layer rather than replacing core read/write tools.
 
 ### 4) Token reduction
-- Continue bounded context preloading (dirs/files/commands) as the default path.
-- Prefer deterministic summarization packets over long raw logs.
-- Keep output caps and summary-phase signaling so UI surfaces remain truthful under long runs.
+- Prefer bounded preloading and deterministic summaries over long raw logs.
+- Keep output caps and summary-phase signals so UI remains truthful under long runs.
 
 ### 5) fs-sandbox + Code Mode + VFS boundaries
-- Keep extension-to-extension integration adapter-based (no direct cross-import coupling).
-- Maintain `flow-system` executor adapter contract as the seam for fs-sandbox policy enforcement.
-- Preserve VFS discipline: temporary staged files + guaranteed cleanup, with sandbox policy wrapping execution boundaries.
+- Keep extension-to-extension integration adapter-based (no direct coupling).
+- Maintain flow executor adapter seam for sandbox policy enforcement.
+- Preserve VFS discipline: temporary staged files + guaranteed cleanup.
 
-## What should happen next
+## Recommended next steps
 
-1. Start `fs-sandbox` scaffold from the existing coordination design (`docs/architecture/fs-sandbox-coordination.md`).
-2. Add adapter lifecycle tests in Pi Dispatch before plugging real fs-sandbox execution.
+1. Start fs-sandbox scaffold from existing coordination design.
+2. Add adapter lifecycle tests in Pi Dispatch before plugging real sandbox execution.
 3. Write first pi-diff spec focused on structured delta output contracts.
-4. Defer deep plan-mode UX expansion until fs-sandbox execution boundaries are stable.
+4. Draft pi-rollback recovery contracts (target, scope, confirmation, undo log).
+5. Defer deep plan-mode UX expansion until execution boundaries are stable.
 
-## Guardrails to preserve
+## Guardrails
 
-- Keep `scalable-enchanting-rabbit.md` as the master roadmap source.
-- Keep `tk` as lifecycle source of truth, markdown as durable design memory.
-- No speculative refactors outside scoped tickets.
+- Keep roadmap claims honest (implemented vs partial vs planned).
+- Keep changes small and verifiable.
+- Avoid speculative refactors outside scoped work.

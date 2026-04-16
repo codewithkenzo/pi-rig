@@ -16,14 +16,15 @@ bunx @codewithkenzo/pi-rig@latest
 npx @codewithkenzo/pi-rig@latest
 ```
 
-The installer is being shaped for both humans and agents:
+The installer supports both humans and agents:
 
-- interactive selection for manual setup
+- interactive plugin selection
 - explicit flags for deterministic setup
-- install all packages or a selected subset
-- package labels and descriptions during selection
+- install all available plugins or a selected subset
+- simple plugin labels and descriptions during selection
 
-Planned distribution channels include the installer package, source installs, and AUR packages once the release path is stable.
+Current one-command installer scope: **Pi Dispatch + Theme Switcher**.
+Additional plugins are planned in later phases.
 
 ## Current source path
 
@@ -56,7 +57,7 @@ Useful options:
 
 ```bash
 node packages/pi-installer/dist/cli.js --all
-node packages/pi-installer/dist/cli.js --extensions flow-system,gateway-messaging
+node packages/pi-installer/dist/cli.js --extensions flow-system,theme-switcher
 node packages/pi-installer/dist/cli.js --dry-run
 node packages/pi-installer/dist/cli.js --no-skills
 node packages/pi-installer/dist/cli.js --pi-path /absolute/path/to/pi
@@ -91,9 +92,9 @@ Then open a fresh Pi coding agent session and run:
 ```text
 /flow profiles
 /theme list
-/gateway status
-/notify-cron status
 ```
+
+If you installed extra source plugins manually, also verify their commands.
 
 ## If commands are missing
 
@@ -103,14 +104,14 @@ Usually one of these applies:
 2. the extension path is not present in `pi list`
 3. project-local Pi settings differ from user-level settings
 
-Fast recovery path:
+Fast recovery path (current one-command scope):
 
 ```bash
 pi install ./extensions/flow-system
 pi install ./extensions/theme-switcher
-pi install ./extensions/gateway-messaging
-pi install ./extensions/notify-cron
 ```
+
+(Optional source plugins can still be installed manually.)
 
 Then start a fresh Pi coding agent session.
 

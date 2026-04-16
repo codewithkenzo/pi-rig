@@ -6,3 +6,10 @@ dist/
 error.log
 __pycache__/
 *.pyc
+
+# Internal planning / ticket trails (local-only)
+.claude/
+.tickets/
+
+# Generated local docs index
+docs/PI_EXTENSION_MD_INDEX.md

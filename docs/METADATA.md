@@ -1,51 +1,78 @@
 # Metadata
 
-## Repository description
+## Monorepo (Pi Rig)
 
-Pi Rig is a compact workflow stack for the Pi coding agent: execution, messaging, routing, and workflow state for daily agent-driven work.
+### Repository description
 
-## Short description
+Pi Rig monorepo for Pi coding agent plugins: Dispatch, Theme Switcher, Gateway Messaging, and Notify Cron.
 
-Compact workflow stack for the Pi coding agent.
+### Short description
 
-## Tagline
+Pi coding agent plugins for execution, theming, messaging, and scheduling.
 
-Execution, messaging, and workflow state for the Pi coding agent.
+### Tagline
 
-## GitHub topics
+Practical Pi plugins for real daily runs.
+
+### GitHub topics
 
 - pi-coding-agent
-- ai-coding-agents
+- pi-extensions
+- ai-agents
 - typescript
 - bun
-- agent-tools
 - terminal-tools
 - workflow-automation
-- telegram-bot
-- cron
-- developer-tools
+
+## Plugin repositories
+
+### `codewithkenzo/pi-dispatch`
+
+**Description:** Queue and run Pi tasks with reusable profiles.
+
+**Topics:**
+
+- pi-coding-agent
+- dispatch
+- task-queue
+- subagents
+- typescript
+- bun
+
+### `codewithkenzo/pi-theme-switcher`
+
+**Description:** Switch and preview Pi themes in a live session.
+
+**Topics:**
+
+- pi-coding-agent
+- theme-switcher
+- tui
+- terminal-ui
+- typescript
+- bun
 
 ## Package descriptions
 
 ### `@codewithkenzo/pi-rig`
 
-Installer CLI for Pi Rig, a compact Pi coding agent workflow stack for execution, messaging, routing, and workflow state.
+One-command installer for Pi Dispatch and Theme Switcher.
 
 ### `@codewithkenzo/pi-dispatch`
 
-Profile-based execution and queued task dispatch for the Pi coding agent.
+Queue and run Pi tasks with reusable profiles.
 
 ### `@codewithkenzo/pi-theme-switcher`
 
-Runtime theme selection and preview for the Pi coding agent.
+Switch and preview Pi themes in a live session.
 
 ### `@codewithkenzo/pi-gateway-messaging`
 
-Telegram-first remote turn updates and action routing for the Pi coding agent.
+Telegram turn updates and action routing for Pi. (Coming soon)
 
 ### `@codewithkenzo/pi-notify-cron`
 
-Scheduled notifications and explicit destination routing for the Pi coding agent.
+Scheduled notifications for Pi with lease-aware ticks. (Coming soon)
 
 ## Package keywords
 
@@ -53,66 +80,43 @@ Scheduled notifications and explicit destination routing for the Pi coding agent
 
 - pi
 - pi-coding-agent
-- pi-package
 - installer
-- workflow
-- agent-tools
 - cli
+- extensions
 
 ### `@codewithkenzo/pi-dispatch`
 
 - pi
 - pi-coding-agent
-- pi-package
-- execution
 - dispatch
+- task-queue
 - subagents
-- workflow
 
 ### `@codewithkenzo/pi-theme-switcher`
 
 - pi
 - pi-coding-agent
-- pi-package
 - theme
-- theming
+- theme-switcher
 - tui
-- workflow
 
-### `@codewithkenzo/pi-gateway-messaging`
+## Next feature phases
 
-- pi
-- pi-coding-agent
-- pi-package
-- telegram
-- gateway
-- messaging
-- remote-ops
+### Phase 1 (now)
 
-### `@codewithkenzo/pi-notify-cron`
+- publish `@codewithkenzo/pi-dispatch`
+- publish `@codewithkenzo/pi-theme-switcher`
+- ship `@codewithkenzo/pi-rig` installer with only available plugins
 
-- pi
-- pi-coding-agent
-- pi-package
-- cron
-- notifications
-- routing
-- workflow
+### Phase 2 (next)
 
-## Distribution notes
+- finish package hardening for Gateway Messaging
+- finish package hardening for Notify Cron
+- add clear installer badges for "available" vs "coming soon"
 
-Planned distribution channels:
+### Phase 3 (after)
 
-- `bunx @codewithkenzo/pi-rig@latest`
-- `npx @codewithkenzo/pi-rig@latest`
-- source install from this repository
-- AUR packages once the release path is stable
-
-## Public docs notes
-
-Planned additions for the public docs surface:
-
-- screenshots and short video clips
-- theme palette previews for Theme Switcher
-- configuration flags and optional dependencies by package
-- source install and package install examples side by side
+- add `pi-memory` MVP (short + long memory lanes)
+- add interactive plan mode (`/plan`) in Pi Dispatch
+- draft `pi-rollback` plugin for safe recovery/undo workflows
+- add richer install diagnostics and post-install checks

@@ -1,7 +1,7 @@
 {
   "name": "@codewithkenzo/pi-theme-switcher",
   "version": "0.1.0",
-  "description": "Runtime theme selection and preview for the Pi coding agent",
+  "description": "Switch and preview Pi themes in a live session",
   "type": "module",
   "main": "./dist/index.js",
   "extensions": ["./dist/index.js"],
@@ -17,11 +17,9 @@
   "keywords": [
     "pi",
     "pi-coding-agent",
-    "pi-package",
     "theme",
-    "theming",
-    "tui",
-    "workflow"
+    "theme-switcher",
+    "tui"
   ],
   "dependencies": {
     "@mariozechner/pi-tui": "^0.63.1",

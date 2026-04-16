@@ -1,7 +1,7 @@
 {
   "name": "@codewithkenzo/pi-rig",
   "version": "0.1.0",
-  "description": "Installer CLI for Pi Rig, a compact Pi coding agent workflow stack for execution, messaging, routing, and workflow state",
+  "description": "One-command installer for Pi Dispatch and Theme Switcher",
   "type": "module",
   "main": "./dist/lib.js",
   "bin": {
@@ -15,11 +15,9 @@
   "keywords": [
     "pi",
     "pi-coding-agent",
-    "pi-package",
     "installer",
-    "workflow",
-    "agent-tools",
-    "cli"
+    "cli",
+    "extensions"
   ],
   "devDependencies": {
     "@types/bun": "latest",

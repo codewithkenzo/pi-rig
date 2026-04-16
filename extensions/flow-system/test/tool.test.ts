@@ -154,7 +154,7 @@ describe("flow_run tool cancellation", () => {
 				makeCtx(tempDir),
 			);
 			const jobs = await Effect.runPromise(queue.getAll());
-			expect(result.isError).toBe(true);
+			expect("isError" in result ? result.isError : false).toBe(true);
 			expect(result.content[0]?.text).toContain("requires a concrete model");
 			expect(invoked).toBe(false);
 			expect(jobs).toHaveLength(0);

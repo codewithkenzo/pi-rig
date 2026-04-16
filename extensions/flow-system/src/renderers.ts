@@ -17,6 +17,7 @@ export interface FlowRenderDetails {
 	count?: number;
 	parallel?: boolean;
 	index?: number;
+	envelopeIssues?: string[];
 }
 
 interface TextResultLike {

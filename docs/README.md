@@ -30,11 +30,11 @@ Profile-based execution for queued subagent work, reusable task envelopes, and f
 
 Runtime theme switching and preview.
 
-### Gateway Messaging
+### Gateway Messaging (source preview)
 
 Telegram-first turn runtime with patch queues, structured actions, and compact remote updates.
 
-### Notify Cron
+### Notify Cron (source preview)
 
 Scheduled notifications with explicit destinations and lease-aware ticking.
 
