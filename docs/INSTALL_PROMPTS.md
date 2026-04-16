@@ -2,9 +2,29 @@
 
 Copy one of these prompts into Pi, Claude Code, Codex, or another coding agent when you want installation handled for you.
 
+## For your agent (direct setup copy)
+
+````md
+Install Pi Rig with direct setup.
+
+Requirements:
+- Prefer Bun:
+  - `bunx @codewithkenzo/pi-rig@latest`
+- If Bun is unavailable, use npm:
+  - `npx @codewithkenzo/pi-rig@latest`
+- Install current core set only:
+  - Pi Dispatch
+  - Theme Switcher
+- Restart Pi if needed.
+- Verify:
+  - `/flow profiles`
+  - `/theme list`
+- Report exactly what was installed.
+````
+
 ## Prompt: one-command installer
 
-Use this when `@codewithkenzo/pi-rig` is available in your npm view.
+Use this for direct installer setup.
 
 ````md
 Install Pi Rig with the one-command installer.
@@ -25,7 +45,7 @@ Requirements:
 
 ## Prompt: source checkout path
 
-Use this when installing from a local checkout or before installer availability propagates.
+Use this when installing from a local checkout (dev/workspace flow).
 
 ````md
 Install Pi Rig from the local repository checkout.

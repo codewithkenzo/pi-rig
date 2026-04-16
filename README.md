@@ -44,20 +44,46 @@ Pi Rig is built on [pi-mono](https://github.com/badlogic/pi-mono), the open-sour
 
 ## Install
 
-### Published now
+### Direct setup (recommended)
 
-- [`@codewithkenzo/pi-dispatch@0.1.0`](https://www.npmjs.com/package/@codewithkenzo/pi-dispatch)
-- [`@codewithkenzo/pi-theme-switcher@0.1.0`](https://www.npmjs.com/package/@codewithkenzo/pi-theme-switcher)
+Current one-command scope installs:
 
-### One-command installer (rolling out)
+- Pi Dispatch
+- Theme Switcher
+
+#### Bun (`bunx`)
 
 ```bash
 bunx @codewithkenzo/pi-rig@latest
-# or
+```
+
+#### npm (`npx`)
+
+```bash
 npx @codewithkenzo/pi-rig@latest
 ```
 
-If this is not yet available in your region/account, use the source install path below.
+If you prefer a local dev install or full workspace setup, use source install below.
+
+### For your agent (copy/paste prompt)
+
+````md
+Install Pi Rig using direct setup.
+
+Requirements:
+- Prefer Bun:
+  - `bunx @codewithkenzo/pi-rig@latest`
+- If Bun is unavailable, use npm:
+  - `npx @codewithkenzo/pi-rig@latest`
+- Install the current core only:
+  - Pi Dispatch
+  - Theme Switcher
+- Restart Pi if needed.
+- Verify:
+  - `/flow profiles`
+  - `/theme list`
+- Report exactly what was installed.
+````
 
 ### From source
 

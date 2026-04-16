@@ -312,6 +312,53 @@ export const solarizedLight: Palette = {
   animations: defaultAnimations,
 };
 
+export const kenzoElectricMidnight: Palette = {
+  name: "electric-midnight",
+  variant: "dark",
+  description: "Electric Midnight — dark chrome with electric purple/blue accents, by Kenzo.",
+  source: "pi-theme-switcher",
+  semantic: semantic(
+    "#8B5CF6",  // accent    → token accent-primary
+    "#3B82F6",  // success   → token accent-secondary
+    "#DC2626",  // error     → token highlight
+    "#8B5CF6",  // warning   → token accent-primary
+    "#A1A1AA",  // muted     → token chrome-mid
+    "#52525B",  // dim       → token chrome-low
+    "#E4E4E7",  // text      → token chrome-high
+    "#27272A",  // border    → token chrome-dark
+    "#3B82F6",  // highlight → token accent-secondary
+    "#3B82F6",  // info      → token accent-secondary
+    "#8B5CF6",  // active    → token accent-primary
+    "#52525B",  // inactive  → token chrome-low
+    "#E4E4E7",  // header    → token chrome-high
+    "#A1A1AA",  // label     → token chrome-mid
+    "#E4E4E7",  // value     → token chrome-high
+    "#141414",  // separator → token bg-surface
+  ),
+  raw: {
+    bgDeep: "#0A0A0A",
+    bgSurface: "#141414",
+    bgOverlay: "#18181B",
+    accentPrimary: "#8B5CF6",
+    accentSecondary: "#3B82F6",
+    highlight: "#DC2626",
+    chromeHigh: "#E4E4E7",
+    chromeMid: "#A1A1AA",
+    chromeLow: "#52525B",
+    chromeDark: "#27272A",
+  },
+  animations: {
+    runningFrames: ["", "", "", ""],
+    toolFrames: ["▏", "▎", "▍", "▌", "▋", "▊"],
+    streamingFrames: ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"],
+    doneSymbol: "",
+    failedSymbol: "",
+    cancelledSymbol: "⊘",
+    pendingSymbol: "",
+    spinnerInterval: 0.14,
+  },
+};
+
 
 export const hermesCadet: Palette = {
   name: "cadet",
@@ -615,7 +662,7 @@ export const BUILTIN_PALETTES: readonly Palette[] = [
   catppuccinMocha, catppuccinLatte,
   nord, dracula,
   tokyoNight, gruvboxDark, oneDark,
-  solarizedDark, solarizedLight,
+  solarizedDark, solarizedLight, kenzoElectricMidnight,
   // Hermes skins
   hermesCadet, hermesGrove, hermesHyrule, hermesKanso,
   hermesOrchid, hermesRazr, hermesSoho, hermesSpike,

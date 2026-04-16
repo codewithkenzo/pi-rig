@@ -1,4 +1,6 @@
-import { existsSync } from "node:fs";
+#!/usr/bin/env node
+
+import { existsSync, realpathSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createInterface } from "node:readline/promises";
@@ -12,6 +14,23 @@ import {
 	type ExtensionCatalogEntry,
 } from "./lib.js";
 import { parseInstallerArgs, resolveSelectedExtensions } from "./args.js";
+
+const USE_ASCII_ICONS = process.env.PI_ASCII_ICONS === "1" || process.env.TERM === "dumb";
+const ICONS = USE_ASCII_ICONS
+	? {
+			ok: "[ok]",
+			dot: "-",
+			wait: "[..]",
+			auth: "[auth]",
+			pi: "[pi]",
+		}
+	: {
+			ok: "",
+			dot: "",
+			wait: "",
+			auth: "",
+			pi: "",
+		};
 
 const installerDir = dirname(fileURLToPath(import.meta.url));
 const packageRoot = join(installerDir, "..");
@@ -92,11 +111,11 @@ export const runCli = async (argv: string[]): Promise<void> => {
 	}
 
 	io.log("");
-	io.log("Available now:");
+	io.log(`${ICONS.ok} Available now:`);
 	for (const entry of installableCatalog) {
-		io.log(`  - ${entry.label} (${entry.id})`);
+		io.log(`  ${ICONS.dot} ${entry.label} (${entry.id})`);
 	}
-	io.log("  More plugins are planned and will be added in future phases.");
+	io.log(`  ${ICONS.wait} More plugins are planned and will be added in future phases.`);
 
 	const allExtensionIds = installableCatalog.map((entry) => entry.id);
 	const normalized = normalizeRequestedExtensionIds(args.extensions, allExtensionIds);
@@ -122,16 +141,24 @@ export const runCli = async (argv: string[]): Promise<void> => {
 	const withSkills = result.results.filter((entry) => entry.skillInstalled).length;
 
 	io.log("");
-	io.log(`  Ready: ${ready}/${result.results.length}`);
-	io.log(`  Skills installed: ${withSkills}`);
+	io.log(`  ${ICONS.ok} Ready: ${ready}/${result.results.length}`);
+	io.log(`  ${ICONS.dot} Skills installed: ${withSkills}`);
 	if (result.piPath !== null) {
-		io.log(`  pi: ${result.piPath}`);
+		io.log(`  ${ICONS.pi} pi: ${result.piPath}`);
 	}
-	io.log("  Auth: uses existing Pi provider auth/environment");
+	io.log(`  ${ICONS.auth} Auth: uses existing Pi provider auth/environment`);
 	io.log("");
 };
 
-const isMain = process.argv[1] !== undefined && fileURLToPath(import.meta.url) === process.argv[1];
+const isMain = (() => {
+	const entry = process.argv[1];
+	if (entry === undefined) return false;
+	try {
+		return realpathSync(entry) === fileURLToPath(import.meta.url);
+	} catch {
+		return false;
+	}
+})();
 
 if (isMain) {
 	await runCli(process.argv.slice(2));

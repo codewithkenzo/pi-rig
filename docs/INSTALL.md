@@ -6,36 +6,47 @@
 - [Pi coding agent](https://github.com/badlogic/pi-mono) installed and available on your machine
 - a fresh Pi coding agent session after install so new command surfaces load cleanly
 
-## Recommended release path
+## Direct setup (recommended)
 
-Published packages now:
+Current one-command installer scope: **Pi Dispatch + Theme Switcher**.
 
-- `@codewithkenzo/pi-dispatch@0.1.0`
-- `@codewithkenzo/pi-theme-switcher@0.1.0`
-
-Installer package is rolling out. Intended command:
+### Bun (`bunx`)
 
 ```bash
 bunx @codewithkenzo/pi-rig@latest
-# or
+```
+
+### npm (`npx`)
+
+```bash
 npx @codewithkenzo/pi-rig@latest
 ```
 
-The installer supports both humans and agents:
+If you prefer local development or full workspace control, use source install below.
 
-- interactive plugin selection
-- explicit flags for deterministic setup
-- install all available plugins or a selected subset
-- simple plugin labels and descriptions during selection
+### For your agent (copy/paste prompt)
 
-Current one-command installer scope: **Pi Dispatch + Theme Switcher**.
-Additional plugins are planned in later phases.
+````md
+Install Pi Rig with direct setup.
 
-If `@codewithkenzo/pi-rig` is not available yet for your registry/account view, use source install temporarily.
+Requirements:
+- Prefer Bun:
+  - `bunx @codewithkenzo/pi-rig@latest`
+- If Bun is unavailable, use npm:
+  - `npx @codewithkenzo/pi-rig@latest`
+- Install current core set only:
+  - Pi Dispatch
+  - Theme Switcher
+- Restart Pi if needed.
+- Verify:
+  - `/flow profiles`
+  - `/theme list`
+- Report exactly what was installed.
+````
 
 ## Current source path
 
-Until the published installer path is live, install from this repository.
+Use this if direct setup is unavailable in your environment or you want a local dev install.
 
 From the repository root:
 

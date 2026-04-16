@@ -23,17 +23,18 @@ Theme Switcher lets the agent switch, preview, and cycle themes during a live se
 
 `accent · header · success · warning · error` swatches (flat-square, no rounded corners).
 
-| Palette | Variant | Preview |
-|---|---|---|
-| `catppuccin-mocha` | dark | ![#89b4fa](https://img.shields.io/badge/%20-89b4fa-89b4fa?style=flat-square) ![#cba6f7](https://img.shields.io/badge/%20-cba6f7-cba6f7?style=flat-square) ![#a6e3a1](https://img.shields.io/badge/%20-a6e3a1-a6e3a1?style=flat-square) ![#f9e2af](https://img.shields.io/badge/%20-f9e2af-f9e2af?style=flat-square) ![#f38ba8](https://img.shields.io/badge/%20-f38ba8-f38ba8?style=flat-square) |
-| `catppuccin-latte` | light | ![#1e66f5](https://img.shields.io/badge/%20-1e66f5-1e66f5?style=flat-square) ![#8839ef](https://img.shields.io/badge/%20-8839ef-8839ef?style=flat-square) ![#40a02b](https://img.shields.io/badge/%20-40a02b-40a02b?style=flat-square) ![#df8e1d](https://img.shields.io/badge/%20-df8e1d-df8e1d?style=flat-square) ![#d20f39](https://img.shields.io/badge/%20-d20f39-d20f39?style=flat-square) |
-| `nord` | dark | ![#88c0d0](https://img.shields.io/badge/%20-88c0d0-88c0d0?style=flat-square) ![#5e81ac](https://img.shields.io/badge/%20-5e81ac-5e81ac?style=flat-square) ![#a3be8c](https://img.shields.io/badge/%20-a3be8c-a3be8c?style=flat-square) ![#ebcb8b](https://img.shields.io/badge/%20-ebcb8b-ebcb8b?style=flat-square) ![#bf616a](https://img.shields.io/badge/%20-bf616a-bf616a?style=flat-square) |
-| `dracula` | dark | ![#bd93f9](https://img.shields.io/badge/%20-bd93f9-bd93f9?style=flat-square) ![#bd93f9](https://img.shields.io/badge/%20-bd93f9-bd93f9?style=flat-square) ![#50fa7b](https://img.shields.io/badge/%20-50fa7b-50fa7b?style=flat-square) ![#f1fa8c](https://img.shields.io/badge/%20-f1fa8c-f1fa8c?style=flat-square) ![#ff5555](https://img.shields.io/badge/%20-ff5555-ff5555?style=flat-square) |
-| `tokyo-night` | dark | ![#7aa2f7](https://img.shields.io/badge/%20-7aa2f7-7aa2f7?style=flat-square) ![#bb9af7](https://img.shields.io/badge/%20-bb9af7-bb9af7?style=flat-square) ![#9ece6a](https://img.shields.io/badge/%20-9ece6a-9ece6a?style=flat-square) ![#e0af68](https://img.shields.io/badge/%20-e0af68-e0af68?style=flat-square) ![#f7768e](https://img.shields.io/badge/%20-f7768e-f7768e?style=flat-square) |
-| `cadet` | dark | ![#7D39EB](https://img.shields.io/badge/%20-7D39EB-7D39EB?style=flat-square) ![#F5F4EE](https://img.shields.io/badge/%20-F5F4EE-F5F4EE?style=flat-square) ![#C6FF33](https://img.shields.io/badge/%20-C6FF33-C6FF33?style=flat-square) ![#C6FF33](https://img.shields.io/badge/%20-C6FF33-C6FF33?style=flat-square) ![#FF6B6B](https://img.shields.io/badge/%20-FF6B6B-FF6B6B?style=flat-square) |
-| `soho` | dark | ![#C4A7E7](https://img.shields.io/badge/%20-C4A7E7-C4A7E7?style=flat-square) ![#EA9A97](https://img.shields.io/badge/%20-EA9A97-EA9A97?style=flat-square) ![#9CCFD8](https://img.shields.io/badge/%20-9CCFD8-9CCFD8?style=flat-square) ![#F6C177](https://img.shields.io/badge/%20-F6C177-F6C177?style=flat-square) ![#EB6F92](https://img.shields.io/badge/%20-EB6F92-EB6F92?style=flat-square) |
-| `orchid` | dark | ![#81A1C1](https://img.shields.io/badge/%20-81A1C1-81A1C1?style=flat-square) ![#81A1C1](https://img.shields.io/badge/%20-81A1C1-81A1C1?style=flat-square) ![#A3BE8C](https://img.shields.io/badge/%20-A3BE8C-A3BE8C?style=flat-square) ![#DFCA9A](https://img.shields.io/badge/%20-DFCA9A-DFCA9A?style=flat-square) ![#E8A4CC](https://img.shields.io/badge/%20-E8A4CC-E8A4CC?style=flat-square) |
-| `storm` | dark | ![#7AA2F7](https://img.shields.io/badge/%20-7AA2F7-7AA2F7?style=flat-square) ![#BB9AF7](https://img.shields.io/badge/%20-BB9AF7-BB9AF7?style=flat-square) ![#9ECE6A](https://img.shields.io/badge/%20-9ECE6A-9ECE6A?style=flat-square) ![#E0AF68](https://img.shields.io/badge/%20-E0AF68-E0AF68?style=flat-square) ![#F7768E](https://img.shields.io/badge/%20-F7768E-F7768E?style=flat-square) |
+| NF | Palette | Variant | Preview |
+|---|---|---|---|
+| `` | `catppuccin-mocha` | dark | ![#89b4fa](https://img.shields.io/badge/%20-89b4fa-89b4fa?style=flat-square) ![#cba6f7](https://img.shields.io/badge/%20-cba6f7-cba6f7?style=flat-square) ![#a6e3a1](https://img.shields.io/badge/%20-a6e3a1-a6e3a1?style=flat-square) ![#f9e2af](https://img.shields.io/badge/%20-f9e2af-f9e2af?style=flat-square) ![#f38ba8](https://img.shields.io/badge/%20-f38ba8-f38ba8?style=flat-square) |
+| `` | `catppuccin-latte` | light | ![#1e66f5](https://img.shields.io/badge/%20-1e66f5-1e66f5?style=flat-square) ![#8839ef](https://img.shields.io/badge/%20-8839ef-8839ef?style=flat-square) ![#40a02b](https://img.shields.io/badge/%20-40a02b-40a02b?style=flat-square) ![#df8e1d](https://img.shields.io/badge/%20-df8e1d-df8e1d?style=flat-square) ![#d20f39](https://img.shields.io/badge/%20-d20f39-d20f39?style=flat-square) |
+| `` | `nord` | dark | ![#88c0d0](https://img.shields.io/badge/%20-88c0d0-88c0d0?style=flat-square) ![#5e81ac](https://img.shields.io/badge/%20-5e81ac-5e81ac?style=flat-square) ![#a3be8c](https://img.shields.io/badge/%20-a3be8c-a3be8c?style=flat-square) ![#ebcb8b](https://img.shields.io/badge/%20-ebcb8b-ebcb8b?style=flat-square) ![#bf616a](https://img.shields.io/badge/%20-bf616a-bf616a?style=flat-square) |
+| `` | `dracula` | dark | ![#bd93f9](https://img.shields.io/badge/%20-bd93f9-bd93f9?style=flat-square) ![#bd93f9](https://img.shields.io/badge/%20-bd93f9-bd93f9?style=flat-square) ![#50fa7b](https://img.shields.io/badge/%20-50fa7b-50fa7b?style=flat-square) ![#f1fa8c](https://img.shields.io/badge/%20-f1fa8c-f1fa8c?style=flat-square) ![#ff5555](https://img.shields.io/badge/%20-ff5555-ff5555?style=flat-square) |
+| `` | `tokyo-night` | dark | ![#7aa2f7](https://img.shields.io/badge/%20-7aa2f7-7aa2f7?style=flat-square) ![#bb9af7](https://img.shields.io/badge/%20-bb9af7-bb9af7?style=flat-square) ![#9ece6a](https://img.shields.io/badge/%20-9ece6a-9ece6a?style=flat-square) ![#e0af68](https://img.shields.io/badge/%20-e0af68-e0af68?style=flat-square) ![#f7768e](https://img.shields.io/badge/%20-f7768e-f7768e?style=flat-square) |
+| `` | `electric-midnight` | dark | ![#8B5CF6](https://img.shields.io/badge/%20-8B5CF6-8B5CF6?style=flat-square) ![#E4E4E7](https://img.shields.io/badge/%20-E4E4E7-E4E4E7?style=flat-square) ![#3B82F6](https://img.shields.io/badge/%20-3B82F6-3B82F6?style=flat-square) ![#8B5CF6](https://img.shields.io/badge/%20-8B5CF6-8B5CF6?style=flat-square) ![#DC2626](https://img.shields.io/badge/%20-DC2626-DC2626?style=flat-square) |
+| `` | `cadet` | dark | ![#7D39EB](https://img.shields.io/badge/%20-7D39EB-7D39EB?style=flat-square) ![#F5F4EE](https://img.shields.io/badge/%20-F5F4EE-F5F4EE?style=flat-square) ![#C6FF33](https://img.shields.io/badge/%20-C6FF33-C6FF33?style=flat-square) ![#C6FF33](https://img.shields.io/badge/%20-C6FF33-C6FF33?style=flat-square) ![#FF6B6B](https://img.shields.io/badge/%20-FF6B6B-FF6B6B?style=flat-square) |
+| `` | `soho` | dark | ![#C4A7E7](https://img.shields.io/badge/%20-C4A7E7-C4A7E7?style=flat-square) ![#EA9A97](https://img.shields.io/badge/%20-EA9A97-EA9A97?style=flat-square) ![#9CCFD8](https://img.shields.io/badge/%20-9CCFD8-9CCFD8?style=flat-square) ![#F6C177](https://img.shields.io/badge/%20-F6C177-F6C177?style=flat-square) ![#EB6F92](https://img.shields.io/badge/%20-EB6F92-EB6F92?style=flat-square) |
+| `` | `orchid` | dark | ![#81A1C1](https://img.shields.io/badge/%20-81A1C1-81A1C1?style=flat-square) ![#81A1C1](https://img.shields.io/badge/%20-81A1C1-81A1C1?style=flat-square) ![#A3BE8C](https://img.shields.io/badge/%20-A3BE8C-A3BE8C?style=flat-square) ![#DFCA9A](https://img.shields.io/badge/%20-DFCA9A-DFCA9A?style=flat-square) ![#E8A4CC](https://img.shields.io/badge/%20-E8A4CC-E8A4CC?style=flat-square) |
+| `` | `storm` | dark | ![#7AA2F7](https://img.shields.io/badge/%20-7AA2F7-7AA2F7?style=flat-square) ![#BB9AF7](https://img.shields.io/badge/%20-BB9AF7-BB9AF7?style=flat-square) ![#9ECE6A](https://img.shields.io/badge/%20-9ECE6A-9ECE6A?style=flat-square) ![#E0AF68](https://img.shields.io/badge/%20-E0AF68-E0AF68?style=flat-square) ![#F7768E](https://img.shields.io/badge/%20-F7768E-F7768E?style=flat-square) |
 
 More palettes are available in runtime (`/theme list`) and the picker.
 
@@ -65,7 +66,21 @@ skills/
 
 ## Install
 
-### From the Pi Rig suite
+### Direct setup
+
+#### Bun (`bunx`)
+
+```bash
+bunx @codewithkenzo/pi-theme-switcher@latest
+```
+
+#### npm (`npx`)
+
+```bash
+npx @codewithkenzo/pi-theme-switcher@latest
+```
+
+### From source (Pi Rig suite)
 
 ```bash
 bun run setup
@@ -75,14 +90,6 @@ or individually:
 
 ```bash
 pi install ./extensions/theme-switcher
-```
-
-### Direct (wave 1)
-
-```bash
-bunx @codewithkenzo/pi-theme-switcher@latest
-# or
-npx @codewithkenzo/pi-theme-switcher@latest
 ```
 
 ## Prerequisites
