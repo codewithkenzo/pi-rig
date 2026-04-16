@@ -1,4 +1,7 @@
 import { describe, expect, it } from "bun:test";
+import * as fs from "node:fs/promises";
+import * as os from "node:os";
+import * as path from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
 import { Effect } from "effect";
 import { makeQueue } from "../src/queue.js";
@@ -24,6 +27,7 @@ const deferred = (): Deferred => {
 const makeHarness = async (options?: {
 	runFlow?: (options: ExecuteOptions) => ReturnType<typeof Effect.succeed<string>> | Effect.Effect<string, FlowCancelledError>;
 	queueOptions?: { maxConcurrent?: number };
+	cwd?: string;
 }) => {
 	const queue = await Effect.runPromise(makeQueue(options?.queueOptions));
 	let flowHandler: FlowCommandHandler | undefined;
@@ -44,7 +48,7 @@ const makeHarness = async (options?: {
 
 	const messages: string[] = [];
 	const ctx = {
-		cwd: process.cwd(),
+		cwd: options?.cwd ?? process.cwd(),
 		ui: {
 			theme: { name: "catppuccin-mocha" },
 			notify: (message: string) => {
@@ -84,6 +88,58 @@ describe("/flow command", () => {
 		await flowHandler?.("run coder", ctx);
 
 		expect(messages.at(-1)).toContain("/flow run <profile> -- <task>");
+	});
+
+	it("fails early when /flow run profile resolves without model", async () => {
+		const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "flow-cmd-envelope-"));
+		try {
+			await fs.mkdir(path.join(tempDir, ".pi"), { recursive: true });
+			await fs.writeFile(
+				path.join(tempDir, ".pi", "flow-profiles.json"),
+				JSON.stringify([
+					{
+						name: "local-no-model",
+						reasoning_level: "medium",
+						toolsets: [],
+						skills: [],
+					},
+				]),
+				"utf8",
+			);
+			let invoked = false;
+			const { flowHandler, messages, ctx, queue } = await makeHarness({
+				cwd: tempDir,
+				runFlow: () => {
+					invoked = true;
+					return Effect.succeed("should-not-run");
+				},
+			});
+			expect(flowHandler).toBeDefined();
+			await flowHandler?.("run local-no-model -- inspect", ctx);
+			expect(messages.at(-1)).toContain("requires a concrete model + reasoning/effort envelope");
+			expect(invoked).toBe(false);
+			expect(queue.peek().jobs).toHaveLength(0);
+		} finally {
+			await fs.rm(tempDir, { recursive: true, force: true });
+		}
+	});
+
+	it("passes resolved envelope system prompt into /flow run execution", async () => {
+		let observed: ExecuteOptions | undefined;
+		const { flowHandler, ctx } = await makeHarness({
+			runFlow: (options: ExecuteOptions) => {
+				observed = options;
+				return Effect.succeed("ok");
+			},
+		});
+		expect(flowHandler).toBeDefined();
+		await flowHandler?.("run explore -- inspect project", ctx);
+		expect(observed).toBeDefined();
+		expect(observed?.model).toBe("gpt-5.4-mini");
+		expect(observed?.reasoning).toBe("low");
+		expect(observed?.systemPrompt).toContain("[flow execution envelope]");
+		expect(observed?.systemPrompt).toContain("maxIterations:");
+		expect(observed?.systemPrompt).toContain("model: gpt-5.4-mini");
 	});
 
 	it("can filter status by id prefix", async () => {

@@ -12,7 +12,9 @@ import { sanitizeFlowText } from "./sanitize.js";
 import { createProfileMetaHandlers } from "./profile-meta.js";
 import { waitForRunSlot } from "./scheduler.js";
 import {
+	collectExecutionPreloadPrompt,
 	resolveExecutionEnvelope,
+	resolveExecutionPromptEnvelope,
 	validateResolvedExecutionEnvelope,
 } from "./envelope.js";
 
@@ -194,6 +196,7 @@ const runFlowFromCommand = async (
 		);
 		return;
 	}
+	let envelopeForStatus = resolvedEnvelope;
 	const job = await Effect.runPromise(queue.enqueue(profileName, task, cwd));
 	const profileMeta = createProfileMetaHandlers(profile, (meta) => {
 		void Effect.runPromise(
@@ -201,7 +204,7 @@ const runFlowFromCommand = async (
 				.setStatus(job.id, "running", {
 					model: meta.model ?? "",
 					agent: meta.agent ?? "",
-					envelope: resolvedEnvelope,
+					envelope: envelopeForStatus,
 				})
 				.pipe(Effect.result, Effect.asVoid),
 		);
@@ -251,13 +254,81 @@ const runFlowFromCommand = async (
 		await Effect.runPromise(
 			queue.setStatus(job.id, "running", {
 				...profileMeta.metaPatch(),
-				envelope: resolvedEnvelope,
+				envelope: envelopeForStatus,
 				startedAt,
 				toolCount: tracker.toolCount,
 				lastProgress: "starting",
 				recentTools: tracker.recentTools,
 			}),
 		);
+		const preloadExit = await Effect.runPromiseExit(
+			collectExecutionPreloadPrompt(
+				resolvedEnvelope.preload,
+				cwd,
+				jobController.signal,
+			),
+		);
+		if (Exit.isFailure(preloadExit)) {
+			const finishedAt = Date.now();
+			if (isFlowCancelledCause(preloadExit.cause)) {
+				await Effect.runPromise(
+					queue
+						.setStatus(job.id, "cancelled", {
+							...profileMeta.metaPatch(),
+							envelope: envelopeForStatus,
+							finishedAt,
+							toolCount: tracker.toolCount,
+							lastProgress: "cancelled",
+							...(tracker.recentTools.length > 0 ? { recentTools: tracker.recentTools } : {}),
+						})
+						.pipe(Effect.result, Effect.asVoid),
+				);
+				await ctx.ui.notify(
+					[
+						C.gray(`⊘ ${profileName} cancelled after ${formatDuration(finishedAt - startedAt)}.`),
+						C.dim(`ID: ${job.id}`),
+					].join("\n"),
+					"warning",
+				);
+				return;
+			}
+			const errorText = formatFlowError(preloadExit.cause);
+			await Effect.runPromise(
+				queue.setStatus(job.id, "failed", {
+					...profileMeta.metaPatch(),
+					envelope: envelopeForStatus,
+					finishedAt,
+					error: errorText,
+					toolCount: tracker.toolCount,
+					lastProgress: "failed",
+					...(tracker.recentTools.length > 0 ? { recentTools: tracker.recentTools } : {}),
+				}),
+			);
+			await ctx.ui.notify(
+				[
+					C.red(`✗ ${profileName} failed in ${formatDuration(finishedAt - startedAt)}.`),
+					C.dim(`ID: ${job.id}`),
+					errorText,
+				].join("\n"),
+				"error",
+			);
+			return;
+		}
+		const runEnvelope = {
+			...resolvedEnvelope,
+			...(preloadExit.value.digest.length > 0 ? { preloadDigest: preloadExit.value.digest } : {}),
+		};
+		envelopeForStatus = runEnvelope;
+		await Effect.runPromise(
+			queue.setStatus(job.id, "running", {
+				...profileMeta.metaPatch(),
+				envelope: runEnvelope,
+				toolCount: tracker.toolCount,
+				lastProgress: "starting",
+				recentTools: tracker.recentTools,
+			}),
+		);
+		const systemPrompt = resolveExecutionPromptEnvelope(runEnvelope, preloadExit.value.prompt);
 		const onProgress = (event: FlowProgressEvent): void => {
 			const update = tracker.apply(event);
 			if (update === undefined) {
@@ -276,9 +347,10 @@ const runFlowFromCommand = async (
 				task,
 				profile,
 				cwd,
-				reasoning: resolvedEnvelope.reasoning,
-				model: resolvedEnvelope.model,
-				provider: resolvedEnvelope.provider,
+				reasoning: runEnvelope.reasoning,
+				model: runEnvelope.model,
+				provider: runEnvelope.provider,
+				systemPrompt,
 				onProgress,
 				signal: jobController.signal,
 				onModelFallback: profileMeta.onModelFallback,
@@ -293,7 +365,7 @@ const runFlowFromCommand = async (
 			await Effect.runPromise(
 				queue.setStatus(job.id, "done", {
 					...profileMeta.metaPatch(),
-					envelope: resolvedEnvelope,
+					envelope: runEnvelope,
 					finishedAt,
 					output,
 					toolCount: tracker.completedToolCount,
@@ -318,7 +390,7 @@ const runFlowFromCommand = async (
 				queue
 					.setStatus(job.id, "cancelled", {
 						...profileMeta.metaPatch(),
-						envelope: resolvedEnvelope,
+						envelope: runEnvelope,
 						finishedAt,
 						toolCount: tracker.toolCount,
 						lastProgress: "cancelled",
@@ -341,7 +413,7 @@ const runFlowFromCommand = async (
 		await Effect.runPromise(
 			queue.setStatus(job.id, "failed", {
 				...profileMeta.metaPatch(),
-				envelope: resolvedEnvelope,
+				envelope: runEnvelope,
 				finishedAt,
 				error: errorText,
 				toolCount: tracker.toolCount,
