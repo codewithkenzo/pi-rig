@@ -33,4 +33,36 @@ describe("flow-system index", () => {
 		expect(registerShortcutCount).toBe(1);
 		expect(registerEventCount).toBe(4);
 	});
+
+	it("retries initialization on the same API instance after a failed first attempt", async () => {
+		let registerToolCount = 0;
+		let registerCommandCount = 0;
+		let registerEventCount = 0;
+
+		const pi = {
+			registerTool: () => {
+				registerToolCount += 1;
+				if (registerToolCount === 1) {
+					throw new Error("temporary setup failure");
+				}
+			},
+			registerCommand: () => {
+				registerCommandCount += 1;
+			},
+			registerShortcut: () => {
+				return undefined;
+			},
+			on: () => {
+				registerEventCount += 1;
+			},
+			appendEntry: () => undefined,
+		} as unknown as ExtensionAPI;
+
+		await expect(flowSystem(pi)).rejects.toThrow("temporary setup failure");
+		await flowSystem(pi);
+
+		expect(registerToolCount).toBe(3);
+		expect(registerCommandCount).toBe(1);
+		expect(registerEventCount).toBe(4);
+	});
 });

@@ -55,47 +55,50 @@ export default async function (pi: ExtensionAPI): Promise<void> {
 		console.warn("[flow-system] Extension already initialized for this API instance; skipping duplicate registration.");
 		return;
 	}
-	initializedApis.add(pi);
+	try {
+		const queue = await Effect.runPromise(makeQueue(loadFlowSystemConfig()));
+		const skillDir = join(baseDir, "..", "skills", "flow-system");
+		let detachUi: (() => void) | undefined;
 
-	const queue = await Effect.runPromise(makeQueue(loadFlowSystemConfig()));
-	const skillDir = join(baseDir, "..", "skills", "flow-system");
-	let detachUi: (() => void) | undefined;
+		pi.registerTool(makeFlowTool(queue));
+		pi.registerTool(makeFlowBatchTool(queue));
+		registerFlowCommands(pi, queue);
+		pi.on("resources_discover", () => ({
+			skillPaths: [skillDir],
+		}));
 
-	pi.on("resources_discover", () => ({
-		skillPaths: [skillDir],
-	}));
-
-	pi.registerTool(makeFlowTool(queue));
-	pi.registerTool(makeFlowBatchTool(queue));
-	registerFlowCommands(pi, queue);
-
-	pi.on("session_start", async (_event: SessionStartEvent, ctx: ExtensionContext) => {
-		const last = findLatestCustomEntry(
-			ctx.sessionManager.getEntries(),
-			FLOW_ENTRY_TYPE,
-			(value): value is FlowStateEntry => Value.Check(FlowStateEntrySchema, value),
-		);
-
-		if (last !== undefined) {
-			await Effect.runPromise(
-				queue.restoreFrom(last.jobs, { normalizeStaleActive: true, restoredAt: Date.now() }),
+		pi.on("session_start", async (_event: SessionStartEvent, ctx: ExtensionContext) => {
+			const last = findLatestCustomEntry(
+				ctx.sessionManager.getEntries(),
+				FLOW_ENTRY_TYPE,
+				(value): value is FlowStateEntry => Value.Check(FlowStateEntrySchema, value),
 			);
-		}
-		detachUi?.();
-		if (ctx.hasUI) {
-			detachUi = attachFlowUi(queue, ctx);
-		}
-	});
 
-	pi.on("agent_end", async (_event, _ctx: ExtensionContext) => {
-		const snap = await Effect.runPromise(queue.snapshot());
-		// Persist only the most recent 100 jobs to keep session state bounded.
-		const persistJobs = snap.jobs.slice(-100);
-		pi.appendEntry(FLOW_ENTRY_TYPE, { jobs: persistJobs } satisfies FlowStateEntry);
-	});
+			if (last !== undefined) {
+				await Effect.runPromise(
+					queue.restoreFrom(last.jobs, { normalizeStaleActive: true, restoredAt: Date.now() }),
+				);
+			}
+			detachUi?.();
+			if (ctx.hasUI) {
+				detachUi = attachFlowUi(queue, ctx);
+			}
+		});
 
-	pi.on("session_shutdown", async () => {
-		detachUi?.();
-		detachUi = undefined;
-	});
+		pi.on("agent_end", async (_event, _ctx: ExtensionContext) => {
+			const snap = await Effect.runPromise(queue.snapshot());
+			// Persist only the most recent 100 jobs to keep session state bounded.
+			const persistJobs = snap.jobs.slice(-100);
+			pi.appendEntry(FLOW_ENTRY_TYPE, { jobs: persistJobs } satisfies FlowStateEntry);
+		});
+
+		pi.on("session_shutdown", async () => {
+			detachUi?.();
+			detachUi = undefined;
+		});
+		initializedApis.add(pi);
+	} catch (error) {
+		initializedApis.delete(pi);
+		throw error;
+	}
 }

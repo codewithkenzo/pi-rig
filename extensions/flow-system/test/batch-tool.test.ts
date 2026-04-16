@@ -6,6 +6,16 @@ import { makeFlowBatchTool } from "../src/batch-tool.js";
 import { FlowCancelledError, SubprocessError } from "../src/types.js";
 import type { ExecuteOptions } from "../src/executor.js";
 
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+const makeDeferred = (): { promise: Promise<void>; resolve: () => void } => {
+	let resolve!: () => void;
+	const promise = new Promise<void>((promiseResolve) => {
+		resolve = promiseResolve;
+	});
+	return { promise, resolve };
+};
+
 describe("flow_batch cancellation", () => {
 	it("cancels running and pending jobs from the tool AbortSignal", async () => {
 		const queue = await Effect.runPromise(makeQueue());
@@ -202,12 +212,10 @@ describe("flow_batch cancellation", () => {
 		expect(result.details).toMatchObject({ status: "failed", successCount: 2, failCount: 1, cancelCount: 0 });
 	});
 
-	it("parallel mode respects worker concurrency limit (4)", async () => {
-		const queue = await Effect.runPromise(makeQueue());
+	it("parallel mode respects queue maxConcurrent cap when parallel is enabled", async () => {
+		const queue = await Effect.runPromise(makeQueue({ maxConcurrent: 1 }));
 		let active = 0;
 		let maxActive = 0;
-		const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
 		const tool = makeFlowBatchTool(queue, () =>
 			Effect.promise(async () => {
 				active += 1;
@@ -232,7 +240,69 @@ describe("flow_batch cancellation", () => {
 			{},
 		);
 
-		expect(maxActive).toBeLessThanOrEqual(4);
+		expect(maxActive).toBe(1);
+	});
+
+	it("does not run pending batch item when batch is cancelled before it starts", async () => {
+		const queue = await Effect.runPromise(makeQueue({ maxConcurrent: 1 }));
+		const firstStarted = makeDeferred();
+		const executedTasks: string[] = [];
+		const firstShouldFinish = makeDeferred();
+		const fakeExecute = ({ task, signal }: ExecuteOptions) =>
+			Effect.callback<string, FlowCancelledError>(
+				(resume: (effect: Effect.Effect<string, FlowCancelledError>) => void) => {
+					executedTasks.push(task);
+					if (task === "first") {
+						firstStarted.resolve();
+					}
+					if (signal?.aborted) {
+						resume(Effect.fail(new FlowCancelledError({ reason: "Flow cancelled." })));
+						return Effect.void;
+					}
+					const onAbort = () => {
+						resume(Effect.fail(new FlowCancelledError({ reason: "Flow cancelled." })));
+					};
+					signal?.addEventListener("abort", onAbort, { once: true });
+					if (task === "first") {
+						void firstShouldFinish.promise.then(() => {
+							if (!signal?.aborted) {
+								resume(Effect.succeed(`done:${task}`));
+							}
+						});
+					} else {
+						resume(Effect.succeed(`done:${task}`));
+					}
+					return Effect.sync(() => {
+						signal?.removeEventListener("abort", onAbort);
+					});
+				},
+			);
+
+		const tool = makeFlowBatchTool(queue, fakeExecute);
+		const controller = new AbortController();
+		const execution = tool.execute(
+			"batch-wait-cancel",
+			{
+				items: [{ profile: "explore", task: "first" }, { profile: "explore", task: "second" }],
+				parallel: false,
+			},
+			controller.signal,
+			undefined,
+			{},
+		);
+
+		await firstStarted.promise;
+		await sleep(20);
+		controller.abort();
+
+		const result = await execution;
+		const jobs = await Effect.runPromise(queue.getAll());
+
+		expect(result.details).toMatchObject({ status: "cancelled", cancelCount: 2, successCount: 0, failCount: 0 });
+		expect(executedTasks).toEqual(["first"]);
+		expect(jobs.filter((job) => job.status === "cancelled").length).toBe(2);
+		expect(jobs.filter((job) => job.status === "running").length).toBe(0);
+		firstShouldFinish.resolve();
 	});
 
 	it("parallel mode handles cancellation mid-batch", async () => {

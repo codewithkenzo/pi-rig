@@ -9,6 +9,7 @@ import { formatFlowError, isFlowCancelledCause } from "./errors.js";
 import { renderFlowBatchCall, renderFlowBatchResult, type FlowRenderDetails } from "./renderers.js";
 import { createFlowProgressTracker } from "./progress.js";
 import { createProfileMetaHandlers } from "./profile-meta.js";
+import { waitForRunSlot } from "./scheduler.js";
 
 type ExecuteFlowFn = typeof executeFlow;
 
@@ -272,6 +273,26 @@ export function makeFlowBatchTool(queue: FlowQueueService, runFlow: ExecuteFlowF
 					);
 				});
 				const tracker = createFlowProgressTracker();
+				const slotStatus = await waitForRunSlot(queue, job.id, controller.signal);
+				if (slotStatus !== "running") {
+					if (slotStatus === "cancelled") {
+						await markCancelled(queue, job.id, 0);
+						return {
+							id: job.id,
+							profile: item.profile,
+							task: item.task,
+							status: "cancelled",
+							error: "Flow cancelled.",
+						};
+					}
+					return {
+						id: job.id,
+						profile: item.profile,
+						task: item.task,
+						status: "failed",
+						error: `Flow ${job.id} reached terminal status ${slotStatus} before execution.`,
+					};
+				}
 
 				await Effect.runPromise(
 					queue.setStatus(job.id, "running", {
@@ -375,13 +396,7 @@ export function makeFlowBatchTool(queue: FlowQueueService, runFlow: ExecuteFlowF
 
 			try {
 				if (parallel) {
-					results = await Effect.runPromise(
-						Effect.forEach(
-							runtimeItems,
-							(runtimeItem) => Effect.promise(() => runJob(runtimeItem)),
-							{ concurrency: 4 },
-						),
-					);
+					results = await Promise.all(runtimeItems.map((runtimeItem) => runJob(runtimeItem)));
 				} else {
 					results = [];
 					for (const runtimeItem of runtimeItems) {

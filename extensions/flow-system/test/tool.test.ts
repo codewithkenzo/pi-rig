@@ -2,10 +2,34 @@ import { describe, expect, it } from "bun:test";
 import { Value } from "@sinclair/typebox/value";
 import { Effect } from "effect";
 import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
-import { makeQueue } from "../src/queue.js";
+import { makeQueue, type FlowQueueService } from "../src/queue.js";
 import { makeFlowTool } from "../src/tool.js";
 import { FlowCancelledError } from "../src/types.js";
 import type { ExecuteOptions } from "../src/executor.js";
+
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+const makeDeferred = (): { promise: Promise<void>; resolve: () => void } => {
+	let resolve!: () => void;
+	const promise = new Promise<void>((promiseResolve) => {
+		resolve = promiseResolve;
+	});
+	return { promise, resolve };
+};
+
+const waitForJobTerminalState = async (
+	queue: FlowQueueService,
+	jobId: string,
+): Promise<"done" | "failed" | "cancelled"> => {
+	for (let attempt = 0; attempt < 100; attempt += 1) {
+		const job = (await Effect.runPromise(queue.getAll())).find((candidate) => candidate.id === jobId);
+		if (job !== undefined && (job.status === "done" || job.status === "failed" || job.status === "cancelled")) {
+			return job.status;
+		}
+		await sleep(10);
+	}
+	throw new Error(`timed out waiting for terminal status for ${jobId}`);
+};
 
 const makeCtx = (): ExtensionContext =>
 	({
@@ -91,6 +115,132 @@ describe("flow_run tool cancellation", () => {
 		expect(result.details).toMatchObject({ status: "cancelled" });
 		expect(jobs).toHaveLength(1);
 		expect(jobs[0]?.status).toBe("cancelled");
+	});
+
+	it("waits for queue slot before running flow_run when maxConcurrent is 1", async () => {
+		const queue = await Effect.runPromise(makeQueue({ maxConcurrent: 1 }));
+		let running = 0;
+		let maxRunning = 0;
+		const executed: string[] = [];
+		const firstRunning = makeDeferred();
+		const proceed = makeDeferred();
+		const fakeExecute = ({ task }: ExecuteOptions) =>
+			Effect.promise(async () => {
+				executed.push(task);
+				running += 1;
+				maxRunning = Math.max(maxRunning, running);
+				if (task === "first") {
+					firstRunning.resolve();
+				}
+				await proceed.promise;
+				running -= 1;
+				return `done:${task}`;
+			});
+
+		const tool = makeFlowTool(queue, fakeExecute);
+		const first = tool.execute(
+			"tool-maxcon-1-first",
+			{ profile: "explore", task: "first" },
+			undefined,
+			undefined,
+			makeCtx(),
+		);
+		await firstRunning.promise;
+		const second = tool.execute(
+			"tool-maxcon-1-second",
+			{ profile: "explore", task: "second" },
+			undefined,
+			undefined,
+			makeCtx(),
+		);
+
+		await sleep(20);
+		const jobsDuring = await Effect.runPromise(queue.getAll());
+		expect(jobsDuring.filter((job) => job.status === "running")).toHaveLength(1);
+		expect(jobsDuring.filter((job) => job.status === "pending")).toHaveLength(1);
+
+		proceed.resolve();
+		const results = await Promise.all([first, second]);
+		expect(results.map((result) => result.details?.status)).toEqual(["done", "done"]);
+		expect(maxRunning).toBe(1);
+		expect(executed).toEqual(["first", "second"]);
+	});
+
+	it("does not run pending flow_run when aborted while waiting for slot", async () => {
+		const queue = await Effect.runPromise(makeQueue({ maxConcurrent: 1 }));
+		const firstStarted = makeDeferred();
+		const allowFirstToFinish = makeDeferred();
+		const secondController = new AbortController();
+		const executed: string[] = [];
+		const fakeExecute = ({ task }: ExecuteOptions) =>
+			Effect.promise(async () => {
+				executed.push(task);
+				if (task === "first") {
+					firstStarted.resolve();
+					await allowFirstToFinish.promise;
+					return `done:${task}`;
+				}
+				return `done:${task}`;
+			});
+
+		const tool = makeFlowTool(queue, fakeExecute);
+		const first = tool.execute(
+			"tool-wait-cancel-first",
+			{ profile: "explore", task: "first" },
+			undefined,
+			undefined,
+			makeCtx(),
+		);
+
+		await firstStarted.promise;
+		const second = tool.execute(
+			"tool-wait-cancel-second",
+			{ profile: "explore", task: "second" },
+			secondController.signal,
+			undefined,
+			makeCtx(),
+		);
+		await sleep(20);
+
+		const queued = await Effect.runPromise(queue.getAll());
+		expect(queued.filter((job) => job.status === "running").map((job) => job.task)).toEqual(["first"]);
+		expect(queued.filter((job) => job.status === "pending")).toHaveLength(1);
+
+		secondController.abort();
+		allowFirstToFinish.resolve();
+
+		const secondResult = await second;
+		expect(secondResult.details).toMatchObject({ status: "cancelled" });
+		expect(executed).toEqual(["first"]);
+
+		await first;
+		const jobs = await Effect.runPromise(queue.getAll());
+		expect(jobs.filter((job) => job.status === "cancelled").map((job) => job.task)).toContain("second");
+	});
+
+	it("does not emit a failure update when background flow_run succeeds", async () => {
+		const queue = await Effect.runPromise(makeQueue());
+		const updates: string[] = [];
+		const tool = makeFlowTool(queue, () => Effect.succeed("background ok"));
+		const result = await tool.execute(
+			"tool-background-success",
+			{ profile: "explore", task: "background success", background: true },
+			undefined,
+			(update) => {
+				const text = update.content[0];
+				if (text?.type === "text") {
+					updates.push(text.text);
+				}
+			},
+			makeCtx(),
+		);
+
+		expect(result.details).toMatchObject({ status: "pending", background: true });
+		const jobId = result.details?.jobId;
+		expect(typeof jobId).toBe("string");
+		const terminal = await waitForJobTerminalState(queue, String(jobId));
+		expect(terminal).toBe("done");
+		expect(updates.some((line) => line.toLowerCase().includes("failed"))).toBe(false);
 	});
 
 	it("throttles and clips high-frequency assistant text progress updates", async () => {

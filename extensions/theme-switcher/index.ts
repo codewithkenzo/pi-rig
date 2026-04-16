@@ -12,16 +12,20 @@ export default async function themeSwitcher(pi: ExtensionAPI): Promise<void> {
 		console.warn("[theme-switcher] Extension already initialized for this API instance; skipping duplicate registration.");
 		return;
 	}
-	initializedApis.add(pi);
+	try {
+		const { palette } = loadTheme(process.cwd());
+		const preferred = loadThemePreference();
+		const state = makeThemeState(preferred ?? palette.name);
 
-	const { palette } = loadTheme(process.cwd());
-	const preferred = loadThemePreference();
-	const state = makeThemeState(preferred ?? palette.name);
+		pi.registerTool(makeThemeSetTool(state));
+		pi.registerTool(makeThemeListTool(state));
+		pi.registerTool(makeThemePreviewTool(state));
 
-	pi.registerTool(makeThemeSetTool(state));
-	pi.registerTool(makeThemeListTool(state));
-	pi.registerTool(makeThemePreviewTool(state));
-
-	registerThemeCommands(pi, state);
-	registerThemeLifecycle(pi, state);
+		registerThemeCommands(pi, state);
+		registerThemeLifecycle(pi, state);
+		initializedApis.add(pi);
+	} catch (error) {
+		initializedApis.delete(pi);
+		throw error;
+	}
 }

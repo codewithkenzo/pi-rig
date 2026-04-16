@@ -8,6 +8,7 @@ import { formatFlowError, isFlowCancelledCause } from "./errors.js";
 import { renderFlowRunCall, renderFlowRunResult, type FlowRenderDetails } from "./renderers.js";
 import { createFlowProgressTracker } from "./progress.js";
 import { createProfileMetaHandlers } from "./profile-meta.js";
+import { waitForRunSlot } from "./scheduler.js";
 
 type ExecuteFlowFn = typeof executeFlow;
 
@@ -186,12 +187,12 @@ export function makeFlowTool(queue: FlowQueueService, runFlow: ExecuteFlowFn = e
 
 			if (Exit.isFailure(profileExit)) {
 				return {
-					content: [
-						{
-							type: "text" as const,
-							text: `Unknown profile "${profileName}". Available built-ins: explore, research, coder, debug, browser, ambivalent.`,
-						},
-					],
+						content: [
+							{
+								type: "text" as const,
+								text: `Unknown profile "${profileName}". Available built-ins: explore, research, coder, debug, browser, ambivalent.`,
+							},
+						],
 					details: {
 						profile: profileName,
 						status: "failed",
@@ -214,12 +215,6 @@ export function makeFlowTool(queue: FlowQueueService, runFlow: ExecuteFlowFn = e
 			});
 			const jobController = new AbortController();
 			await Effect.runPromise(queue.bindAbort(job.id, () => jobController.abort()));
-			if (signal?.aborted) {
-				jobController.abort();
-				cancelJob(queue, job.id);
-				await markCancelled(queue, job.id, 0);
-				return cancelledResult(profileName, job.id, background, 0);
-			}
 			emitUpdate(onUpdate, `Queued flow ${job.id} (${profileName}).`, {
 				jobId: job.id,
 				profile: profileName,
@@ -227,17 +222,40 @@ export function makeFlowTool(queue: FlowQueueService, runFlow: ExecuteFlowFn = e
 				background,
 			} satisfies FlowRenderDetails);
 
+			if (signal?.aborted) {
+				await markCancelled(queue, job.id, 0);
+				return cancelledResult(profileName, job.id, background, 0);
+			}
+
 			if (background) {
-				if (signal?.aborted) {
+				const cancelWhileQueued = (): void => {
 					cancelJob(queue, job.id);
-					await markCancelled(queue, job.id, 0);
-					return cancelledResult(profileName, job.id, true, 0);
-				}
+				};
+				signal?.addEventListener("abort", cancelWhileQueued, { once: true });
 
 				void (async () => {
 					const startedAt = Date.now();
 					const tracker = createFlowProgressTracker();
 					try {
+						const slotStatus = await waitForRunSlot(queue, job.id, jobController.signal);
+						if (slotStatus !== "running") {
+							if (slotStatus === "cancelled") {
+								await markCancelled(queue, job.id, tracker.toolCount, tracker.recentTools);
+								ctx.ui.notify(`⊘ ${profileName} cancelled`, "warning");
+								return;
+							}
+							await setTerminalStatus(queue, job.id, "failed", {
+								...profileMeta.metaPatch(),
+								finishedAt: Date.now(),
+								error: `Flow ${job.id} reached terminal status ${slotStatus} before execution.`,
+								toolCount: tracker.toolCount,
+								lastProgress: "failed",
+								...(tracker.recentTools.length > 0 ? { recentTools: tracker.recentTools } : {}),
+							});
+							ctx.ui.notify(`✗ ${profileName} failed`, "error");
+							return;
+						}
+
 						await Effect.runPromise(
 							queue.setStatus(job.id, "running", {
 								...profileMeta.metaPatch(),
@@ -295,23 +313,19 @@ export function makeFlowTool(queue: FlowQueueService, runFlow: ExecuteFlowFn = e
 							});
 							ctx.ui.notify(`✗ ${profileName} failed`, "error");
 						}
-						} catch (error) {
-							const errorText = describeError(error);
-							try {
-								if (jobController.signal.aborted) {
-									await markCancelled(queue, job.id, tracker.toolCount, tracker.recentTools);
-								} else {
-									await setTerminalStatus(queue, job.id, "failed", {
-										...profileMeta.metaPatch(),
-										finishedAt: Date.now(),
-										error: errorText,
-										toolCount: tracker.toolCount,
-										lastProgress: "failed",
-										...(tracker.recentTools.length > 0 ? { recentTools: tracker.recentTools } : {}),
-									});
-								}
-							} catch {
-							// Keep the catch path bounded; diagnostics below still fire.
+					} catch (error) {
+						const errorText = describeError(error);
+						if (jobController.signal.aborted) {
+							await markCancelled(queue, job.id, tracker.toolCount, tracker.recentTools);
+						} else {
+							await setTerminalStatus(queue, job.id, "failed", {
+								...profileMeta.metaPatch(),
+								finishedAt: Date.now(),
+								error: errorText,
+								toolCount: tracker.toolCount,
+								lastProgress: "failed",
+								...(tracker.recentTools.length > 0 ? { recentTools: tracker.recentTools } : {}),
+							});
 						}
 						const summary = jobController.signal.aborted ? `Flow ${job.id} cancelled.` : `Flow ${job.id} failed.`;
 						ctx.ui.notify(summary, jobController.signal.aborted ? "warning" : "error");
@@ -323,8 +337,7 @@ export function makeFlowTool(queue: FlowQueueService, runFlow: ExecuteFlowFn = e
 							summary: errorText,
 						} satisfies FlowRenderDetails);
 					} finally {
-						// Suppress errors — clearAbort is fire-and-forget; an error here
-						// must not produce an unhandled rejection from the detached IIFE.
+						signal?.removeEventListener("abort", cancelWhileQueued);
 						await Effect.runPromise(queue.clearAbort(job.id)).catch(() => {});
 					}
 				})();
@@ -347,13 +360,42 @@ export function makeFlowTool(queue: FlowQueueService, runFlow: ExecuteFlowFn = e
 			}
 
 			const tracker = createFlowProgressTracker();
-			const startedAt = Date.now();
 			const cancelFromSignal = (): void => {
 				cancelJob(queue, job.id);
 			};
 			signal?.addEventListener("abort", cancelFromSignal, { once: true });
 
 			try {
+				const slotStatus = await waitForRunSlot(queue, job.id, jobController.signal);
+				if (slotStatus !== "running") {
+					if (slotStatus === "cancelled") {
+						await markCancelled(queue, job.id, tracker.toolCount, tracker.recentTools);
+						return cancelledResult(profileName, job.id, false, tracker.toolCount);
+					}
+					const errText = `Flow ${job.id} reached terminal status ${slotStatus} before execution.`;
+					await setTerminalStatus(queue, job.id, "failed", {
+						...profileMeta.metaPatch(),
+						finishedAt: Date.now(),
+						error: errText,
+						toolCount: tracker.toolCount,
+						lastProgress: "failed",
+						...(tracker.recentTools.length > 0 ? { recentTools: tracker.recentTools } : {}),
+					});
+					return {
+						content: [{ type: "text" as const, text: `Flow failed: ${errText}` }],
+						details: {
+							jobId: job.id,
+							profile: profileName,
+							background: false,
+							status: "failed",
+							toolCount: tracker.toolCount,
+							summary: errText,
+						} satisfies FlowRenderDetails,
+						isError: true,
+					};
+				}
+
+				const startedAt = Date.now();
 				await Effect.runPromise(
 					queue.setStatus(job.id, "running", {
 						...profileMeta.metaPatch(),

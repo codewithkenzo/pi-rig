@@ -57,6 +57,26 @@ describe("theme-switcher index", () => {
 		expect(registerEventCount).toBe(3);
 	});
 
+	it("retries initialization on the same API instance after a failed first attempt", async () => {
+		let registerToolCount = 0;
+		const pi = {
+			registerTool: () => {
+				registerToolCount += 1;
+				if (registerToolCount === 1) {
+					throw new Error("temporary setup failure");
+				}
+			},
+			registerCommand: () => undefined,
+			on: () => undefined,
+			appendEntry: () => undefined,
+		} as unknown as ExtensionAPI;
+
+		await expect(themeSwitcher(pi)).rejects.toThrow("temporary setup failure");
+		await themeSwitcher(pi);
+
+		expect(registerToolCount).toBe(4);
+	});
+
 	it("keeps project theme precedence over saved global preference", async () => {
 		const home = fs.mkdtempSync(path.join(os.tmpdir(), "theme-switcher-home-"));
 		const project = fs.mkdtempSync(path.join(os.tmpdir(), "theme-switcher-project-"));
