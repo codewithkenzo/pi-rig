@@ -34,26 +34,31 @@ describe("loadProfiles", () => {
 		expect(names).toContain("ambivalent");
 	});
 
-	it("explore profile has reasoning_level low and no forced model override", () => {
+	it("explore profile has reasoning_level low and sane default model lanes", () => {
 		const profiles = loadProfiles(NO_CONFIG_DIR);
 		const explore = profiles.find((p) => p.name === "explore");
 		expect(explore).toBeDefined();
 		expect(explore?.reasoning_level).toBe("low");
-		expect(explore?.model).toBeUndefined();
+		expect(explore?.model).toBe("gpt-5.4-mini");
+		expect(explore?.models).toEqual(["claude-haiku-4-5", "gemini-2.5-flash"]);
 		expect(explore?.toolsets).toEqual(["terminal", "file"]);
 	});
 
-	it("coder profile has code_execution toolset and no forced model override", () => {
+	it("coder profile uses high reasoning and coding-focused model defaults", () => {
 		const profiles = loadProfiles(NO_CONFIG_DIR);
 		const coder = profiles.find((p) => p.name === "coder");
-		expect(coder?.model).toBeUndefined();
+		expect(coder?.reasoning_level).toBe("high");
+		expect(coder?.model).toBe("gpt-5.4-mini");
+		expect(coder?.models).toEqual(["gpt-5.3-codex", "claude-sonnet-4-6"]);
 		expect(coder?.toolsets).toEqual(["code_execution"]);
 	});
 
-	it("debug profile has reasoning_level high and empty toolsets", () => {
+	it("debug profile has reasoning_level xhigh and reviewer model defaults", () => {
 		const profiles = loadProfiles(NO_CONFIG_DIR);
 		const debug = profiles.find((p) => p.name === "debug");
-		expect(debug?.reasoning_level).toBe("high");
+		expect(debug?.reasoning_level).toBe("xhigh");
+		expect(debug?.model).toBe("gpt-5.4");
+		expect(debug?.models).toEqual(["claude-opus-4-1", "claude-sonnet-4-6"]);
 		expect(debug?.toolsets).toEqual([]);
 	});
 
@@ -134,7 +139,8 @@ describe("getProfile", () => {
 
 	it("resolves coder profile correctly", async () => {
 		const profile = await Effect.runPromise(getProfile("coder", NO_CONFIG_DIR));
-		expect(profile.reasoning_level).toBe("medium");
+		expect(profile.reasoning_level).toBe("high");
+		expect(profile.model).toBe("gpt-5.4-mini");
 	});
 
 	it("resolves ambivalent with empty toolsets", async () => {

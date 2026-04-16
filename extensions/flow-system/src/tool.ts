@@ -12,6 +12,7 @@ import {
 	collectExecutionPreloadPrompt,
 	resolveExecutionEnvelope,
 	resolveExecutionPromptEnvelope,
+	validateResolvedExecutionEnvelope,
 } from "./envelope.js";
 import {
 	ExecutionPreloadSchema,
@@ -260,6 +261,27 @@ export function makeFlowTool(queue: FlowQueueService, runFlow: ExecuteFlowFn = e
 				toExecutionEnvelopeInput(params),
 				ctx,
 			);
+			const envelopeIssues = validateResolvedExecutionEnvelope(profileName, resolvedEnvelope);
+			if (envelopeIssues.length > 0) {
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: [
+								`Flow profile "${profileName}" requires a concrete model + reasoning/effort envelope before execution.`,
+								...envelopeIssues.map((issue) => `- ${issue}`),
+							].join("\n"),
+						},
+					],
+					details: {
+						profile: profileName,
+						status: "failed",
+						summary: "invalid execution envelope",
+						envelopeIssues,
+					} satisfies FlowRenderDetails,
+					isError: true,
+				};
+			}
 			const job = await Effect.runPromise(queue.enqueue(profileName, task, cwd));
 			const profileMeta = createProfileMetaHandlers(profile, (meta) => {
 				runFireAndForget(

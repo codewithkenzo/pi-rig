@@ -286,9 +286,9 @@ const resolveModel = (
 	const fallbackCandidate = availablePool[0] ?? available[0];
 	const orderedCandidates: ModelCandidate[] = [
 		...(explicitModelCandidate !== undefined ? [explicitModelCandidate] : []),
+		...profileCandidates,
 		...(contextModelCandidate !== undefined ? [contextModelCandidate] : []),
 		...(hinted !== undefined ? [{ id: hinted.id, ...(hinted.provider !== undefined ? { provider: hinted.provider } : {}) }] : []),
-		...profileCandidates,
 		...(fallbackCandidate !== undefined ? [fallbackCandidate] : []),
 	];
 
@@ -337,7 +337,7 @@ const resolveModel = (
 
 	for (const candidate of orderedCandidates) {
 		if (explicitProvider !== undefined) {
-			if (candidate.provider !== explicitProvider) {
+			if (candidate.provider !== undefined && candidate.provider !== explicitProvider) {
 				continue;
 			}
 		}
@@ -425,6 +425,32 @@ export const resolveExecutionEnvelope = (
 		...(modelResolution.provider !== undefined ? { provider: modelResolution.provider } : {}),
 		...(preload !== undefined ? { preload } : {}),
 	};
+};
+
+export const validateResolvedExecutionEnvelope = (
+	profileName: string,
+	envelope: ResolvedExecutionEnvelope,
+): string[] => {
+	const issues: string[] = [];
+	const model = normalizeText(envelope.model);
+	if (model === undefined) {
+		const providerHint = normalizeText(envelope.provider);
+		issues.push(
+			`Profile "${profileName}" resolved without a model${providerHint !== undefined ? ` for provider "${providerHint}"` : ""}. ` +
+				`Pass model explicitly or set profile.model/profile.models in flow-profiles.json.`,
+		);
+	}
+
+	const reasoning = normalizeReasoning(envelope.reasoning);
+	const effort = normalizeReasoning(envelope.effort);
+	if (reasoning === undefined && effort === undefined) {
+		issues.push(
+			`Profile "${profileName}" resolved without reasoning/effort. ` +
+				`Pass reasoning or effort explicitly, or set profile.reasoning_level.`,
+		);
+	}
+
+	return issues;
 };
 
 const ensureNotAborted = (signal: AbortSignal | undefined): void => {

@@ -13,11 +13,13 @@ import {
 	collectExecutionPreloadPrompt,
 	resolveExecutionEnvelope,
 	resolveExecutionPromptEnvelope,
+	validateResolvedExecutionEnvelope,
 } from "./envelope.js";
 import {
 	ExecutionPreloadSchema,
 	ReasoningLevelSchema,
 	type ExecutionEnvelope,
+	type FlowProfile,
 	type ResolvedExecutionEnvelope,
 	FlowCancelledError,
 } from "./types.js";
@@ -138,6 +140,8 @@ interface BatchResult {
 interface RuntimeBatchItem {
 	job: FlowJob;
 	item: BatchItem;
+	profile: FlowProfile;
+	resolvedEnvelope: ResolvedExecutionEnvelope;
 	index: number;
 	controller: AbortController;
 }
@@ -259,6 +263,59 @@ export function makeFlowBatchTool(queue: FlowQueueService, runFlow: ExecuteFlowF
 				};
 			}
 
+			const resolvedItems = items.map((item, index) => {
+				const profileExit = profileResults[index];
+				if (profileExit === undefined || Exit.isFailure(profileExit)) {
+					return undefined;
+				}
+				const profile = profileExit.value;
+				const resolvedEnvelope = resolveExecutionEnvelope(
+					profile,
+					item.task,
+					toExecutionEnvelopeInput(item),
+					_ctx,
+				);
+				return {
+					profile,
+					resolvedEnvelope,
+					envelopeIssues: validateResolvedExecutionEnvelope(item.profile, resolvedEnvelope),
+				};
+			});
+
+			const invalidEnvelopeItems = resolvedItems
+				.map((entry, index) => ({ entry, item: items[index], index }))
+				.filter(
+					(value): value is { entry: NonNullable<typeof value.entry>; item: BatchItem; index: number } =>
+						value.entry !== undefined && value.entry.envelopeIssues.length > 0 && value.item !== undefined,
+				);
+
+			if (invalidEnvelopeItems.length > 0) {
+				const details = invalidEnvelopeItems.map(({ item, entry, index }) =>
+					[
+						`item ${index + 1} (${item.profile})`,
+						...entry.envelopeIssues.map((issue) => `  - ${issue}`),
+					].join("\n"),
+				);
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: [
+								"flow_batch requires each item to resolve a concrete model + reasoning/effort envelope before execution.",
+								...details,
+							].join("\n"),
+						},
+					],
+					details: {
+						count: items.length,
+						parallel,
+						status: "failed",
+						summary: "invalid execution envelope",
+					} satisfies FlowRenderDetails,
+					isError: true,
+				};
+			}
+
 			const jobs: FlowJob[] = await Promise.all(
 				items.map((item) =>
 					Effect.runPromise(queue.enqueue(item.profile, item.task, item.cwd)),
@@ -268,7 +325,18 @@ export function makeFlowBatchTool(queue: FlowQueueService, runFlow: ExecuteFlowF
 				jobs.map(async (job, index) => {
 					const controller = new AbortController();
 					await Effect.runPromise(queue.bindAbort(job.id, () => controller.abort()));
-					return { job, item: items[index]!, index, controller };
+					const resolved = resolvedItems[index];
+					if (resolved === undefined) {
+						throw new Error(`missing resolved profile for batch item ${index + 1}`);
+					}
+					return {
+						job,
+						item: items[index]!,
+						profile: resolved.profile,
+						resolvedEnvelope: resolved.resolvedEnvelope,
+						index,
+						controller,
+					};
 				}),
 			);
 
@@ -283,7 +351,7 @@ export function makeFlowBatchTool(queue: FlowQueueService, runFlow: ExecuteFlowF
 				cancelAll();
 			}
 
-			const runJob = async ({ job, item, index, controller }: RuntimeBatchItem): Promise<BatchResult> => {
+			const runJob = async ({ job, item, profile, resolvedEnvelope, index, controller }: RuntimeBatchItem): Promise<BatchResult> => {
 				emitUpdate(onUpdate, `Running batch item ${index + 1}/${items.length}: ${item.profile}`, {
 					jobId: job.id,
 					index,
@@ -291,10 +359,6 @@ export function makeFlowBatchTool(queue: FlowQueueService, runFlow: ExecuteFlowF
 					profile: item.profile,
 					phase: "running",
 				} satisfies FlowRenderDetails);
-				const profileExit = profileResults[index];
-				if (profileExit === undefined || Exit.isFailure(profileExit)) {
-					return { id: job.id, profile: item.profile, task: item.task, status: "failed", error: "profile not found" };
-				}
 				if (controller.signal.aborted) {
 					await markCancelled(queue, job.id, 0);
 					return {
@@ -306,13 +370,6 @@ export function makeFlowBatchTool(queue: FlowQueueService, runFlow: ExecuteFlowF
 					};
 				}
 
-				const profile = profileExit.value;
-				const resolvedEnvelope = resolveExecutionEnvelope(
-					profile,
-					item.task,
-					toExecutionEnvelopeInput(item),
-					_ctx,
-				);
 				const profileMeta = createProfileMetaHandlers(profile, (meta) => {
 					runFireAndForget(
 						`syncing profile metadata for job ${job.id}`,

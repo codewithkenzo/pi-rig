@@ -1,4 +1,7 @@
 import { describe, expect, it } from "bun:test";
+import * as fs from "node:fs/promises";
+import * as os from "node:os";
+import * as path from "node:path";
 import { Value } from "@sinclair/typebox/value";
 import { Effect } from "effect";
 import { makeQueue } from "../src/queue.js";
@@ -105,6 +108,48 @@ describe("flow_batch cancellation", () => {
 		expect(startedCount).toBe(0);
 		expect(result.details).toMatchObject({ status: "cancelled", cancelCount: 2, successCount: 0, failCount: 0 });
 		expect(jobs.map((job) => job.status)).toEqual(["cancelled", "cancelled"]);
+	});
+
+	it("fails before enqueue when an item resolves without model", async () => {
+		const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "flow-batch-envelope-"));
+		try {
+			await fs.mkdir(path.join(tempDir, ".pi"), { recursive: true });
+			await fs.writeFile(
+				path.join(tempDir, ".pi", "flow-profiles.json"),
+				JSON.stringify([
+					{
+						name: "local-no-model",
+						reasoning_level: "medium",
+						toolsets: [],
+						skills: [],
+					},
+				]),
+				"utf8",
+			);
+			let invoked = false;
+			const queue = await Effect.runPromise(makeQueue());
+			const tool = makeFlowBatchTool(queue, () => {
+				invoked = true;
+				return Effect.succeed("should-not-run");
+			});
+			const result = await tool.execute(
+				"batch-missing-model",
+				{
+					items: [{ profile: "local-no-model", task: "inspect model", cwd: tempDir }],
+					parallel: false,
+				},
+				undefined,
+				undefined,
+				{},
+			);
+			const jobs = await Effect.runPromise(queue.getAll());
+			expect(result.isError).toBe(true);
+			expect(result.content[0]?.text).toContain("requires each item to resolve a concrete model");
+			expect(invoked).toBe(false);
+			expect(jobs).toHaveLength(0);
+		} finally {
+			await fs.rm(tempDir, { recursive: true, force: true });
+		}
 	});
 
 	it("persists recentTools on batch items", async () => {

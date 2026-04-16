@@ -43,6 +43,31 @@ describe("flow UI helpers", () => {
 		expect(status).toContain("scan");
 	});
 
+	it("includes model, reasoning, and effort in status line", () => {
+		const status = flowStatusText({
+			mode: "sequential",
+			jobs: [
+				{
+					id: "1",
+					profile: "coder",
+					task: "scan",
+					status: "running",
+					createdAt: 1,
+					envelope: {
+						reasoning: "high",
+						maxIterations: 84,
+						model: "gpt-5.4",
+						provider: "openai",
+					},
+				},
+			],
+		});
+
+		expect(status).toContain("m:gpt-5.4@openai");
+		expect(status).toContain("r:high");
+		expect(status).toContain("e:auto");
+	});
+
 	it("shows writing-summary indicator when summary phase is active", () => {
 		const status = flowStatusText({
 			mode: "sequential",

@@ -53,6 +53,30 @@ describe("resolveExecutionEnvelope", () => {
 		expect(envelope.provider).toBe("anthropic");
 	});
 
+	it("prefers profile default model over context-selected model", () => {
+		const envelope = resolveExecutionEnvelope(
+			{
+				...BASE_PROFILE,
+				model: "gpt-5.4-mini",
+				models: ["claude-sonnet-4-6"],
+			},
+			"implement queue hardening",
+			{},
+			{
+				model: { id: "claude-haiku-4-5", provider: "anthropic" },
+				modelRegistry: {
+					getAvailable: () => [
+						{ id: "claude-haiku-4-5", provider: "anthropic" },
+						{ id: "gpt-5.4-mini", provider: "openai" },
+					],
+				},
+			},
+		);
+
+		expect(envelope.model).toBe("gpt-5.4-mini");
+		expect(envelope.provider).toBe("openai");
+	});
+
 	it("resolves a provider override to a compatible available model", () => {
 		const envelope = resolveExecutionEnvelope(
 			BASE_PROFILE,

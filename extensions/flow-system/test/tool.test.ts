@@ -1,4 +1,7 @@
 import { describe, expect, it } from "bun:test";
+import * as fs from "node:fs/promises";
+import * as os from "node:os";
+import * as path from "node:path";
 import { Value } from "@sinclair/typebox/value";
 import { Effect } from "effect";
 import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
@@ -31,9 +34,9 @@ const waitForJobTerminalState = async (
 	throw new Error(`timed out waiting for terminal status for ${jobId}`);
 };
 
-const makeCtx = (): ExtensionContext =>
+const makeCtx = (cwd = process.cwd()): ExtensionContext =>
 	({
-		cwd: process.cwd(),
+		cwd,
 		hasUI: true,
 		ui: {
 			notify: () => undefined,
@@ -115,6 +118,49 @@ describe("flow_run tool cancellation", () => {
 		expect(result.details).toMatchObject({ status: "cancelled" });
 		expect(jobs).toHaveLength(1);
 		expect(jobs[0]?.status).toBe("cancelled");
+	});
+
+	it("fails early when a profile resolves without model", async () => {
+		const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "flow-tool-envelope-"));
+		try {
+			await fs.mkdir(path.join(tempDir, ".pi"), { recursive: true });
+			await fs.writeFile(
+				path.join(tempDir, ".pi", "flow-profiles.json"),
+				JSON.stringify([
+					{
+						name: "local-no-model",
+						reasoning_level: "medium",
+						toolsets: [],
+						skills: [],
+					},
+				]),
+				"utf8",
+			);
+			let invoked = false;
+			const queue = await Effect.runPromise(makeQueue());
+			const tool = makeFlowTool(queue, () => {
+				invoked = true;
+				return Effect.succeed("should-not-run");
+			});
+			const result = await tool.execute(
+				"tool-missing-model",
+				{
+					profile: "local-no-model",
+					task: "check model selection",
+					cwd: tempDir,
+				},
+				undefined,
+				undefined,
+				makeCtx(tempDir),
+			);
+			const jobs = await Effect.runPromise(queue.getAll());
+			expect(result.isError).toBe(true);
+			expect(result.content[0]?.text).toContain("requires a concrete model");
+			expect(invoked).toBe(false);
+			expect(jobs).toHaveLength(0);
+		} finally {
+			await fs.rm(tempDir, { recursive: true, force: true });
+		}
 	});
 
 	it("waits for queue slot before running flow_run when maxConcurrent is 1", async () => {

@@ -25,6 +25,26 @@ const hasActiveJobs = (queue: FlowQueue): boolean => activeJobs(queue).length > 
 const hasRunningJobs = (queue: FlowQueue): boolean => runningJobs(queue).length > 0;
 const isWritingSummary = (job: FlowJob | undefined): boolean => job?.status === "running" && job.writingSummary === true;
 
+const normalize = (value: string | undefined): string | undefined => {
+	if (value === undefined) {
+		return undefined;
+	}
+	const trimmed = value.trim();
+	return trimmed.length > 0 ? trimmed : undefined;
+};
+
+const modelStatusValue = (job: FlowJob): string => {
+	const model = normalize(job.envelope?.model) ?? normalize(job.model);
+	const provider = normalize(job.envelope?.provider);
+	if (model === undefined) {
+		return "(default)";
+	}
+	return provider !== undefined ? `${model}@${provider}` : model;
+};
+
+const reasoningStatusValue = (job: FlowJob): string => job.envelope?.reasoning ?? "(profile)";
+const effortStatusValue = (job: FlowJob): string => job.envelope?.effort ?? "auto";
+
 const toneForStatus = (status: FlowJob["status"]): "active" | "warning" | "success" | "error" | "inactive" => {
 	switch (status) {
 		case "running":
@@ -76,7 +96,10 @@ export const flowStatusText = (
 	if (cwd === undefined) {
 		const extra = active.length > 1 ? ` +${active.length - 1}` : "";
 		const summary = summaryCount > 0 ? ` · writing-summary${summaryCount > 1 ? `:${summaryCount}` : ""}` : "";
-		return `${staticIconForJob(primary)} ${primary.profile}${extra} · ${ellipsize(primary.lastProgress ?? primary.task, 48)}${summary}`;
+		const model = ellipsize(modelStatusValue(primary), 20);
+		const reasoning = reasoningStatusValue(primary);
+		const effort = effortStatusValue(primary);
+		return `${staticIconForJob(primary)} ${primary.profile}${extra} · ${ellipsize(primary.lastProgress ?? primary.task, 40)} · m:${model} r:${reasoning} e:${effort}${summary}`;
 	}
 
 	const { config, palette } = loadTheme(cwd);
@@ -105,10 +128,16 @@ export const flowStatusText = (
 				reducedMotion,
 			)
 		: undefined;
+	const model = engine.fg("muted", `m:${ellipsize(modelStatusValue(primary), 24)}`);
+	const reasoning = engine.fg("muted", `r:${reasoningStatusValue(primary)}`);
+	const effort = engine.fg("muted", `e:${effortStatusValue(primary)}`);
 	return joinCompact(engine, [
 		engine.fg(toneForStatus(primary.status), icon),
 		tag(engine, toneForStatus(primary.status), primary.profile),
 		engine.fg("value", ellipsize(primary.lastProgress ?? primary.task, 56)),
+		model,
+		reasoning,
+		effort,
 		summary,
 		more,
 	]);

@@ -230,14 +230,18 @@ describe("renderColumns — compact mode (width < 96)", () => {
 		expect(lines.join("")).not.toContain("│");
 	});
 
-	it("wide mode (width >= 96) includes column separator", () => {
+	it("wide mode (width >= 96) keeps vertical hierarchy without column separator", () => {
 		const engine = mockEngine();
 		const palette = mockPalette();
 		const config = mockConfig();
 		const j = makeJob();
 		const feed: FeedState = { lines: [{ text: "activity", ts: 2000 }], last_progress: undefined, last_assistant: undefined };
 		const lines = renderColumns(engine, palette, config, j, feed, mockAnimState(), 100, false);
-		expect(lines.join("")).toContain("│");
+		const all = lines.join("\n");
+		expect(all).not.toContain("│");
+		expect(all).toContain("WORK ITEM");
+		expect(all).toContain("AGENT");
+		expect(all).toContain("LIVE ACTIVITY");
 	});
 
 	it("renders stale restored job without crash", () => {
@@ -255,5 +259,51 @@ describe("renderColumns — compact mode (width < 96)", () => {
 		expect(() => {
 			renderColumns(engine, palette, config, j, emptyFeed(), mockAnimState(), 80, true);
 		}).not.toThrow();
+	});
+
+	it("shows model, reasoning, and effort rows from envelope data", () => {
+		const engine = mockEngine();
+		const palette = mockPalette();
+		const config = mockConfig();
+		const j = makeJob({
+			envelope: {
+				reasoning: "high",
+				maxIterations: 84,
+				model: "gpt-5.4",
+				provider: "openai",
+				effort: "minimal",
+			},
+		});
+
+		const lines = renderColumns(engine, palette, config, j, emptyFeed(), mockAnimState(), 80, true);
+		const all = lines.join("\n");
+		expect(all).toContain("Model");
+		expect(all).toContain("gpt-5.4@openai");
+		expect(all).toContain("Reasoning");
+		expect(all).toContain("high");
+		expect(all).toContain("Effort");
+		expect(all).toContain("minimal");
+	});
+
+	it("shows default fallback values when envelope data is missing", () => {
+		const engine = mockEngine();
+		const palette = mockPalette();
+		const config = mockConfig();
+		const j: FlowJob = {
+			id: "old-job",
+			profile: "explore",
+			task: "map the repo",
+			status: "done",
+			createdAt: 1000,
+		};
+
+		const lines = renderColumns(engine, palette, config, j, emptyFeed(), mockAnimState(), 80, true);
+		const all = lines.join("\n");
+		expect(all).toContain("Model");
+		expect(all).toContain("(default)");
+		expect(all).toContain("Reasoning");
+		expect(all).toContain("(profile default)");
+		expect(all).toContain("Effort");
+		expect(all).toContain("auto");
 	});
 });
