@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createInterface } from "node:readline/promises";
@@ -12,7 +13,14 @@ import {
 } from "./lib.js";
 import { parseInstallerArgs, resolveSelectedExtensions } from "./args.js";
 
-const rootDir = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+const installerDir = dirname(fileURLToPath(import.meta.url));
+const packageRoot = join(installerDir, "..");
+const workspaceRootCandidate = join(packageRoot, "..", "..");
+const rootDir =
+	existsSync(join(workspaceRootCandidate, "extensions")) &&
+	existsSync(join(workspaceRootCandidate, "shared"))
+		? workspaceRootCandidate
+		: packageRoot;
 
 const promptForExtensions = async (options: readonly ExtensionCatalogEntry[]): Promise<string[]> => {
 	const rl = createInterface({ input: stdin, output: stdout });
