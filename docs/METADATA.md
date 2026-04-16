@@ -4,7 +4,7 @@
 
 ### Repository description
 
-Pi Rig monorepo for Pi coding agent plugins: Dispatch, Theme Switcher, Gateway Messaging, and Notify Cron.
+Pi coding agent plugin monorepo: Dispatch, Theme Switcher, plus upcoming sandbox/memory/voice plugins.
 
 ### Short description
 
@@ -19,38 +19,49 @@ Practical Pi plugins for real daily runs.
 - pi-coding-agent
 - pi-extensions
 - ai-agents
-- typescript
-- bun
-- terminal-tools
+- agent-orchestration
 - workflow-automation
+- terminal-tools
+- developer-tools
+- task-queue
+- theme-switcher
+- telegram-bot
+- cron-jobs
+- bun
+- typescript
 
 ## Plugin repositories
 
 ### `codewithkenzo/pi-dispatch`
 
-**Description:** Queue and run Pi tasks with reusable profiles.
+**Description:** Run queued Pi tasks with reusable profiles.
 
 **Topics:**
 
 - pi-coding-agent
+- agent-orchestration
 - dispatch
 - task-queue
 - subagents
-- typescript
+- workflow-automation
+- vfs
 - bun
+- typescript
 
 ### `codewithkenzo/pi-theme-switcher`
 
-**Description:** Switch and preview Pi themes in a live session.
+**Description:** Switch and preview Pi themes during live sessions.
 
 **Topics:**
 
 - pi-coding-agent
 - theme-switcher
-- tui
 - terminal-ui
-- typescript
+- tui
+- ansi
+- developer-tools
 - bun
+- typescript
 
 ## Package descriptions
 
@@ -117,6 +128,11 @@ Scheduled notifications for Pi with lease-aware ticks. (Coming soon)
 ### Phase 3 (after)
 
 - add `pi-memory` MVP (short + long memory lanes)
-- add interactive plan mode (`/plan`) in Pi Dispatch
+- add `fs-sandbox` execution isolation plugin
+- add `pi-board` coordination plugin
+- add `pi-diff` structured diff plugin
+- add `pi-voice` voice/transcript plugin
 - draft `pi-rollback` plugin for safe recovery/undo workflows
+- add interactive plan mode (`/plan`) in Pi Dispatch
+- deepen VFS preload + sandbox adapter integration in Pi Dispatch
 - add richer install diagnostics and post-install checks

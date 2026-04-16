@@ -15,7 +15,41 @@ Pi Rig is built on [pi-mono](https://github.com/badlogic/pi-mono), the open-sour
 | Gateway Messaging | `extensions/gateway-messaging` | `gateway_turn_preview`, `/gateway` | Telegram-first turn updates with patch queues and action payloads (source preview) |
 | Notify Cron | `extensions/notify-cron` | `notify_cron_*`, `/notify-cron` | Scheduled notifications with typed destinations and lease-aware ticking (source preview) |
 
+## Release scope (now)
+
+Published installer scope is intentionally small right now:
+
+- **Pi Dispatch** (`@codewithkenzo/pi-dispatch`)
+- **Theme Switcher** (`@codewithkenzo/pi-theme-switcher`)
+
+Gateway Messaging and Notify Cron remain source-preview while packaging hardening finishes.
+
+## Master plan snapshot (roadmap)
+
+### Planned plugins
+
+- `fs-sandbox` — execution isolation + policy boundaries
+- `pi-memory` — short/long/last-active memory lanes
+- `pi-board` — mission/task coordination surface
+- `pi-voice` — voice ingress + transcript workflows
+- `pi-diff` — structured change/delta workflows
+- `pi-rollback` — safe rollback/recovery workflows
+
+### Planned feature phases in Pi Dispatch
+
+- interactive **plan mode** (`/plan` and gated execute flow)
+- deeper **VFS/preload** ergonomics and token-safe context injection
+- **sandbox adapter integration** for safer execution boundaries
+
 ## Install
+
+### One-command installer (target path)
+
+```bash
+bunx @codewithkenzo/pi-rig@latest
+# or
+npx @codewithkenzo/pi-rig@latest
+```
 
 ### From source
 
