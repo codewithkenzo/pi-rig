@@ -106,6 +106,8 @@ export const FlowJobSchema = Type.Object({
 	toolCount: Type.Optional(Type.Number({ minimum: 0 })),
 	lastProgress: Type.Optional(Type.String()),
 	lastAssistantText: Type.Optional(Type.String()),
+	writingSummary: Type.Optional(Type.Boolean()),
+	summaryPhaseSource: Type.Optional(Type.Union([Type.Literal("explicit"), Type.Literal("heuristic")])),
 	recentTools: Type.Optional(Type.Array(Type.String(), { maxItems: 6 })),
 });
 

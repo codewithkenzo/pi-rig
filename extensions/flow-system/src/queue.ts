@@ -273,9 +273,9 @@ export const makeQueue = (options?: MakeQueueOptions): Effect.Effect<FlowQueueSe
 							return [{ _tag: "missing" }, s] as const;
 						}
 						if (job.status === "pending") {
-							const cancelledState = {
+							const cancelledState: FlowQueue = {
 								...s,
-								jobs: s.jobs.map((j) =>
+								jobs: s.jobs.map((j): FlowJob =>
 									j.id === id ? { ...j, status: "cancelled", lastProgress: "cancelled" } : j,
 								),
 							};

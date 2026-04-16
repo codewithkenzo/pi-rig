@@ -28,11 +28,81 @@ interface PiContentText {
 	text: string;
 }
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+	typeof value === "object" && value !== null && !Array.isArray(value);
+
+const parseSignaturePhase = (value: unknown): "commentary" | "final_answer" | undefined => {
+	if (typeof value !== "string" || !value.trimStart().startsWith("{")) {
+		return undefined;
+	}
+	try {
+		const parsed = JSON.parse(value) as unknown;
+		if (!isRecord(parsed)) {
+			return undefined;
+		}
+		const phase = parsed["phase"];
+		if (phase === "commentary" || phase === "final_answer") {
+			return phase;
+		}
+		return undefined;
+	} catch {
+		return undefined;
+	}
+};
+
+const phaseFromTextBlock = (value: unknown): "commentary" | "final_answer" | undefined => {
+	if (!isRecord(value) || value["type"] !== "text") {
+		return undefined;
+	}
+	return parseSignaturePhase(value["textSignature"]);
+};
+
+const summaryPhaseFromAssistantPartial = (
+	value: unknown,
+): "commentary" | "final_answer" | undefined => {
+	if (!isRecord(value)) {
+		return undefined;
+	}
+	const content = value["content"];
+	if (!Array.isArray(content) || content.length === 0) {
+		return undefined;
+	}
+	for (let i = content.length - 1; i >= 0; i -= 1) {
+		const phase = phaseFromTextBlock(content[i]);
+		if (phase !== undefined) {
+			return phase;
+		}
+	}
+	return undefined;
+};
+
+const summaryPhaseFromAssistantMessageEvent = (
+	value: unknown,
+): "commentary" | "final_answer" | undefined => {
+	if (!isRecord(value)) {
+		return undefined;
+	}
+	const partial = value["partial"];
+	if (!isRecord(partial)) {
+		return undefined;
+	}
+	const content = partial["content"];
+	const contentIndex = value["contentIndex"];
+	if (Array.isArray(content) && typeof contentIndex === "number" && Number.isInteger(contentIndex)) {
+		const block = content[contentIndex];
+		const phase = phaseFromTextBlock(block);
+		if (phase !== undefined) {
+			return phase;
+		}
+	}
+	return summaryPhaseFromAssistantPartial(partial);
+};
 
 export type FlowProgressEvent =
 	| { readonly _tag: "tool_start"; readonly toolName: string; readonly detail: string }
 	| { readonly _tag: "tool_end"; readonly toolName: string; readonly detail: string }
-	| { readonly _tag: "assistant_text"; readonly detail: string };
+	| { readonly _tag: "assistant_text"; readonly detail: string }
+	| { readonly _tag: "summary_state"; readonly active: boolean; readonly source: "explicit" };
 
 const FLOW_CANCELLED_REASON = "Flow cancelled.";
 
@@ -78,9 +148,73 @@ function extractText(v: unknown): string | undefined {
 	return undefined;
 }
 
-function extractProgressEvent(v: unknown): FlowProgressEvent | undefined {
+export function extractProgressEvent(v: unknown): FlowProgressEvent | undefined {
 	if (typeof v !== "object" || v === null) return undefined;
 	const obj = v as Record<string, unknown>;
+
+	const readSummarySignal = (value: Record<string, unknown>): boolean | undefined => {
+		const directKeys = [
+			"writing_summary",
+			"writingSummary",
+			"isWritingSummary",
+			"summary_phase",
+			"summaryPhase",
+			"final_summary",
+			"finalSummary",
+		] as const;
+		for (const key of directKeys) {
+			const raw = value[key];
+			if (typeof raw === "boolean") {
+				return raw;
+			}
+		}
+		const typeRaw = value["type"];
+		if (typeof typeRaw === "string") {
+			const type = typeRaw.toLowerCase();
+			if (
+				type === "writing_summary" ||
+				type === "writing-summary" ||
+				type === "summary_phase_start" ||
+				type === "summary-phase-start" ||
+				type === "final_summary_start" ||
+				type === "final-summary-start"
+			) {
+				return true;
+			}
+			if (
+				type === "writing_summary_end" ||
+				type === "writing-summary-end" ||
+				type === "summary_phase_end" ||
+				type === "summary-phase-end" ||
+				type === "final_summary_end" ||
+				type === "final-summary-end"
+			) {
+				return false;
+			}
+		}
+		return undefined;
+	};
+
+	const summarySignal = readSummarySignal(obj);
+	if (summarySignal !== undefined) {
+		return { _tag: "summary_state", active: summarySignal, source: "explicit" };
+	}
+	const metaRaw = obj["meta"];
+	if (typeof metaRaw === "object" && metaRaw !== null && !Array.isArray(metaRaw)) {
+		const nestedSummarySignal = readSummarySignal(metaRaw as Record<string, unknown>);
+		if (nestedSummarySignal !== undefined) {
+			return { _tag: "summary_state", active: nestedSummarySignal, source: "explicit" };
+		}
+	}
+	const assistantMessageEventPhase = summaryPhaseFromAssistantMessageEvent(obj["assistantMessageEvent"]);
+	if (assistantMessageEventPhase === "final_answer") {
+		return { _tag: "summary_state", active: true, source: "explicit" };
+	}
+	const messagePhase = summaryPhaseFromAssistantPartial(obj["message"]);
+	if (messagePhase === "final_answer") {
+		return { _tag: "summary_state", active: true, source: "explicit" };
+	}
+
 	const type = obj["type"];
 	if (type === "tool_execution_start" || type === "tool_execution_end") {
 		const toolNameRaw = obj["toolName"];

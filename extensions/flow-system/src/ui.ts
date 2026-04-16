@@ -23,6 +23,7 @@ const runningJobs = (queue: FlowQueue): FlowJob[] => queue.jobs.filter((job) => 
 const activeJobs = (queue: FlowQueue): FlowJob[] => queue.jobs.filter((job) => job.status === "running" || job.status === "pending");
 const hasActiveJobs = (queue: FlowQueue): boolean => activeJobs(queue).length > 0;
 const hasRunningJobs = (queue: FlowQueue): boolean => runningJobs(queue).length > 0;
+const isWritingSummary = (job: FlowJob | undefined): boolean => job?.status === "running" && job.writingSummary === true;
 
 const toneForStatus = (status: FlowJob["status"]): "active" | "warning" | "success" | "error" | "inactive" => {
 	switch (status) {
@@ -70,10 +71,12 @@ export const flowStatusText = (
 	if (primary === undefined) {
 		return undefined;
 	}
+	const summaryCount = active.filter((job) => isWritingSummary(job)).length;
 
 	if (cwd === undefined) {
 		const extra = active.length > 1 ? ` +${active.length - 1}` : "";
-		return `${staticIconForJob(primary)} ${primary.profile}${extra} · ${ellipsize(primary.lastProgress ?? primary.task, 48)}`;
+		const summary = summaryCount > 0 ? ` · writing-summary${summaryCount > 1 ? `:${summaryCount}` : ""}` : "";
+		return `${staticIconForJob(primary)} ${primary.profile}${extra} · ${ellipsize(primary.lastProgress ?? primary.task, 48)}${summary}`;
 	}
 
 	const { config, palette } = loadTheme(cwd);
@@ -88,10 +91,25 @@ export const flowStatusText = (
 			)
 		: staticIconForJob(primary);
 	const more = active.length > 1 ? engine.fg("muted", `+${active.length - 1}`) : undefined;
+	const summary = summaryCount > 0
+		? withMotion(
+				() =>
+					shimmer(
+						`writing-summary${summaryCount > 1 ? `:${summaryCount}` : ""}`,
+						palette.semantic.warning,
+						palette.semantic.success,
+						animationState,
+						2,
+					),
+				engine.fg("success", `writing-summary${summaryCount > 1 ? `:${summaryCount}` : ""}`),
+				reducedMotion,
+			)
+		: undefined;
 	return joinCompact(engine, [
 		engine.fg(toneForStatus(primary.status), icon),
 		tag(engine, toneForStatus(primary.status), primary.profile),
 		engine.fg("value", ellipsize(primary.lastProgress ?? primary.task, 56)),
+		summary,
 		more,
 	]);
 };
@@ -127,6 +145,7 @@ export const renderFlowWidgetLines = (
 	const pendingCount = active.filter((job) => job.status === "pending").length;
 	const doneCount = queue.jobs.filter((job) => job.status === "done").length;
 	const failedCount = queue.jobs.filter((job) => job.status === "failed").length;
+	const summaryCount = active.filter((job) => isWritingSummary(job)).length;
 	const title = hasRunningJobs(queue)
 		? withMotion(
 				() => shimmer("flow stream", palette.semantic.label, palette.semantic.accent, animationState, 3),
@@ -141,6 +160,7 @@ export const renderFlowWidgetLines = (
 			title,
 			metric(engine, "active", "▶", String(runningCount)),
 			metric(engine, "warning", "○", String(pendingCount)),
+			summaryCount > 0 ? metric(engine, "success", "✍", String(summaryCount)) : undefined,
 			doneCount > 0 ? metric(engine, "success", "✓", String(doneCount)) : undefined,
 			failedCount > 0 ? metric(engine, "error", "✗", String(failedCount)) : undefined,
 			tag(engine, toneForStatus(primary.status), primary.profile),
@@ -149,6 +169,9 @@ export const renderFlowWidgetLines = (
 		joinCompact(engine, [
 			engine.fg("accent", "↳"),
 			engine.fg("value", ellipsize(sanitizeFlowText(primary.lastAssistantText ?? primary.lastProgress ?? primary.task), 64)),
+			isWritingSummary(primary)
+				? engine.fg("success", `writing-summary${primary.summaryPhaseSource !== undefined ? `:${primary.summaryPhaseSource}` : ""}`)
+				: undefined,
 			primary.toolCount !== undefined ? engine.fg("muted", `${primary.toolCount} calls`) : undefined,
 			engine.fg("dim", "alt+shift+f manage"),
 		]),
@@ -222,7 +245,7 @@ export const attachFlowUi = (
 			ctx.ui.setWidget(FLOW_WIDGET_KEY, createFlowWidgetFactory(queue, ctx.cwd), { placement: "aboveEditor" });
 			widgetMounted = true;
 		}
-		ctx.ui.setStatus(FLOW_STATUS_KEY, undefined);
+		ctx.ui.setStatus(FLOW_STATUS_KEY, flowStatusText(snapshot, ctx.cwd));
 	};
 
 	const unsubscribe = queue.subscribe((snapshot) => {

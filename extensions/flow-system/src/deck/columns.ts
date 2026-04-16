@@ -61,6 +61,12 @@ const profileRows = (engine: ThemeEngine, job: FlowJob): Array<[string, string]>
 	if (job.toolCount !== undefined) {
 		rows.push([engine.fg("label", "Tools"), v(`${job.toolCount} calls`)]);
 	}
+	if (job.status === "running" && job.writingSummary === true) {
+		rows.push([
+			engine.fg("label", "Phase"),
+			engine.fg("success", `writing-summary${job.summaryPhaseSource !== undefined ? `:${job.summaryPhaseSource}` : ""}`),
+		]);
+	}
 	if (job.startedAt !== undefined) {
 		rows.push([engine.fg("label", "Started"), v(fmtTime(job.startedAt))]);
 	}

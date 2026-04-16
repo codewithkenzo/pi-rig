@@ -119,6 +119,10 @@ function formatJob(job: FlowJob): string {
 	const tools = job.toolCount !== undefined ? C.dim(`  · tools ${job.toolCount}`) : "";
 	const rawProgress = job.lastProgress !== undefined ? sanitizeFlowText(job.lastProgress) : undefined;
 	const progress = rawProgress !== undefined ? C.dim(`\n  ↳ ${rawProgress.slice(0, 80)}`) : "";
+	const summaryPhase =
+		job.status === "running" && job.writingSummary === true
+			? C.dim(`\n  ✍ writing-summary${job.summaryPhaseSource !== undefined ? ` (${job.summaryPhaseSource})` : ""}`)
+			: "";
 	const envelope =
 		job.envelope !== undefined
 			? C.dim(
@@ -129,7 +133,7 @@ function formatJob(job: FlowJob): string {
 				)
 			: "";
 
-	return `  ${icon}  ${profile}  ${task}${durationStr}${tools}\n${id}${progress}${envelope}`;
+	return `  ${icon}  ${profile}  ${task}${durationStr}${tools}\n${id}${progress}${summaryPhase}${envelope}`;
 }
 
 const parseRunArgs = (rawArgs: string): { ok: true; profile: string; task: string } | { ok: false } => {
@@ -463,6 +467,14 @@ export function registerFlowCommands(
 									`provider: ${env.provider ?? "(default)"}`,
 									`preload: ${env.preloadDigest ?? "(none)"}`,
 								].join("\n"),
+							);
+							sections.push("");
+						}
+						if (job.status === "running" && job.writingSummary === true) {
+							sections.push(C.bold("Phase"));
+							sections.push(DIVIDER);
+							sections.push(
+								`writing-summary${job.summaryPhaseSource !== undefined ? ` (${job.summaryPhaseSource})` : ""}`,
 							);
 							sections.push("");
 						}
