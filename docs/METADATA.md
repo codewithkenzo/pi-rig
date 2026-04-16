@@ -129,10 +129,10 @@ Scheduled notifications for Pi with lease-aware ticks. (Coming soon)
 
 - add `pi-memory` MVP (short + long memory lanes)
 - add `fs-sandbox` execution isolation plugin
-- add `pi-board` coordination plugin
+- add `pi-board` coordination plugin (includes integrated plan-mode UX)
 - add `pi-diff` structured diff plugin
 - add `pi-voice` voice/transcript plugin
 - draft `pi-rollback` plugin for safe recovery/undo workflows
-- add interactive plan mode (`/plan`) in Pi Dispatch
+- ship `/plan` flow in Pi Dispatch as the bridge into pi-board workflow
 - deepen VFS preload + sandbox adapter integration in Pi Dispatch
 - add richer install diagnostics and post-install checks

@@ -1,64 +1,60 @@
 # Install prompts for agents
 
-Copy one of these prompts into the Pi coding agent, Claude Code, Codex, or another coding agent when you want the install handled for you.
+Copy one of these prompts into Pi, Claude Code, Codex, or another coding agent when you want installation handled for you.
 
-## Prompt: published installer path
+## Prompt: one-command installer
 
-Use this once the installer package is published.
+Use this when `@codewithkenzo/pi-rig` is available in your npm view.
 
 ````md
-Install Pi Rig with the published installer.
+Install Pi Rig with the one-command installer.
 
 Requirements:
 - Prefer `bunx @codewithkenzo/pi-rig@latest`.
 - If Bun is unavailable, fall back to `npx @codewithkenzo/pi-rig@latest`.
-- Use the interactive selector if a human is present.
-- If running non-interactively, install the recommended core set:
+- Use the interactive selector when a human is present.
+- In non-interactive mode, install the current core set only:
   - Pi Dispatch
-  - Gateway Messaging
-  - Notify Cron
-- Restart the Pi coding agent after install if needed.
-- Verify the install by running:
+  - Theme Switcher
+- Restart Pi after install if needed.
+- Verify:
   - `/flow profiles`
-  - `/gateway status`
-  - `/notify-cron status`
+  - `/theme list`
 - Report exactly what was installed and any follow-up steps.
 ````
 
 ## Prompt: source checkout path
 
-Use this when installing from a git clone or local checkout before the published installer path is available.
+Use this when installing from a local checkout or before installer availability propagates.
 
 ````md
 Install Pi Rig from the local repository checkout.
 
 Requirements:
-- From the repo root, run `bun run setup`.
-- If the human wants package selection instead of the full setup path, build and run the installer CLI:
+- From repo root, run `bun run setup`.
+- If package selection is preferred, run:
   - `bun run --filter @codewithkenzo/pi-rig build`
   - `node packages/pi-installer/dist/cli.js`
-- Restart the Pi coding agent after install if needed.
-- Verify the install by running:
+- Restart Pi after install if needed.
+- Verify:
   - `/flow profiles`
   - `/theme list`
-  - `/gateway status`
-  - `/notify-cron status`
 - Report exactly what was installed and any follow-up steps.
 ````
 
-## Prompt: source install for selected packages only
+## Prompt: source install for selected packages
 
 ````md
-Install selected Pi Rig packages from the local repository checkout.
+Install selected Pi Rig plugins from the local checkout.
 
 Requirements:
-- Install only these packages unless the human changes the list:
-  - Pi Dispatch from `./extensions/flow-system`
-  - Gateway Messaging from `./extensions/gateway-messaging`
+- Install only these paths unless the human changes scope:
+  - Pi Dispatch: `./extensions/flow-system`
+  - Theme Switcher: `./extensions/theme-switcher`
+- Optional source-preview plugins only when explicitly requested:
+  - `./extensions/gateway-messaging`
+  - `./extensions/notify-cron`
 - Use `pi install <path>` for each selected package.
-- Restart the Pi coding agent after install if needed.
-- Verify the install by running:
-  - `/flow profiles`
-  - `/gateway status`
-- Report exactly what was installed and any missing prerequisites.
+- Restart Pi after install if needed.
+- Verify installed commands and report final state.
 ````

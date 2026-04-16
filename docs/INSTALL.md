@@ -8,7 +8,12 @@
 
 ## Recommended release path
 
-Once the installer package is published, the intended install commands are:
+Published packages now:
+
+- `@codewithkenzo/pi-dispatch@0.1.0`
+- `@codewithkenzo/pi-theme-switcher@0.1.0`
+
+Installer package is rolling out. Intended command:
 
 ```bash
 bunx @codewithkenzo/pi-rig@latest
@@ -25,6 +30,8 @@ The installer supports both humans and agents:
 
 Current one-command installer scope: **Pi Dispatch + Theme Switcher**.
 Additional plugins are planned in later phases.
+
+If `@codewithkenzo/pi-rig` is not available yet for your registry/account view, use source install temporarily.
 
 ## Current source path
 
@@ -68,6 +75,11 @@ node packages/pi-installer/dist/cli.js --pi-path /absolute/path/to/pi
 ```bash
 pi install ./extensions/flow-system
 pi install ./extensions/theme-switcher
+```
+
+Optional source-preview packages:
+
+```bash
 pi install ./extensions/gateway-messaging
 pi install ./extensions/notify-cron
 ```

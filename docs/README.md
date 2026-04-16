@@ -7,6 +7,8 @@
 - [Usage](./USAGE.md)
 - [Telegram pairing](./TELEGRAM_PAIRING.md)
 - [Metadata](./METADATA.md)
+- [Preview asset guide](./PREVIEWS.md)
+- [Public go-live checklist](./PUBLIC_GO_LIVE_CHECKLIST.md)
 - [Architecture notes](./architecture/next-spec-synthesis.md)
 
 ## Scope

@@ -43,13 +43,20 @@ Gateway Messaging and Notify Cron remain source-preview while packaging hardenin
 
 ## Install
 
-### One-command installer (target path)
+### Published now
+
+- [`@codewithkenzo/pi-dispatch@0.1.0`](https://www.npmjs.com/package/@codewithkenzo/pi-dispatch)
+- [`@codewithkenzo/pi-theme-switcher@0.1.0`](https://www.npmjs.com/package/@codewithkenzo/pi-theme-switcher)
+
+### One-command installer (rolling out)
 
 ```bash
 bunx @codewithkenzo/pi-rig@latest
 # or
 npx @codewithkenzo/pi-rig@latest
 ```
+
+If this is not yet available in your region/account, use the source install path below.
 
 ### From source
 
@@ -63,11 +70,16 @@ This installs workspace dependencies, builds the extensions, copies bundled skil
 
 Restart the Pi coding agent after setup so the new command surfaces load cleanly.
 
-### Individual extensions
+### Individual extensions (source)
 
 ```bash
 pi install ./extensions/flow-system
 pi install ./extensions/theme-switcher
+```
+
+Optional source-preview extensions:
+
+```bash
 pi install ./extensions/gateway-messaging
 pi install ./extensions/notify-cron
 ```
@@ -99,6 +111,13 @@ After install, open a fresh Pi coding agent session:
 
 If you manually install source-preview plugins, also verify their commands.
 
+## Preview gallery (WIP)
+
+Preview PNG/GIF/video assets are being prepared.
+
+- planned location: `docs/previews/`
+- embed/template guide: [docs/PREVIEWS.md](./docs/PREVIEWS.md)
+
 ## Development
 
 ```bash
@@ -115,6 +134,8 @@ Each extension is a self-contained Bun workspace package under `extensions/`.
 - [Usage guide](./docs/USAGE.md)
 - [Telegram pairing guide](./docs/TELEGRAM_PAIRING.md)
 - [Documentation index](./docs/README.md)
+- [Preview asset guide](./docs/PREVIEWS.md)
+- [Public go-live checklist](./docs/PUBLIC_GO_LIVE_CHECKLIST.md)
 
 ## Contributing
 
