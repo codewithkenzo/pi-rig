@@ -12,6 +12,59 @@ export const ReasoningLevelSchema = Type.Union([
 
 export type ReasoningLevel = Static<typeof ReasoningLevelSchema>;
 
+export const ExecutionPreloadCommandSchema = Type.Object(
+	{
+		command: Type.String({ minLength: 1 }),
+		optional: Type.Optional(Type.Boolean()),
+		maxBytes: Type.Optional(Type.Integer({ minimum: 128, maximum: 8192 })),
+	},
+	{ additionalProperties: false },
+);
+
+export type ExecutionPreloadCommand = Static<typeof ExecutionPreloadCommandSchema>;
+
+export const ExecutionPreloadSchema = Type.Object(
+	{
+		dirs: Type.Optional(Type.Array(Type.String({ minLength: 1 }), { maxItems: 16 })),
+		files: Type.Optional(Type.Array(Type.String({ minLength: 1 }), { maxItems: 32 })),
+		commands: Type.Optional(Type.Array(ExecutionPreloadCommandSchema, { maxItems: 16 })),
+	},
+	{ additionalProperties: false },
+);
+
+export type ExecutionPreload = Static<typeof ExecutionPreloadSchema>;
+
+export const ExecutionEnvelopeSchema = Type.Object(
+	{
+		model: Type.Optional(Type.String({ minLength: 1 })),
+		provider: Type.Optional(Type.String({ minLength: 1 })),
+		reasoning: Type.Optional(ReasoningLevelSchema),
+		effort: Type.Optional(ReasoningLevelSchema),
+		maxIterations: Type.Optional(Type.Integer({ minimum: 1, maximum: 300 })),
+		max_iterations: Type.Optional(Type.Integer({ minimum: 1, maximum: 300 })),
+		preload: Type.Optional(ExecutionPreloadSchema),
+	},
+	{ additionalProperties: false },
+);
+
+export type ExecutionEnvelope = Static<typeof ExecutionEnvelopeSchema>;
+
+export const ResolvedExecutionEnvelopeSchema = Type.Object(
+	{
+		model: Type.Optional(Type.String({ minLength: 1 })),
+		provider: Type.Optional(Type.String({ minLength: 1 })),
+		reasoning: ReasoningLevelSchema,
+		effort: Type.Optional(ReasoningLevelSchema),
+		requestedMaxIterations: Type.Optional(Type.Integer({ minimum: 1, maximum: 300 })),
+		maxIterations: Type.Integer({ minimum: 1, maximum: 300 }),
+		preload: Type.Optional(ExecutionPreloadSchema),
+		preloadDigest: Type.Optional(Type.String({ maxLength: 512 })),
+	},
+	{ additionalProperties: false },
+);
+
+export type ResolvedExecutionEnvelope = Static<typeof ResolvedExecutionEnvelopeSchema>;
+
 export const FlowProfileSchema = Type.Object({
 	name: Type.String({ minLength: 1, maxLength: 64 }),
 	description: Type.Optional(Type.String()),
@@ -43,6 +96,7 @@ export const FlowJobSchema = Type.Object({
 	cwd: Type.Optional(Type.String()),
 	model: Type.Optional(Type.String()),
 	agent: Type.Optional(Type.String()),
+	envelope: Type.Optional(ResolvedExecutionEnvelopeSchema),
 	status: FlowJobStatusSchema,
 	createdAt: Type.Number(),
 	startedAt: Type.Optional(Type.Number()),

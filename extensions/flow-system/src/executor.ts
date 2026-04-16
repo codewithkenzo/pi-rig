@@ -2,7 +2,7 @@ import { Effect, Exit, Cause } from "effect";
 import { spawn } from "node:child_process";
 import * as readline from "node:readline";
 import { stageSkills, writeTempSkillFile, cleanupTempFile } from "./vfs.js";
-import type { FlowProfile } from "./types.js";
+import type { FlowProfile, ReasoningLevel } from "./types.js";
 import { FlowCancelledError, SubprocessError, SkillLoadError } from "./types.js";
 
 const TOOLSET_MAP: Record<string, readonly string[]> = {
@@ -116,6 +116,10 @@ export const runSubprocess = (
 	task: string,
 	profile: FlowProfile,
 	skillFile: string | undefined,
+	systemPrompt: string | undefined,
+	reasoning: ReasoningLevel | undefined,
+	model: string | undefined,
+	provider: string | undefined,
 	cwd: string,
 	onProgress?: (event: FlowProgressEvent) => void,
 	abortSignal?: AbortSignal,
@@ -124,7 +128,17 @@ export const runSubprocess = (
 		const MAX_STDERR_BYTES = 64 * 1024;
 		const args: string[] = ["--mode", "json", "-p", "--no-session"];
 
-		args.push("--thinking", profile.reasoning_level);
+		args.push("--thinking", reasoning ?? profile.reasoning_level);
+
+		if (model !== undefined && model.length > 0) {
+			const resolvedModel =
+				provider !== undefined && provider.length > 0 && !model.includes("/")
+					? `${provider}/${model}`
+					: model;
+			args.push("--model", resolvedModel);
+		} else if (provider !== undefined && provider.length > 0) {
+			args.push("--provider", provider);
+		}
 
 		const tools = resolveToolsets(profile.toolsets);
 		if (tools.length > 0) {
@@ -137,6 +151,9 @@ export const runSubprocess = (
 
 		if (profile.system_prompt_prefix !== undefined) {
 			args.push("--system-prompt", profile.system_prompt_prefix);
+		}
+		if (systemPrompt !== undefined && systemPrompt.length > 0) {
+			args.push("--append-system-prompt", systemPrompt);
 		}
 
 		args.push(task);
@@ -291,6 +308,10 @@ export const runSubprocess = (
 export interface ExecuteOptions {
 	task: string;
 	profile: FlowProfile;
+	reasoning?: ReasoningLevel | undefined;
+	model?: string | undefined;
+	provider?: string | undefined;
+	systemPrompt?: string | undefined;
 	cwd?: string | undefined;
 	onProgress?: (event: FlowProgressEvent) => void;
 	signal?: AbortSignal | undefined;
@@ -301,6 +322,10 @@ export interface ExecuteOptions {
 export const executeFlow = ({
 	task,
 	profile,
+	reasoning,
+	model,
+	provider,
+	systemPrompt,
 	cwd = process.cwd(),
 	onProgress,
 	signal,
@@ -311,7 +336,20 @@ export const executeFlow = ({
 
 	if (!hasSkills) {
 		return failIfAborted(signal).pipe(
-			Effect.flatMap(() => runSubprocess(task, profile, undefined, cwd, onProgress, signal)),
+			Effect.flatMap(() =>
+				runSubprocess(
+					task,
+					profile,
+					undefined,
+					systemPrompt,
+					reasoning,
+					model,
+					provider,
+					cwd,
+					onProgress,
+					signal,
+				),
+			),
 		);
 	}
 
@@ -323,7 +361,19 @@ export const executeFlow = ({
 					Effect.flatMap((content) => writeTempSkillFile(content)),
 				),
 				// Use: run subprocess with skill file
-				(skillFile) => runSubprocess(task, profile, skillFile, cwd, onProgress, signal),
+				(skillFile) =>
+					runSubprocess(
+						task,
+						profile,
+						skillFile,
+						systemPrompt,
+						reasoning,
+						model,
+						provider,
+						cwd,
+						onProgress,
+						signal,
+					),
 				// Release: always clean up, even on failure or interruption
 				(skillFile) => cleanupTempFile(skillFile),
 			),

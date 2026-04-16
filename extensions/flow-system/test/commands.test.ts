@@ -178,7 +178,7 @@ describe("/flow command", () => {
 	});
 
 	it("/flow cancel handles pending run cancelled before slot", async () => {
-		const fakeExecute = () => Effect.succeed("should-not-run");
+		const fakeExecute = (_options: ExecuteOptions) => Effect.succeed("should-not-run");
 		let invocationCount = 0;
 		const observed: string[] = [];
 		const fakeFlow = ({}) => {
@@ -208,7 +208,8 @@ describe("/flow command", () => {
 	});
 
 	it("/flow run handles pending job becoming terminal before execution", async () => {
-		const fakeExecute = () => Effect.fail(new FlowCancelledError({ reason: "Flow cancelled." }));
+		const fakeExecute = (_options: ExecuteOptions) =>
+			Effect.fail(new FlowCancelledError({ reason: "Flow cancelled." }));
 		let invocationCount = 0;
 		const fakeFlow = () => {
 			invocationCount += 1;

@@ -1,6 +1,9 @@
 import { describe, it, expect } from "bun:test";
 import { Value } from "@sinclair/typebox/value";
 import {
+	ExecutionEnvelopeSchema,
+	ExecutionPreloadSchema,
+	ResolvedExecutionEnvelopeSchema,
 	FlowProfileSchema,
 	FlowJobStatusSchema,
 	ProfileNotFoundError,
@@ -105,6 +108,44 @@ describe("FlowJobStatusSchema", () => {
 
 	it("rejects an unknown status", () => {
 		expect(Value.Check(FlowJobStatusSchema, "queued")).toBe(false);
+	});
+});
+
+describe("Execution envelope schemas", () => {
+	it("accepts preload packet with dirs/files/commands", () => {
+		expect(
+			Value.Check(ExecutionPreloadSchema, {
+				dirs: ["src"],
+				files: ["README.md"],
+				commands: [{ command: "git status --short", optional: true, maxBytes: 512 }],
+			}),
+		).toBe(true);
+	});
+
+	it("accepts execution envelope override payload", () => {
+		expect(
+			Value.Check(ExecutionEnvelopeSchema, {
+				model: "gpt-5.4",
+				provider: "openai",
+				reasoning: "high",
+				effort: "high",
+				maxIterations: 42,
+				preload: { dirs: ["."] },
+			}),
+		).toBe(true);
+	});
+
+	it("accepts resolved envelope with requestedMaxIterations and digest", () => {
+		expect(
+			Value.Check(ResolvedExecutionEnvelopeSchema, {
+				reasoning: "medium",
+				maxIterations: 32,
+				requestedMaxIterations: 60,
+				model: "claude-sonnet-4-6",
+				provider: "anthropic",
+				preloadDigest: "dirs:1, commands:2",
+			}),
+		).toBe(true);
 	});
 });
 

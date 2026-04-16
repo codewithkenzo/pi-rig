@@ -9,6 +9,18 @@ import { formatFlowError, isFlowCancelledCause } from "./errors.js";
 import { renderFlowBatchCall, renderFlowBatchResult, type FlowRenderDetails } from "./renderers.js";
 import { createFlowProgressTracker } from "./progress.js";
 import { createProfileMetaHandlers } from "./profile-meta.js";
+import {
+	collectExecutionPreloadPrompt,
+	resolveExecutionEnvelope,
+	resolveExecutionPromptEnvelope,
+} from "./envelope.js";
+import {
+	ExecutionPreloadSchema,
+	ReasoningLevelSchema,
+	type ExecutionEnvelope,
+	type ResolvedExecutionEnvelope,
+	FlowCancelledError,
+} from "./types.js";
 import { waitForRunSlot } from "./scheduler.js";
 
 type ExecuteFlowFn = typeof executeFlow;
@@ -105,6 +117,13 @@ interface BatchItem {
 	profile: string;
 	task: string;
 	cwd?: string;
+	model?: string;
+	provider?: string;
+	reasoning?: ExecutionEnvelope["reasoning"];
+	effort?: ExecutionEnvelope["effort"];
+	maxIterations?: number;
+	max_iterations?: number;
+	preload?: ExecutionEnvelope["preload"];
 }
 
 interface BatchResult {
@@ -123,6 +142,24 @@ interface RuntimeBatchItem {
 	controller: AbortController;
 }
 
+const toExecutionEnvelopeInput = (item: BatchItem): ExecutionEnvelope => ({
+	...(item.model !== undefined ? { model: item.model } : {}),
+	...(item.provider !== undefined ? { provider: item.provider } : {}),
+	...(item.reasoning !== undefined ? { reasoning: item.reasoning } : {}),
+	...(item.effort !== undefined ? { effort: item.effort } : {}),
+	...(item.maxIterations !== undefined ? { maxIterations: item.maxIterations } : {}),
+	...(item.max_iterations !== undefined ? { max_iterations: item.max_iterations } : {}),
+	...(item.preload !== undefined ? { preload: item.preload } : {}),
+});
+
+const withEnvelopePatch = <T extends object>(
+	extras: T,
+	envelope: ResolvedExecutionEnvelope,
+): T & { envelope: ResolvedExecutionEnvelope } => ({
+	...extras,
+	envelope,
+});
+
 export function makeFlowBatchTool(queue: FlowQueueService, runFlow: ExecuteFlowFn = executeFlow) {
 	return {
 		name: "flow_batch",
@@ -139,6 +176,13 @@ export function makeFlowBatchTool(queue: FlowQueueService, runFlow: ExecuteFlowF
 							description: "Working directory. Prefer explicit value; defaults to process cwd.",
 						}),
 					),
+					model: Type.Optional(Type.String({ minLength: 1 })),
+					provider: Type.Optional(Type.String({ minLength: 1 })),
+					reasoning: Type.Optional(ReasoningLevelSchema),
+					effort: Type.Optional(ReasoningLevelSchema),
+					maxIterations: Type.Optional(Type.Integer({ minimum: 1, maximum: 300 })),
+					max_iterations: Type.Optional(Type.Integer({ minimum: 1, maximum: 300 })),
+					preload: Type.Optional(ExecutionPreloadSchema),
 				}),
 				{ minItems: 1, maxItems: 32 },
 			),
@@ -263,6 +307,12 @@ export function makeFlowBatchTool(queue: FlowQueueService, runFlow: ExecuteFlowF
 				}
 
 				const profile = profileExit.value;
+				const resolvedEnvelope = resolveExecutionEnvelope(
+					profile,
+					item.task,
+					toExecutionEnvelopeInput(item),
+					_ctx,
+				);
 				const profileMeta = createProfileMetaHandlers(profile, (meta) => {
 					runFireAndForget(
 						`syncing profile metadata for job ${job.id}`,
@@ -273,10 +323,135 @@ export function makeFlowBatchTool(queue: FlowQueueService, runFlow: ExecuteFlowF
 					);
 				});
 				const tracker = createFlowProgressTracker();
-				const slotStatus = await waitForRunSlot(queue, job.id, controller.signal);
-				if (slotStatus !== "running") {
-					if (slotStatus === "cancelled") {
-						await markCancelled(queue, job.id, 0);
+				try {
+					const currentStatus =
+						queue.peek().jobs.find((queuedJob) => queuedJob.id === job.id)?.status ?? job.status;
+					await Effect.runPromise(
+						queue.setStatus(job.id, currentStatus, withEnvelopePatch({}, resolvedEnvelope)),
+					);
+					const slotStatus = await waitForRunSlot(queue, job.id, controller.signal);
+					if (slotStatus !== "running") {
+						if (slotStatus === "cancelled") {
+							await markCancelled(queue, job.id, tracker.toolCount, tracker.recentTools);
+							return {
+								id: job.id,
+								profile: item.profile,
+								task: item.task,
+								status: "cancelled",
+								error: "Flow cancelled.",
+							};
+						}
+						const errorText = `Flow ${job.id} reached terminal status ${slotStatus} before execution.`;
+						await setTerminalStatus(
+							queue,
+							job.id,
+							"failed",
+							withEnvelopePatch(
+								{
+									...profileMeta.metaPatch(),
+									finishedAt: Date.now(),
+									error: errorText,
+									toolCount: tracker.toolCount,
+									lastProgress: "failed",
+									...(tracker.recentTools.length > 0 ? { recentTools: tracker.recentTools } : {}),
+								},
+								resolvedEnvelope,
+							),
+						);
+						return {
+							id: job.id,
+							profile: item.profile,
+							task: item.task,
+							status: "failed",
+							error: errorText,
+						};
+					}
+
+					await Effect.runPromise(
+						queue.setStatus(job.id, "running", {
+							...withEnvelopePatch(profileMeta.metaPatch(), resolvedEnvelope),
+							startedAt: Date.now(),
+							toolCount: tracker.toolCount,
+							lastProgress: "starting",
+							recentTools: tracker.recentTools,
+						}),
+					);
+					const preloadPrompt = await Effect.runPromise(
+						collectExecutionPreloadPrompt(
+							resolvedEnvelope.preload,
+							item.cwd ?? process.cwd(),
+							controller.signal,
+						),
+					);
+					const runEnvelope: ResolvedExecutionEnvelope = {
+						...resolvedEnvelope,
+						...(preloadPrompt.digest.length > 0 ? { preloadDigest: preloadPrompt.digest } : {}),
+					};
+					const systemPrompt = resolveExecutionPromptEnvelope(runEnvelope, preloadPrompt.prompt);
+					const onProgress = (event: FlowProgressEvent): void => {
+						const update = tracker.apply(event);
+						if (update === undefined) {
+							return;
+						}
+						updateProgress(queue, job.id, update.extras);
+						emitUpdate(onUpdate, `${item.profile}: ${update.summary}`, {
+							jobId: job.id,
+							index,
+							count: items.length,
+							profile: item.profile,
+							phase: "progress",
+							toolCount: tracker.toolCount,
+							summary: update.summary,
+						} satisfies FlowRenderDetails);
+					};
+
+					const exit = await Effect.runPromiseExit(
+						runFlow({
+							task: item.task,
+							profile,
+							cwd: item.cwd,
+							reasoning: runEnvelope.reasoning,
+							model: runEnvelope.model,
+							provider: runEnvelope.provider,
+							systemPrompt,
+							onProgress,
+							signal: controller.signal,
+							onModelFallback: profileMeta.onModelFallback,
+							onAgentPromptUnavailable: profileMeta.onAgentPromptUnavailable,
+						} satisfies ExecuteOptions),
+					);
+
+					if (Exit.isSuccess(exit)) {
+						const finishedAt = Date.now();
+						const flushed = tracker.flush();
+						await setTerminalStatus(
+							queue,
+							job.id,
+							"done",
+							withEnvelopePatch(
+								{
+									...profileMeta.metaPatch(),
+									finishedAt,
+									output: exit.value,
+									toolCount: tracker.completedToolCount,
+									lastProgress: "done",
+									...(tracker.recentTools.length > 0 ? { recentTools: tracker.recentTools } : {}),
+									...(flushed !== undefined ? { lastAssistantText: flushed.extras.lastAssistantText } : {}),
+								},
+								runEnvelope,
+							),
+						);
+						return {
+							id: job.id,
+							profile: item.profile,
+							task: item.task,
+							status: "done",
+							output: exit.value || "(no output)",
+						};
+					}
+
+					if (isFlowCancelledCause(exit.cause)) {
+						await markCancelled(queue, job.id, tracker.toolCount, tracker.recentTools);
 						return {
 							id: job.id,
 							profile: item.profile,
@@ -285,111 +460,67 @@ export function makeFlowBatchTool(queue: FlowQueueService, runFlow: ExecuteFlowF
 							error: "Flow cancelled.",
 						};
 					}
-					return {
-						id: job.id,
-						profile: item.profile,
-						task: item.task,
-						status: "failed",
-						error: `Flow ${job.id} reached terminal status ${slotStatus} before execution.`,
-					};
-				}
 
-				await Effect.runPromise(
-					queue.setStatus(job.id, "running", {
-						...profileMeta.metaPatch(),
-						startedAt: Date.now(),
-						toolCount: tracker.toolCount,
-						lastProgress: "starting",
-						recentTools: tracker.recentTools,
-					}),
-				);
-				const onProgress = (event: FlowProgressEvent): void => {
-					const update = tracker.apply(event);
-					if (update === undefined) {
-						return;
-					}
-					updateProgress(queue, job.id, update.extras);
-					emitUpdate(onUpdate, `${item.profile}: ${update.summary}`, {
-						jobId: job.id,
-						index,
-						count: items.length,
-						profile: item.profile,
-						phase: "progress",
-						toolCount: tracker.toolCount,
-						summary: update.summary,
-					} satisfies FlowRenderDetails);
-				};
-
-				const exit = await Effect.runPromiseExit(
-					runFlow({
-						task: item.task,
-						profile,
-						cwd: item.cwd,
-						onProgress,
-						signal: controller.signal,
-						onModelFallback: profileMeta.onModelFallback,
-						onAgentPromptUnavailable: profileMeta.onAgentPromptUnavailable,
-					} satisfies ExecuteOptions),
-				);
-
-				if (Exit.isSuccess(exit)) {
-					const finishedAt = Date.now();
-					const flushed = tracker.flush();
+					const errText = formatFlowError(exit.cause);
 					await setTerminalStatus(
 						queue,
 						job.id,
-						"done",
-						{
-							...profileMeta.metaPatch(),
-							finishedAt,
-							output: exit.value,
-							toolCount: tracker.completedToolCount,
-							lastProgress: "done",
-							...(tracker.recentTools.length > 0 ? { recentTools: tracker.recentTools } : {}),
-							...(flushed !== undefined ? { lastAssistantText: flushed.extras.lastAssistantText } : {}),
-						},
+						"failed",
+						withEnvelopePatch(
+							{
+								...profileMeta.metaPatch(),
+								finishedAt: Date.now(),
+								error: errText,
+								toolCount: tracker.toolCount,
+								lastProgress: "failed",
+								...(tracker.recentTools.length > 0 ? { recentTools: tracker.recentTools } : {}),
+							},
+							runEnvelope,
+						),
 					);
 					return {
 						id: job.id,
 						profile: item.profile,
 						task: item.task,
-						status: "done",
-						output: exit.value || "(no output)",
+						status: "failed",
+						error: errText,
 					};
-				}
-
-				if (isFlowCancelledCause(exit.cause)) {
-					await markCancelled(queue, job.id, tracker.toolCount, tracker.recentTools);
+				} catch (error) {
+					const errorText = error instanceof Error ? error.message : String(error);
+					if (controller.signal.aborted || error instanceof FlowCancelledError) {
+						await markCancelled(queue, job.id, tracker.toolCount, tracker.recentTools);
+						return {
+							id: job.id,
+							profile: item.profile,
+							task: item.task,
+							status: "cancelled",
+							error: "Flow cancelled.",
+						};
+					}
+					await setTerminalStatus(
+						queue,
+						job.id,
+						"failed",
+						withEnvelopePatch(
+							{
+								...profileMeta.metaPatch(),
+								finishedAt: Date.now(),
+								error: errorText,
+								toolCount: tracker.toolCount,
+								lastProgress: "failed",
+								...(tracker.recentTools.length > 0 ? { recentTools: tracker.recentTools } : {}),
+							},
+							resolvedEnvelope,
+						),
+					);
 					return {
 						id: job.id,
 						profile: item.profile,
 						task: item.task,
-						status: "cancelled",
-						error: "Flow cancelled.",
+						status: "failed",
+						error: errorText,
 					};
 				}
-
-				const errText = formatFlowError(exit.cause);
-				await setTerminalStatus(
-					queue,
-					job.id,
-					"failed",
-					{
-						...profileMeta.metaPatch(),
-						finishedAt: Date.now(),
-						error: errText,
-						toolCount: tracker.toolCount,
-						lastProgress: "failed",
-						...(tracker.recentTools.length > 0 ? { recentTools: tracker.recentTools } : {}),
-					},
-				);
-				return {
-					id: job.id,
-					profile: item.profile,
-					task: item.task,
-					status: "failed",
-					error: errText,
-				};
 			};
 
 			let results: BatchResult[];

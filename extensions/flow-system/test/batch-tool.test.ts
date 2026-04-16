@@ -243,6 +243,42 @@ describe("flow_batch cancellation", () => {
 		expect(maxActive).toBe(1);
 	});
 
+	it("sequential mode does not stall when maxConcurrent auto-promotes pending jobs", async () => {
+		const queue = await Effect.runPromise(makeQueue({ maxConcurrent: 1 }));
+		const executed: string[] = [];
+		const tool = makeFlowBatchTool(queue, ({ task }: ExecuteOptions) =>
+			Effect.promise(async () => {
+				executed.push(task);
+				await sleep(20);
+				return `done:${task}`;
+			}),
+		);
+
+		const execution = tool.execute(
+			"batch-sequential-promote",
+			{
+				items: [
+					{ profile: "explore", task: "first" },
+					{ profile: "explore", task: "second" },
+				],
+				parallel: false,
+			},
+			undefined,
+			undefined,
+			{},
+		);
+		const timeout = sleep(600).then(() => "timeout" as const);
+		const settled = await Promise.race([execution, timeout]);
+
+		expect(settled).not.toBe("timeout");
+		if (settled === "timeout") {
+			throw new Error("sequential batch execution timed out");
+		}
+
+		expect(settled.details).toMatchObject({ status: "done", successCount: 2, failCount: 0, cancelCount: 0 });
+		expect(executed).toEqual(["first", "second"]);
+	});
+
 	it("does not run pending batch item when batch is cancelled before it starts", async () => {
 		const queue = await Effect.runPromise(makeQueue({ maxConcurrent: 1 }));
 		const firstStarted = makeDeferred();

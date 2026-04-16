@@ -119,8 +119,17 @@ function formatJob(job: FlowJob): string {
 	const tools = job.toolCount !== undefined ? C.dim(`  · tools ${job.toolCount}`) : "";
 	const rawProgress = job.lastProgress !== undefined ? sanitizeFlowText(job.lastProgress) : undefined;
 	const progress = rawProgress !== undefined ? C.dim(`\n  ↳ ${rawProgress.slice(0, 80)}`) : "";
+	const envelope =
+		job.envelope !== undefined
+			? C.dim(
+					`\n  ⚙ ${job.envelope.reasoning} · max ${job.envelope.maxIterations}` +
+						(job.envelope.model !== undefined ? ` · ${job.envelope.model}` : "") +
+						(job.envelope.provider !== undefined ? `@${job.envelope.provider}` : "") +
+						(job.envelope.preloadDigest !== undefined ? ` · ${job.envelope.preloadDigest}` : ""),
+				)
+			: "";
 
-	return `  ${icon}  ${profile}  ${task}${durationStr}${tools}\n${id}${progress}`;
+	return `  ${icon}  ${profile}  ${task}${durationStr}${tools}\n${id}${progress}${envelope}`;
 }
 
 const parseRunArgs = (rawArgs: string): { ok: true; profile: string; task: string } | { ok: false } => {
@@ -439,6 +448,24 @@ export function registerFlowCommands(
 						sections.push(C.dim("Tip: /flow status <id> for one job."));
 					} else if (jobs.length === 1) {
 						const job = jobs[0]!;
+						if (job.envelope !== undefined) {
+							const env = job.envelope;
+							sections.push(C.bold("Execution envelope"));
+							sections.push(DIVIDER);
+							sections.push(
+								[
+									`reasoning: ${env.reasoning}`,
+									`maxIterations: ${env.maxIterations}` +
+										(env.requestedMaxIterations !== undefined
+											? ` (requested ${env.requestedMaxIterations})`
+											: ""),
+									`model: ${env.model ?? "(default)"}`,
+									`provider: ${env.provider ?? "(default)"}`,
+									`preload: ${env.preloadDigest ?? "(none)"}`,
+								].join("\n"),
+							);
+							sections.push("");
+						}
 						if (job.output !== undefined && job.output.trim().length > 0) {
 							sections.push(C.bold("Output preview"));
 							sections.push(DIVIDER);

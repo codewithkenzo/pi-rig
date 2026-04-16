@@ -8,9 +8,53 @@ import { formatFlowError, isFlowCancelledCause } from "./errors.js";
 import { renderFlowRunCall, renderFlowRunResult, type FlowRenderDetails } from "./renderers.js";
 import { createFlowProgressTracker } from "./progress.js";
 import { createProfileMetaHandlers } from "./profile-meta.js";
+import {
+	collectExecutionPreloadPrompt,
+	resolveExecutionEnvelope,
+	resolveExecutionPromptEnvelope,
+} from "./envelope.js";
+import {
+	ExecutionPreloadSchema,
+	type ExecutionEnvelope,
+	type ResolvedExecutionEnvelope,
+	ReasoningLevelSchema,
+	FlowCancelledError,
+} from "./types.js";
 import { waitForRunSlot } from "./scheduler.js";
 
 type ExecuteFlowFn = typeof executeFlow;
+
+type FlowRunParams = {
+	profile: string;
+	task: string;
+	cwd?: string;
+	background?: boolean;
+	model?: string;
+	provider?: string;
+	reasoning?: ExecutionEnvelope["reasoning"];
+	effort?: ExecutionEnvelope["effort"];
+	maxIterations?: number;
+	max_iterations?: number;
+	preload?: ExecutionEnvelope["preload"];
+};
+
+const withEnvelopePatch = <T extends object>(
+	extras: T,
+	envelope: ResolvedExecutionEnvelope,
+): T & { envelope: ResolvedExecutionEnvelope } => ({
+	...extras,
+	envelope,
+});
+
+const toExecutionEnvelopeInput = (params: FlowRunParams): ExecutionEnvelope => ({
+	...(params.model !== undefined ? { model: params.model } : {}),
+	...(params.provider !== undefined ? { provider: params.provider } : {}),
+	...(params.reasoning !== undefined ? { reasoning: params.reasoning } : {}),
+	...(params.effort !== undefined ? { effort: params.effort } : {}),
+	...(params.maxIterations !== undefined ? { maxIterations: params.maxIterations } : {}),
+	...(params.max_iterations !== undefined ? { max_iterations: params.max_iterations } : {}),
+	...(params.preload !== undefined ? { preload: params.preload } : {}),
+});
 
 const emitUpdate = (
 	onUpdate: AgentToolUpdateCallback<unknown> | undefined,
@@ -148,6 +192,13 @@ export function makeFlowTool(queue: FlowQueueService, runFlow: ExecuteFlowFn = e
 						"If true, enqueue and return immediately without waiting for the result. Defaults to false.",
 				}),
 			),
+			model: Type.Optional(Type.String({ minLength: 1, description: "Per-run model override." })),
+			provider: Type.Optional(Type.String({ minLength: 1, description: "Per-run provider override." })),
+			reasoning: Type.Optional(ReasoningLevelSchema),
+			effort: Type.Optional(ReasoningLevelSchema),
+			maxIterations: Type.Optional(Type.Integer({ minimum: 1, maximum: 300 })),
+			max_iterations: Type.Optional(Type.Integer({ minimum: 1, maximum: 300 })),
+			preload: Type.Optional(ExecutionPreloadSchema),
 		}),
 		renderCall: (
 			args: Parameters<typeof renderFlowRunCall>[0],
@@ -160,7 +211,7 @@ export function makeFlowTool(queue: FlowQueueService, runFlow: ExecuteFlowFn = e
 		) => renderFlowRunResult(result, options, theme),
 		execute: async (
 			_toolCallId: string,
-			params: { profile: string; task: string; cwd?: string; background?: boolean },
+			params: FlowRunParams,
 			signal: AbortSignal | undefined,
 			onUpdate: AgentToolUpdateCallback<unknown> | undefined,
 			ctx: ExtensionContext,
@@ -203,6 +254,12 @@ export function makeFlowTool(queue: FlowQueueService, runFlow: ExecuteFlowFn = e
 			}
 
 			const profile = profileExit.value;
+			const resolvedEnvelope = resolveExecutionEnvelope(
+				profile,
+				task,
+				toExecutionEnvelopeInput(params),
+				ctx,
+			);
 			const job = await Effect.runPromise(queue.enqueue(profileName, task, cwd));
 			const profileMeta = createProfileMetaHandlers(profile, (meta) => {
 				runFireAndForget(
@@ -213,8 +270,17 @@ export function makeFlowTool(queue: FlowQueueService, runFlow: ExecuteFlowFn = e
 					}),
 				);
 			});
-			const jobController = new AbortController();
-			await Effect.runPromise(queue.bindAbort(job.id, () => jobController.abort()));
+				const jobController = new AbortController();
+				await Effect.runPromise(queue.bindAbort(job.id, () => jobController.abort()));
+				const currentStatus =
+					queue.peek().jobs.find((queuedJob) => queuedJob.id === job.id)?.status ?? job.status;
+				await Effect.runPromise(
+					queue.setStatus(
+						job.id,
+						currentStatus,
+						withEnvelopePatch({}, resolvedEnvelope),
+					),
+				);
 			emitUpdate(onUpdate, `Queued flow ${job.id} (${profileName}).`, {
 				jobId: job.id,
 				profile: profileName,
@@ -256,44 +322,68 @@ export function makeFlowTool(queue: FlowQueueService, runFlow: ExecuteFlowFn = e
 							return;
 						}
 
-						await Effect.runPromise(
-							queue.setStatus(job.id, "running", {
-								...profileMeta.metaPatch(),
-								startedAt,
-								toolCount: tracker.toolCount,
-								lastProgress: "starting",
-								recentTools: tracker.recentTools,
-							}),
-						);
-						const onProgress = (event: FlowProgressEvent): void => {
-							const update = tracker.apply(event);
-							if (update !== undefined) {
-								applyProgress(queue, job.id, update.extras);
-							}
+							await Effect.runPromise(
+								queue.setStatus(job.id, "running", {
+									...withEnvelopePatch(profileMeta.metaPatch(), resolvedEnvelope),
+									startedAt,
+									toolCount: tracker.toolCount,
+									lastProgress: "starting",
+									recentTools: tracker.recentTools,
+								}),
+							);
+							const preloadPrompt = await Effect.runPromise(
+								collectExecutionPreloadPrompt(
+									resolvedEnvelope.preload,
+									cwd ?? process.cwd(),
+									jobController.signal,
+								),
+							);
+							const runEnvelope: ResolvedExecutionEnvelope = {
+								...resolvedEnvelope,
+								...(preloadPrompt.digest.length > 0 ? { preloadDigest: preloadPrompt.digest } : {}),
+							};
+							const systemPrompt = resolveExecutionPromptEnvelope(runEnvelope, preloadPrompt.prompt);
+							const onProgress = (event: FlowProgressEvent): void => {
+								const update = tracker.apply(event);
+								if (update !== undefined) {
+									applyProgress(queue, job.id, update.extras);
+								}
 						};
 						const exit = await Effect.runPromiseExit(
-							runFlow({
-								task,
-								profile,
-								cwd,
-								onProgress,
-								signal: jobController.signal,
-								onModelFallback: profileMeta.onModelFallback,
-								onAgentPromptUnavailable: profileMeta.onAgentPromptUnavailable,
-							} satisfies ExecuteOptions),
+								runFlow({
+									task,
+									profile,
+									cwd,
+									reasoning: runEnvelope.reasoning,
+									model: runEnvelope.model,
+									provider: runEnvelope.provider,
+									systemPrompt,
+									onProgress,
+									signal: jobController.signal,
+									onModelFallback: profileMeta.onModelFallback,
+									onAgentPromptUnavailable: profileMeta.onAgentPromptUnavailable,
+								} satisfies ExecuteOptions),
 						);
 						if (Exit.isSuccess(exit)) {
-							const finishedAt = Date.now();
-							const flushed = tracker.flush();
-							await setTerminalStatus(queue, job.id, "done", {
-								...profileMeta.metaPatch(),
-								finishedAt,
-								output: exit.value,
-								toolCount: tracker.completedToolCount,
-								lastProgress: "done",
-								...(tracker.recentTools.length > 0 ? { recentTools: tracker.recentTools } : {}),
-								...(flushed !== undefined ? { lastAssistantText: flushed.extras.lastAssistantText } : {}),
-							});
+								const finishedAt = Date.now();
+								const flushed = tracker.flush();
+								await setTerminalStatus(
+									queue,
+									job.id,
+									"done",
+									withEnvelopePatch(
+										{
+											...profileMeta.metaPatch(),
+											finishedAt,
+											output: exit.value,
+											toolCount: tracker.completedToolCount,
+											lastProgress: "done",
+											...(tracker.recentTools.length > 0 ? { recentTools: tracker.recentTools } : {}),
+											...(flushed !== undefined ? { lastAssistantText: flushed.extras.lastAssistantText } : {}),
+										},
+										runEnvelope,
+									),
+								);
 							ctx.ui.notify(
 								`✓ ${profileName} (${Math.max(1, Math.round((finishedAt - startedAt) / 100)) / 10}s)`,
 								"info",
@@ -302,31 +392,47 @@ export function makeFlowTool(queue: FlowQueueService, runFlow: ExecuteFlowFn = e
 							await markCancelled(queue, job.id, tracker.toolCount, tracker.recentTools);
 							ctx.ui.notify(`⊘ ${profileName} cancelled`, "warning");
 						} else {
-							const finishedAt = Date.now();
-							await setTerminalStatus(queue, job.id, "failed", {
-								...profileMeta.metaPatch(),
-								finishedAt,
-								error: formatFlowError(exit.cause),
-								toolCount: tracker.toolCount,
-								lastProgress: "failed",
-								...(tracker.recentTools.length > 0 ? { recentTools: tracker.recentTools } : {}),
-							});
-							ctx.ui.notify(`✗ ${profileName} failed`, "error");
-						}
-					} catch (error) {
-						const errorText = describeError(error);
-						if (jobController.signal.aborted) {
-							await markCancelled(queue, job.id, tracker.toolCount, tracker.recentTools);
-						} else {
-							await setTerminalStatus(queue, job.id, "failed", {
-								...profileMeta.metaPatch(),
-								finishedAt: Date.now(),
-								error: errorText,
-								toolCount: tracker.toolCount,
-								lastProgress: "failed",
-								...(tracker.recentTools.length > 0 ? { recentTools: tracker.recentTools } : {}),
-							});
-						}
+								const finishedAt = Date.now();
+								await setTerminalStatus(
+									queue,
+									job.id,
+									"failed",
+									withEnvelopePatch(
+										{
+											...profileMeta.metaPatch(),
+											finishedAt,
+											error: formatFlowError(exit.cause),
+											toolCount: tracker.toolCount,
+											lastProgress: "failed",
+											...(tracker.recentTools.length > 0 ? { recentTools: tracker.recentTools } : {}),
+										},
+										runEnvelope,
+									),
+								);
+								ctx.ui.notify(`✗ ${profileName} failed`, "error");
+							}
+						} catch (error) {
+							const errorText = describeError(error);
+							if (jobController.signal.aborted || error instanceof FlowCancelledError) {
+								await markCancelled(queue, job.id, tracker.toolCount, tracker.recentTools);
+							} else {
+								await setTerminalStatus(
+									queue,
+									job.id,
+									"failed",
+									withEnvelopePatch(
+										{
+											...profileMeta.metaPatch(),
+											finishedAt: Date.now(),
+											error: errorText,
+											toolCount: tracker.toolCount,
+											lastProgress: "failed",
+											...(tracker.recentTools.length > 0 ? { recentTools: tracker.recentTools } : {}),
+										},
+										resolvedEnvelope,
+									),
+								);
+							}
 						const summary = jobController.signal.aborted ? `Flow ${job.id} cancelled.` : `Flow ${job.id} failed.`;
 						ctx.ui.notify(summary, jobController.signal.aborted ? "warning" : "error");
 						emitUpdate(onUpdate, summary, {
@@ -395,21 +501,33 @@ export function makeFlowTool(queue: FlowQueueService, runFlow: ExecuteFlowFn = e
 					};
 				}
 
-				const startedAt = Date.now();
-				await Effect.runPromise(
-					queue.setStatus(job.id, "running", {
-						...profileMeta.metaPatch(),
-						startedAt,
-						toolCount: tracker.toolCount,
-						lastProgress: "starting",
-						recentTools: tracker.recentTools,
-					}),
-				);
-				emitUpdate(onUpdate, `Running flow ${job.id} (${profileName})…`, {
-					jobId: job.id,
-					profile: profileName,
-					phase: "running",
-				} satisfies FlowRenderDetails);
+					const startedAt = Date.now();
+					await Effect.runPromise(
+						queue.setStatus(job.id, "running", {
+							...withEnvelopePatch(profileMeta.metaPatch(), resolvedEnvelope),
+							startedAt,
+							toolCount: tracker.toolCount,
+							lastProgress: "starting",
+							recentTools: tracker.recentTools,
+						}),
+					);
+					const preloadPrompt = await Effect.runPromise(
+						collectExecutionPreloadPrompt(
+							resolvedEnvelope.preload,
+							cwd ?? process.cwd(),
+							jobController.signal,
+						),
+					);
+					const runEnvelope: ResolvedExecutionEnvelope = {
+						...resolvedEnvelope,
+						...(preloadPrompt.digest.length > 0 ? { preloadDigest: preloadPrompt.digest } : {}),
+					};
+					const systemPrompt = resolveExecutionPromptEnvelope(runEnvelope, preloadPrompt.prompt);
+					emitUpdate(onUpdate, `Running flow ${job.id} (${profileName})…`, {
+						jobId: job.id,
+						profile: profileName,
+						phase: "running",
+					} satisfies FlowRenderDetails);
 
 				const onProgress = (event: FlowProgressEvent): void => {
 					const update = tracker.apply(event);
@@ -427,32 +545,44 @@ export function makeFlowTool(queue: FlowQueueService, runFlow: ExecuteFlowFn = e
 				};
 
 				const exit = await Effect.runPromiseExit(
-					runFlow({
-						task,
-						profile,
-						cwd,
-						onProgress,
-						signal: jobController.signal,
-						onModelFallback: profileMeta.onModelFallback,
-						onAgentPromptUnavailable: profileMeta.onAgentPromptUnavailable,
-					} satisfies ExecuteOptions),
+						runFlow({
+							task,
+							profile,
+							cwd,
+							reasoning: runEnvelope.reasoning,
+							model: runEnvelope.model,
+							provider: runEnvelope.provider,
+							systemPrompt,
+							onProgress,
+							signal: jobController.signal,
+							onModelFallback: profileMeta.onModelFallback,
+							onAgentPromptUnavailable: profileMeta.onAgentPromptUnavailable,
+						} satisfies ExecuteOptions),
 				);
 
-				if (Exit.isSuccess(exit)) {
-					const finishedAt = Date.now();
-					const flushed = tracker.flush();
-					await setTerminalStatus(queue, job.id, "done", {
-						...profileMeta.metaPatch(),
-						finishedAt,
-						output: exit.value,
-						toolCount: tracker.completedToolCount,
-						lastProgress: "done",
-						...(tracker.recentTools.length > 0 ? { recentTools: tracker.recentTools } : {}),
-						...(flushed !== undefined ? { lastAssistantText: flushed.extras.lastAssistantText } : {}),
-					});
-					return {
-						content: [{ type: "text" as const, text: exit.value || "(no output)" }],
-						details: {
+					if (Exit.isSuccess(exit)) {
+						const finishedAt = Date.now();
+						const flushed = tracker.flush();
+						await setTerminalStatus(
+							queue,
+							job.id,
+							"done",
+							withEnvelopePatch(
+								{
+									...profileMeta.metaPatch(),
+									finishedAt,
+									output: exit.value,
+									toolCount: tracker.completedToolCount,
+									lastProgress: "done",
+									...(tracker.recentTools.length > 0 ? { recentTools: tracker.recentTools } : {}),
+									...(flushed !== undefined ? { lastAssistantText: flushed.extras.lastAssistantText } : {}),
+								},
+								runEnvelope,
+							),
+						);
+						return {
+							content: [{ type: "text" as const, text: exit.value || "(no output)" }],
+							details: {
 							jobId: job.id,
 							profile: profileName,
 							background: false,
@@ -470,33 +600,75 @@ export function makeFlowTool(queue: FlowQueueService, runFlow: ExecuteFlowFn = e
 					return cancelledResult(profileName, job.id, false, tracker.toolCount, finishedAt - startedAt);
 				}
 
-				const errText = formatFlowError(exit.cause);
-				const finishedAt = Date.now();
-				await setTerminalStatus(queue, job.id, "failed", {
-					...profileMeta.metaPatch(),
-					finishedAt,
-					error: errText,
-					toolCount: tracker.toolCount,
-					lastProgress: "failed",
-					...(tracker.recentTools.length > 0 ? { recentTools: tracker.recentTools } : {}),
-				});
-				return {
-					content: [{ type: "text" as const, text: `Flow failed: ${errText}` }],
-					details: {
-						jobId: job.id,
-						profile: profileName,
-						background: false,
-						status: "failed",
-						toolCount: tracker.toolCount,
-						durationMs: finishedAt - startedAt,
-						summary: errText,
-					} satisfies FlowRenderDetails,
-					isError: true,
-				};
-			} finally {
-				signal?.removeEventListener("abort", cancelFromSignal);
-				await Effect.runPromise(queue.clearAbort(job.id));
-			}
+					const errText = formatFlowError(exit.cause);
+					const finishedAt = Date.now();
+					await setTerminalStatus(
+						queue,
+						job.id,
+						"failed",
+						withEnvelopePatch(
+							{
+								...profileMeta.metaPatch(),
+								finishedAt,
+								error: errText,
+								toolCount: tracker.toolCount,
+								lastProgress: "failed",
+								...(tracker.recentTools.length > 0 ? { recentTools: tracker.recentTools } : {}),
+							},
+							runEnvelope,
+						),
+					);
+					return {
+						content: [{ type: "text" as const, text: `Flow failed: ${errText}` }],
+						details: {
+							jobId: job.id,
+							profile: profileName,
+							background: false,
+							status: "failed",
+							toolCount: tracker.toolCount,
+							durationMs: finishedAt - startedAt,
+							summary: errText,
+						} satisfies FlowRenderDetails,
+						isError: true,
+					};
+				} catch (error) {
+					const errorText = describeError(error);
+					if (jobController.signal.aborted || error instanceof FlowCancelledError) {
+						await markCancelled(queue, job.id, tracker.toolCount, tracker.recentTools);
+						return cancelledResult(profileName, job.id, false, tracker.toolCount);
+					}
+					await setTerminalStatus(
+						queue,
+						job.id,
+						"failed",
+						withEnvelopePatch(
+							{
+								...profileMeta.metaPatch(),
+								finishedAt: Date.now(),
+								error: errorText,
+								toolCount: tracker.toolCount,
+								lastProgress: "failed",
+								...(tracker.recentTools.length > 0 ? { recentTools: tracker.recentTools } : {}),
+							},
+							resolvedEnvelope,
+						),
+					);
+					return {
+						content: [{ type: "text" as const, text: `Flow failed: ${errorText}` }],
+						details: {
+							jobId: job.id,
+							profile: profileName,
+							background: false,
+							status: "failed",
+							toolCount: tracker.toolCount,
+							summary: errorText,
+						} satisfies FlowRenderDetails,
+						isError: true,
+					};
+				} finally {
+					signal?.removeEventListener("abort", cancelFromSignal);
+					await Effect.runPromise(queue.clearAbort(job.id));
+				}
 		},
 	} as const;
 }
