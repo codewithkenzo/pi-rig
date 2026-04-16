@@ -8,6 +8,8 @@ import type { FlowJob } from "./types.js";
 import { formatFlowError, isFlowCancelledCause } from "./errors.js";
 import { renderFlowBatchCall, renderFlowBatchResult, type FlowRenderDetails } from "./renderers.js";
 import { createFlowProgressTracker } from "./progress.js";
+import { createProfileMetaHandlers } from "./profile-meta.js";
+import { waitForRunSlot } from "./scheduler.js";
 
 type ExecuteFlowFn = typeof executeFlow;
 
@@ -30,6 +32,43 @@ const summarize = (text: string): string => {
 	return normalized.length > 180 ? `${normalized.slice(0, 180)}…` : normalized;
 };
 
+const isPiDebugEnabled = (): boolean => {
+	const value = process.env.PI_DEBUG;
+	return value !== undefined && value.length > 0;
+};
+
+const warnIfDebug = (message: string, cause: unknown): void => {
+	if (isPiDebugEnabled()) {
+		console.warn(`[flow-system] ${message}`, cause);
+	}
+};
+
+const runFireAndForget = <T, E>(label: string, effect: Effect.Effect<T, E>): void => {
+	void Effect.runPromise(effect.pipe(Effect.exit)).then((exit) => {
+		if (exit._tag === "Failure") {
+			warnIfDebug(`${label} failed`, exit.cause);
+		}
+	});
+};
+
+const setTerminalStatus = async (
+	queue: FlowQueueService,
+	jobId: string,
+	status: "done" | "failed" | "cancelled",
+	extras: Record<string, unknown>,
+): Promise<boolean> => {
+	const exit = await Effect.runPromise(queue.setStatus(jobId, status, extras).pipe(Effect.exit));
+	if (exit._tag === "Success") {
+		return true;
+	}
+	warnIfDebug(`failed to set terminal status "${status}" for job ${jobId}`, exit.cause);
+	const fallbackExit = await Effect.runPromise(queue.cancel(jobId).pipe(Effect.exit));
+	if (fallbackExit._tag === "Failure") {
+		warnIfDebug(`fallback cancellation for job ${jobId} also failed`, fallbackExit.cause);
+	}
+	return false;
+};
+
 const updateProgress = (
 	queue: FlowQueueService,
 	jobId: string,
@@ -37,26 +76,28 @@ const updateProgress = (
 		toolCount: number;
 		lastProgress: string;
 		lastAssistantText?: string;
+		recentTools?: string[];
 	},
 ): void => {
-	void Effect.runPromise(
-		queue.setStatus(jobId, "running", extras).pipe(Effect.result, Effect.asVoid),
-	);
+	runFireAndForget(`status update (running) for job ${jobId}`, queue.setStatus(jobId, "running", extras));
 };
 
 const markCancelled = async (
 	queue: FlowQueueService,
 	jobId: string,
 	toolCount: number,
+	recentTools?: string[],
 ): Promise<void> => {
-	await Effect.runPromise(
-		queue
-			.setStatus(jobId, "cancelled", {
-				finishedAt: Date.now(),
-				toolCount,
-				lastProgress: "cancelled",
-			})
-			.pipe(Effect.result, Effect.asVoid),
+	await setTerminalStatus(
+		queue,
+		jobId,
+		"cancelled",
+		{
+			finishedAt: Date.now(),
+			toolCount,
+			lastProgress: "cancelled",
+			...(recentTools !== undefined && recentTools.length > 0 ? { recentTools } : {}),
+		},
 	);
 };
 
@@ -93,13 +134,17 @@ export function makeFlowBatchTool(queue: FlowQueueService, runFlow: ExecuteFlowF
 				Type.Object({
 					profile: Type.String({ description: "Flow profile name." }),
 					task: Type.String({ description: "Task prompt for this item." }),
-					cwd: Type.Optional(Type.String({ description: "Working directory." })),
+					cwd: Type.Optional(
+						Type.String({
+							description: "Working directory. Prefer explicit value; defaults to process cwd.",
+						}),
+					),
 				}),
 				{ minItems: 1, maxItems: 32 },
 			),
 			parallel: Type.Optional(
 				Type.Boolean({
-					description: "Run all items in parallel. Default: false (sequential).",
+					description: "Run all items in parallel. Defaults to false (sequential).",
 				}),
 			),
 		}),
@@ -186,7 +231,7 @@ export function makeFlowBatchTool(queue: FlowQueueService, runFlow: ExecuteFlowF
 			const cancelAll = (): void => {
 				for (const runtimeItem of runtimeItems) {
 					runtimeItem.controller.abort();
-					void Effect.runPromise(queue.cancel(runtimeItem.job.id).pipe(Effect.result, Effect.asVoid));
+					runFireAndForget(`cancel request for job ${runtimeItem.job.id}`, queue.cancel(runtimeItem.job.id));
 				}
 			};
 			signal?.addEventListener("abort", cancelAll, { once: true });
@@ -218,10 +263,45 @@ export function makeFlowBatchTool(queue: FlowQueueService, runFlow: ExecuteFlowF
 				}
 
 				const profile = profileExit.value;
+				const profileMeta = createProfileMetaHandlers(profile, (meta) => {
+					runFireAndForget(
+						`syncing profile metadata for job ${job.id}`,
+						queue.setStatus(job.id, "running", {
+							model: meta.model ?? "",
+							agent: meta.agent ?? "",
+						}),
+					);
+				});
 				const tracker = createFlowProgressTracker();
+				const slotStatus = await waitForRunSlot(queue, job.id, controller.signal);
+				if (slotStatus !== "running") {
+					if (slotStatus === "cancelled") {
+						await markCancelled(queue, job.id, 0);
+						return {
+							id: job.id,
+							profile: item.profile,
+							task: item.task,
+							status: "cancelled",
+							error: "Flow cancelled.",
+						};
+					}
+					return {
+						id: job.id,
+						profile: item.profile,
+						task: item.task,
+						status: "failed",
+						error: `Flow ${job.id} reached terminal status ${slotStatus} before execution.`,
+					};
+				}
 
 				await Effect.runPromise(
-					queue.setStatus(job.id, "running", { startedAt: Date.now(), toolCount: tracker.toolCount, lastProgress: "starting" }),
+					queue.setStatus(job.id, "running", {
+						...profileMeta.metaPatch(),
+						startedAt: Date.now(),
+						toolCount: tracker.toolCount,
+						lastProgress: "starting",
+						recentTools: tracker.recentTools,
+					}),
 				);
 				const onProgress = (event: FlowProgressEvent): void => {
 					const update = tracker.apply(event);
@@ -247,20 +327,27 @@ export function makeFlowBatchTool(queue: FlowQueueService, runFlow: ExecuteFlowF
 						cwd: item.cwd,
 						onProgress,
 						signal: controller.signal,
+						onModelFallback: profileMeta.onModelFallback,
+						onAgentPromptUnavailable: profileMeta.onAgentPromptUnavailable,
 					} satisfies ExecuteOptions),
 				);
 
 				if (Exit.isSuccess(exit)) {
 					const finishedAt = Date.now();
 					const flushed = tracker.flush();
-					await Effect.runPromise(
-						queue.setStatus(job.id, "done", {
+					await setTerminalStatus(
+						queue,
+						job.id,
+						"done",
+						{
+							...profileMeta.metaPatch(),
 							finishedAt,
 							output: exit.value,
-							toolCount: tracker.toolCount,
+							toolCount: tracker.completedToolCount,
 							lastProgress: "done",
+							...(tracker.recentTools.length > 0 ? { recentTools: tracker.recentTools } : {}),
 							...(flushed !== undefined ? { lastAssistantText: flushed.extras.lastAssistantText } : {}),
-						}),
+						},
 					);
 					return {
 						id: job.id,
@@ -272,7 +359,7 @@ export function makeFlowBatchTool(queue: FlowQueueService, runFlow: ExecuteFlowF
 				}
 
 				if (isFlowCancelledCause(exit.cause)) {
-					await markCancelled(queue, job.id, tracker.toolCount);
+					await markCancelled(queue, job.id, tracker.toolCount, tracker.recentTools);
 					return {
 						id: job.id,
 						profile: item.profile,
@@ -283,13 +370,18 @@ export function makeFlowBatchTool(queue: FlowQueueService, runFlow: ExecuteFlowF
 				}
 
 				const errText = formatFlowError(exit.cause);
-				await Effect.runPromise(
-					queue.setStatus(job.id, "failed", {
+				await setTerminalStatus(
+					queue,
+					job.id,
+					"failed",
+					{
+						...profileMeta.metaPatch(),
 						finishedAt: Date.now(),
 						error: errText,
 						toolCount: tracker.toolCount,
 						lastProgress: "failed",
-					}),
+						...(tracker.recentTools.length > 0 ? { recentTools: tracker.recentTools } : {}),
+					},
 				);
 				return {
 					id: job.id,
@@ -304,13 +396,7 @@ export function makeFlowBatchTool(queue: FlowQueueService, runFlow: ExecuteFlowF
 
 			try {
 				if (parallel) {
-					results = await Effect.runPromise(
-						Effect.forEach(
-							runtimeItems,
-							(runtimeItem) => Effect.promise(() => runJob(runtimeItem)),
-							{ concurrency: 4 },
-						),
-					);
+					results = await Promise.all(runtimeItems.map((runtimeItem) => runJob(runtimeItem)));
 				} else {
 					results = [];
 					for (const runtimeItem of runtimeItems) {

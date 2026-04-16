@@ -294,6 +294,8 @@ export interface ExecuteOptions {
 	cwd?: string | undefined;
 	onProgress?: (event: FlowProgressEvent) => void;
 	signal?: AbortSignal | undefined;
+	onModelFallback?: () => void;
+	onAgentPromptUnavailable?: () => void;
 }
 
 export const executeFlow = ({
@@ -302,6 +304,8 @@ export const executeFlow = ({
 	cwd = process.cwd(),
 	onProgress,
 	signal,
+	onModelFallback: _onModelFallback,
+	onAgentPromptUnavailable: _onAgentPromptUnavailable,
 }: ExecuteOptions): Effect.Effect<string, SubprocessError | SkillLoadError | FlowCancelledError> => {
 	const hasSkills = profile.skills.length > 0;
 

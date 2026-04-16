@@ -1,61 +1,170 @@
 import { dirname, join } from "node:path";
+import { homedir } from "node:os";
+import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, ExtensionContext, SessionStartEvent } from "@mariozechner/pi-coding-agent";
-import type { CustomEntry } from "@mariozechner/pi-coding-agent";
 import { Effect } from "effect";
-import { makeQueue } from "./src/queue.js";
+import { makeQueue, type FlowQueueService } from "./src/queue.js";
 import { makeFlowTool } from "./src/tool.js";
 import { makeFlowBatchTool } from "./src/batch-tool.js";
 import { registerFlowCommands } from "./src/commands.js";
-import { FLOW_ENTRY_TYPE, FlowStateEntrySchema } from "./src/types.js";
-import type { FlowStateEntry } from "./src/types.js";
+import {
+	FLOW_ENTRY_TYPE,
+	FlowStateEntrySchema,
+	FlowSystemConfigSchema,
+	type FlowStateEntry,
+	type FlowSystemConfig,
+} from "./src/types.js";
 import { Value } from "@sinclair/typebox/value";
 import { attachFlowUi } from "./src/ui.js";
+import { findLatestCustomEntry } from "../../shared/session.js";
 
 const baseDir = dirname(fileURLToPath(import.meta.url));
+const FLOW_SYSTEM_CONFIG_FILE = "flow-system.json";
+
+type FlowSystemInitState = {
+	queue: FlowQueueService | undefined;
+	detachUi: (() => void) | undefined;
+	flowToolRegistered: boolean;
+	flowBatchToolRegistered: boolean;
+	commandRegistered: boolean;
+	shortcutRegistered: boolean;
+	resourcesDiscoverRegistered: boolean;
+	sessionStartRegistered: boolean;
+	agentEndRegistered: boolean;
+	sessionShutdownRegistered: boolean;
+	initialized: boolean;
+};
+
+const states = new WeakMap<ExtensionAPI, FlowSystemInitState>();
+
+const makeFlowSystemState = (): FlowSystemInitState => ({
+	queue: undefined,
+	detachUi: undefined,
+	flowToolRegistered: false,
+	flowBatchToolRegistered: false,
+	commandRegistered: false,
+	shortcutRegistered: false,
+	resourcesDiscoverRegistered: false,
+	sessionStartRegistered: false,
+	agentEndRegistered: false,
+	sessionShutdownRegistered: false,
+	initialized: false,
+});
+
+const loadFlowSystemConfig = (): FlowSystemConfig => {
+	const cwd = typeof process.cwd === "function" ? process.cwd() : baseDir;
+	const resolvedCwd: string = cwd === undefined ? baseDir : cwd;
+	const locations = [
+		join(homedir(), ".pi", FLOW_SYSTEM_CONFIG_FILE),
+		join(resolvedCwd, ".pi", FLOW_SYSTEM_CONFIG_FILE),
+	];
+	const config: FlowSystemConfig = {};
+
+	for (const location of locations) {
+		if (!existsSync(location)) {
+			continue;
+		}
+		try {
+			const data = JSON.parse(readFileSync(location, "utf8"));
+			if (Value.Check(FlowSystemConfigSchema, data)) {
+				Object.assign(config, data);
+			} else {
+				console.warn(`[flow-system] Invalid ${location}; using defaults`);
+			}
+		} catch (error) {
+			console.warn(`[flow-system] Failed to load ${location}:`, error);
+		}
+	}
+	return config;
+};
 
 export default async function (pi: ExtensionAPI): Promise<void> {
-	const queue = await Effect.runPromise(makeQueue());
-	const skillDir = join(baseDir, "..", "skills", "flow-system");
-	let detachUi: (() => void) | undefined;
+	const state = states.get(pi) ?? makeFlowSystemState();
 
-	pi.on("resources_discover", () => ({
-		skillPaths: [skillDir],
-	}));
+	if (state.initialized) {
+		console.warn("[flow-system] Extension already initialized for this API instance; skipping duplicate registration.");
+		return;
+	}
+	try {
+		if (state.queue === undefined) {
+			state.queue = await Effect.runPromise(makeQueue(loadFlowSystemConfig()));
+		}
+		const queue = state.queue;
+		const skillDir = join(baseDir, "..", "skills", "flow-system");
 
-	pi.registerTool(makeFlowTool(queue));
-	pi.registerTool(makeFlowBatchTool(queue));
-	registerFlowCommands(pi, queue);
-
-	pi.on("session_start", async (_event: SessionStartEvent, ctx: ExtensionContext) => {
-		const entries = ctx.sessionManager.getEntries();
-		const last = entries
-			.filter(
-				(e): e is CustomEntry<FlowStateEntry> =>
-					e.type === "custom" && e.customType === FLOW_ENTRY_TYPE,
-			)
-			.at(-1);
-
-		if (last?.data !== undefined && Value.Check(FlowStateEntrySchema, last.data)) {
-			await Effect.runPromise(
-				queue.restoreFrom(last.data.jobs, { normalizeStaleActive: true, restoredAt: Date.now() }),
+		if (!state.flowToolRegistered) {
+			pi.registerTool(makeFlowTool(queue));
+			state.flowToolRegistered = true;
+		}
+		if (!state.flowBatchToolRegistered) {
+			pi.registerTool(makeFlowBatchTool(queue));
+			state.flowBatchToolRegistered = true;
+		}
+		if (!state.commandRegistered || !state.shortcutRegistered) {
+			registerFlowCommands(
+				pi,
+				queue,
+				undefined,
+				{
+					commandRegistered: state.commandRegistered,
+					shortcutRegistered: state.shortcutRegistered,
+					markCommandRegistered: () => {
+						state.commandRegistered = true;
+					},
+					markShortcutRegistered: () => {
+						state.shortcutRegistered = true;
+					},
+				},
 			);
 		}
-		detachUi?.();
-		if (ctx.hasUI) {
-			detachUi = attachFlowUi(queue, ctx);
+		if (!state.resourcesDiscoverRegistered) {
+			pi.on("resources_discover", () => ({
+				skillPaths: [skillDir],
+			}));
+			state.resourcesDiscoverRegistered = true;
 		}
-	});
+		if (!state.sessionStartRegistered) {
+			pi.on("session_start", async (_event: SessionStartEvent, ctx: ExtensionContext) => {
+				const last = findLatestCustomEntry(
+					ctx.sessionManager.getEntries(),
+					FLOW_ENTRY_TYPE,
+					(value): value is FlowStateEntry => Value.Check(FlowStateEntrySchema, value),
+				);
 
-	pi.on("agent_end", async (_event, _ctx: ExtensionContext) => {
-		const snap = await Effect.runPromise(queue.snapshot());
-		// Persist only the most recent 100 jobs to keep session state bounded.
-		const persistJobs = snap.jobs.slice(-100);
-		pi.appendEntry(FLOW_ENTRY_TYPE, { jobs: persistJobs } satisfies FlowStateEntry);
-	});
+				if (last !== undefined) {
+					await Effect.runPromise(
+						queue.restoreFrom(last.jobs, { normalizeStaleActive: true, restoredAt: Date.now() }),
+					);
+				}
+				state.detachUi?.();
+				if (ctx.hasUI) {
+					state.detachUi = attachFlowUi(queue, ctx);
+				}
+			});
+			state.sessionStartRegistered = true;
+		}
+		if (!state.agentEndRegistered) {
+			pi.on("agent_end", async (_event, _ctx: ExtensionContext) => {
+				const snap = await Effect.runPromise(queue.snapshot());
+				// Persist only the most recent 100 jobs to keep session state bounded.
+				const persistJobs = snap.jobs.slice(-100);
+				pi.appendEntry(FLOW_ENTRY_TYPE, { jobs: persistJobs } satisfies FlowStateEntry);
+			});
+			state.agentEndRegistered = true;
+		}
+		if (!state.sessionShutdownRegistered) {
+			pi.on("session_shutdown", async () => {
+				state.detachUi?.();
+				state.detachUi = undefined;
+			});
+			state.sessionShutdownRegistered = true;
+		}
 
-	pi.on("session_shutdown", async () => {
-		detachUi?.();
-		detachUi = undefined;
-	});
+		state.initialized = true;
+		states.set(pi, state);
+	} catch (error) {
+		states.set(pi, state);
+		throw error;
+	}
 }

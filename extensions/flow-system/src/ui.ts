@@ -1,12 +1,8 @@
 import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { AnimationTicker, createEngine, loadTheme, shimmer, spin, withMotion } from "../../../shared/theme/index.js";
-import { ellipsize, fitAnsiLine, joinCompact, metric, stripAnsi, tag } from "../../../shared/ui/hud.js";
+import { ellipsize, fitAnsiLine, joinCompact, metric, tag } from "../../../shared/ui/hud.js";
+import { sanitizeFlowText } from "./sanitize.js";
 
-// Strip ANSI escapes (including OSC) and C0 control chars from job-derived text before rendering.
-const OSC_UI_RE = /\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g;
-const CONTROL_UI_RE = /[\x00-\x08\x0b-\x1f]/g;
-const sanitizeJobText = (text: string): string =>
-	stripAnsi(text.replace(OSC_UI_RE, "")).replace(CONTROL_UI_RE, "");
 import type { FlowQueueService } from "./queue.js";
 import type { FlowJob, FlowQueue } from "./types.js";
 
@@ -152,7 +148,7 @@ export const renderFlowWidgetLines = (
 		]),
 		joinCompact(engine, [
 			engine.fg("accent", "↳"),
-			engine.fg("value", ellipsize(sanitizeJobText(primary.lastAssistantText ?? primary.lastProgress ?? primary.task), 64)),
+			engine.fg("value", ellipsize(sanitizeFlowText(primary.lastAssistantText ?? primary.lastProgress ?? primary.task), 64)),
 			primary.toolCount !== undefined ? engine.fg("muted", `${primary.toolCount} calls`) : undefined,
 			engine.fg("dim", "alt+shift+f manage"),
 		]),

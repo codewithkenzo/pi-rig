@@ -4,17 +4,15 @@ import type { FlowQueueService } from "./queue.js";
 import { getProfile, loadProfiles } from "./profiles.js";
 import { executeFlow, type ExecuteOptions, type FlowProgressEvent } from "./executor.js";
 import { formatFlowError, isFlowCancelledCause } from "./errors.js";
+import { createFlowProgressTracker } from "./progress.js";
 import type { FlowJob } from "./types.js";
 import { showFlowProfilePicker } from "./picker.js";
 import { showFlowDeck } from "./deck/index.js";
+import { sanitizeFlowText } from "./sanitize.js";
+import { createProfileMetaHandlers } from "./profile-meta.js";
+import { waitForRunSlot } from "./scheduler.js";
 
 type ExecuteFlowFn = typeof executeFlow;
-
-const OSC_CMD_RE = /\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g;
-const ANSI_CMD_RE = /\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g;
-const CONTROL_CMD_RE = /[\x00-\x08\x0b-\x1f]/g;
-const sanitize = (text: string): string =>
-	text.replace(OSC_CMD_RE, "").replace(ANSI_CMD_RE, "").replace(CONTROL_CMD_RE, "");
 
 const C = {
 	bold: (s: string) => `\x1b[1m${s}\x1b[22m`,
@@ -58,6 +56,13 @@ const DIVIDER = C.dim("─".repeat(52));
 const RUN_USAGE = "Usage: /flow run <profile> -- <task>";
 const DEFAULT_HELP = "Use: /flow manage | /flow status [id] | /flow cancel <id> | /flow profiles | /flow run <profile> -- <task> | /flow pick";
 type FlowUiContext = Pick<ExtensionCommandContext, "cwd" | "ui">;
+
+type FlowCommandRegistrationState = {
+	commandRegistered: boolean;
+	shortcutRegistered: boolean;
+	markCommandRegistered: () => void;
+	markShortcutRegistered: () => void;
+};
 
 const completeFlowArgs = (raw: string, queue: FlowQueueService, cwd: string): { label: string; value: string }[] | null => {
 	const trimmed = raw.trimStart();
@@ -108,11 +113,11 @@ function formatJob(job: FlowJob): string {
 	const color = STATUS_COLOR[job.status];
 	const icon = color(STATUS_ICON[job.status] ?? "?");
 	const profile = color(job.profile.padEnd(12));
-	const rawTask = sanitize(job.task);
+	const rawTask = sanitizeFlowText(job.task);
 	const task = rawTask.slice(0, 68) + (rawTask.length > 68 ? "…" : "");
 	const id = C.gray(`  ${job.id}`);
 	const tools = job.toolCount !== undefined ? C.dim(`  · tools ${job.toolCount}`) : "";
-	const rawProgress = job.lastProgress !== undefined ? sanitize(job.lastProgress) : undefined;
+	const rawProgress = job.lastProgress !== undefined ? sanitizeFlowText(job.lastProgress) : undefined;
 	const progress = rawProgress !== undefined ? C.dim(`\n  ↳ ${rawProgress.slice(0, 80)}`) : "";
 
 	return `  ${icon}  ${profile}  ${task}${durationStr}${tools}\n${id}${progress}`;
@@ -139,33 +144,6 @@ const summarizeOutput = (text: string): string => {
 	return normalized.length > 240 ? `${normalized.slice(0, 240)}…` : normalized;
 };
 
-const setRunningProgress = async (
-	queue: FlowQueueService,
-	id: string,
-	toolCount: number,
-	lastProgress: string,
-): Promise<void> => {
-	await Effect.runPromise(
-		queue.setStatus(id, "running", { toolCount, lastProgress }).pipe(Effect.result, Effect.asVoid),
-	);
-};
-
-const markCancelled = async (
-	queue: FlowQueueService,
-	id: string,
-	toolCount: number,
-): Promise<void> => {
-	await Effect.runPromise(
-		queue
-			.setStatus(id, "cancelled", {
-				finishedAt: Date.now(),
-				toolCount,
-				lastProgress: "cancelled",
-			})
-			.pipe(Effect.result, Effect.asVoid),
-	);
-};
-
 const runFlowFromCommand = async (
 	queue: FlowQueueService,
 	ctx: FlowUiContext,
@@ -186,33 +164,103 @@ const runFlowFromCommand = async (
 
 	const profile = profileExit.value;
 	const job = await Effect.runPromise(queue.enqueue(profileName, task, cwd));
+	const profileMeta = createProfileMetaHandlers(profile, (meta) => {
+		void Effect.runPromise(
+			queue
+				.setStatus(job.id, "running", {
+					model: meta.model ?? "",
+					agent: meta.agent ?? "",
+				})
+				.pipe(Effect.result, Effect.asVoid),
+		);
+	});
 	const jobController = new AbortController();
 	await Effect.runPromise(queue.bindAbort(job.id, () => jobController.abort()));
+	const slotStatus = await waitForRunSlot(queue, job.id, jobController.signal);
+	if (slotStatus !== "running") {
+		if (slotStatus === "cancelled") {
+			const finishedAt = Date.now();
+			await Effect.runPromise(
+				queue.setStatus(job.id, "cancelled", {
+					...profileMeta.metaPatch(),
+					finishedAt,
+					toolCount: 0,
+					lastProgress: "cancelled",
+				}),
+			);
+			await ctx.ui.notify(
+				[`⊘ ${profileName} cancelled before run.`, C.dim(`ID: ${job.id}`)].join("\n"),
+				"warning",
+			);
+			return;
+		}
+
+		const finishedAt = Date.now();
+		await Effect.runPromise(
+			queue.setStatus(job.id, slotStatus, {
+				...profileMeta.metaPatch(),
+				finishedAt,
+				toolCount: 0,
+				lastProgress: "failed",
+				error: `Flow ${job.id} reached terminal status ${slotStatus} before execution.`,
+			}),
+		);
+		await ctx.ui.notify(`✗ ${profileName} failed before run.`, "error");
+		return;
+	}
+
 	const startedAt = Date.now();
-	let toolCount = 0;
+	const tracker = createFlowProgressTracker();
 
 	ctx.ui.setWorkingMessage(`▶ ${profileName}…`);
 	try {
-		await Effect.runPromise(queue.setStatus(job.id, "running", { startedAt, toolCount, lastProgress: "starting" }));
+		await Effect.runPromise(
+			queue.setStatus(job.id, "running", {
+				...profileMeta.metaPatch(),
+				startedAt,
+				toolCount: tracker.toolCount,
+				lastProgress: "starting",
+				recentTools: tracker.recentTools,
+			}),
+		);
 		const onProgress = (event: FlowProgressEvent): void => {
-			if (event._tag === "tool_end") {
-				toolCount += 1;
+			const update = tracker.apply(event);
+			if (update === undefined) {
+				return;
 			}
-			void setRunningProgress(queue, job.id, toolCount, event.detail);
+			void Effect.runPromise(
+				queue
+					.setStatus(job.id, "running", {
+						...update.extras,
+					})
+					.pipe(Effect.result, Effect.asVoid),
+			);
 		};
 		const exit = await Effect.runPromiseExit(
-			runFlow({ task, profile, cwd, onProgress, signal: jobController.signal } satisfies ExecuteOptions),
+			runFlow({
+				task,
+				profile,
+				cwd,
+				onProgress,
+				signal: jobController.signal,
+				onModelFallback: profileMeta.onModelFallback,
+				onAgentPromptUnavailable: profileMeta.onAgentPromptUnavailable,
+			} satisfies ExecuteOptions),
 		);
 
 		if (Exit.isSuccess(exit)) {
 			const finishedAt = Date.now();
 			const output = exit.value;
+			const flushed = tracker.flush();
 			await Effect.runPromise(
 				queue.setStatus(job.id, "done", {
+					...profileMeta.metaPatch(),
 					finishedAt,
 					output,
-					toolCount,
+					toolCount: tracker.completedToolCount,
 					lastProgress: "done",
+					...(tracker.recentTools.length > 0 ? { recentTools: tracker.recentTools } : {}),
+					...(flushed !== undefined ? { lastAssistantText: flushed.extras.lastAssistantText } : {}),
 				}),
 			);
 			await ctx.ui.notify(
@@ -227,7 +275,17 @@ const runFlowFromCommand = async (
 
 		if (isFlowCancelledCause(exit.cause)) {
 			const finishedAt = Date.now();
-			await markCancelled(queue, job.id, toolCount);
+			await Effect.runPromise(
+				queue
+					.setStatus(job.id, "cancelled", {
+						...profileMeta.metaPatch(),
+						finishedAt,
+						toolCount: tracker.toolCount,
+						lastProgress: "cancelled",
+						...(tracker.recentTools.length > 0 ? { recentTools: tracker.recentTools } : {}),
+					})
+					.pipe(Effect.result, Effect.asVoid),
+			);
 			await ctx.ui.notify(
 				[
 					C.gray(`⊘ ${profileName} cancelled after ${formatDuration(finishedAt - startedAt)}.`),
@@ -242,10 +300,12 @@ const runFlowFromCommand = async (
 		const errorText = formatFlowError(exit.cause);
 		await Effect.runPromise(
 			queue.setStatus(job.id, "failed", {
+				...profileMeta.metaPatch(),
 				finishedAt,
 				error: errorText,
-				toolCount,
+				toolCount: tracker.toolCount,
 				lastProgress: "failed",
+				...(tracker.recentTools.length > 0 ? { recentTools: tracker.recentTools } : {}),
 			}),
 		);
 		await ctx.ui.notify(
@@ -302,8 +362,19 @@ const showFlowManager = async (queue: FlowQueueService, ctx: FlowUiContext): Pro
 	await ctx.ui.notify(lines.length > 0 ? lines.join("\n") : "No flow jobs.");
 };
 
-export function registerFlowCommands(pi: ExtensionAPI, queue: FlowQueueService, runFlow: ExecuteFlowFn = executeFlow): void {
-	pi.registerCommand("flow", {
+export function registerFlowCommands(
+	pi: ExtensionAPI,
+	queue: FlowQueueService,
+	runFlow: ExecuteFlowFn = executeFlow,
+	registrationState: FlowCommandRegistrationState = {
+		commandRegistered: false,
+		shortcutRegistered: false,
+		markCommandRegistered: () => undefined,
+		markShortcutRegistered: () => undefined,
+	},
+): void {
+	if (!registrationState.commandRegistered) {
+		pi.registerCommand("flow", {
 		description: "Manage flow jobs. Subcommands: manage, status, cancel, profiles, run, pick",
 		getArgumentCompletions: (partial: string) => completeFlowArgs(partial, queue, process.cwd()),
 		handler: async (args: string, ctx) => {
@@ -409,13 +480,13 @@ export function registerFlowCommands(pi: ExtensionAPI, queue: FlowQueueService, 
 				case "profiles": {
 					const profiles = loadProfiles(ctx.cwd);
 
-					const COL = { name: 14, reasoning: 8, iter: 5, tools: 24 };
+					const COL = { name: 14, reasoning: 10, model: 24, tools: 20 };
 					const header =
 						C.dim(
 							"  " +
 								"NAME".padEnd(COL.name) +
 								"REASONING".padEnd(COL.reasoning) +
-								"ITER".padEnd(COL.iter) +
+								"MODEL/AGENT".padEnd(COL.model) +
 								"TOOLS".padEnd(COL.tools) +
 								"DESCRIPTION",
 						);
@@ -431,6 +502,7 @@ export function registerFlowCommands(pi: ExtensionAPI, queue: FlowQueueService, 
 						const toolsets = p.toolsets.length > 0 ? p.toolsets.join(", ") : C.dim("(inherits)");
 						const skillStr = p.skills.length > 0 ? C.magenta(` +${p.skills.length} skills`) : "";
 						const desc = p.description !== undefined ? C.dim(p.description) : "";
+						const modelAndAgent = `${p.model ?? "(default)"}${p.agent !== undefined ? ` @${p.agent}` : ""}`;
 
 						const reasoningStyled =
 							p.reasoning_level === "high"
@@ -443,7 +515,7 @@ export function registerFlowCommands(pi: ExtensionAPI, queue: FlowQueueService, 
 							"  " +
 								C.cyan(p.name.padEnd(COL.name)) +
 								reasoningStyled +
-								String(p.max_iterations).padEnd(COL.iter) +
+								modelAndAgent.padEnd(COL.model) +
 								toolsets.padEnd(COL.tools) +
 								desc +
 								skillStr,
@@ -475,11 +547,16 @@ export function registerFlowCommands(pi: ExtensionAPI, queue: FlowQueueService, 
 			}
 		},
 	});
+		registrationState.markCommandRegistered();
+	}
 
-	pi.registerShortcut("alt+shift+f", {
+	if (!registrationState.shortcutRegistered) {
+		pi.registerShortcut("alt+shift+f", {
 		description: "Manage running flows",
 		handler: async (ctx) => {
 			await showFlowManager(queue, ctx);
 		},
 	});
+		registrationState.markShortcutRegistered();
+	}
 }

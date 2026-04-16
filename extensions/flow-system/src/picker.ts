@@ -17,7 +17,7 @@ const buildItems = (profiles: FlowProfile[]): SelectItem[] =>
 		value: profile.name,
 		label: profile.name,
 		description: [
-			`${profile.reasoning_level} · ${profile.max_iterations} iter`,
+			`${profile.reasoning_level}`,
 			profile.toolsets.length > 0 ? profile.toolsets.join(", ") : "inherits tools",
 			profile.description,
 		]

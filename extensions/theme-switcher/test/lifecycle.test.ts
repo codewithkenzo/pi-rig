@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
-import type { Theme } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, SessionStartEvent, Theme } from "@mariozechner/pi-coding-agent";
+import { registerThemeLifecycle } from "../src/lifecycle.js";
 import { makeThemeState } from "../src/state.js";
 import { buildThemeContextNote, themeSkillDirExists } from "../src/runtime.js";
 import { findSavedThemeEntry, restoreThemeEntry, snapshotThemeEntry } from "../src/session.js";
@@ -101,5 +102,130 @@ describe("theme lifecycle helpers", () => {
 		expect(restored).toBe(true);
 		expect(calls).toEqual(["dracula"]);
 		expect(state.getActive()).toBe("dracula");
+	});
+
+	it("restoreThemeEntry preserves saved non-palette theme names", async () => {
+		const calls: string[] = [];
+		const state = makeThemeState("catppuccin-mocha");
+		const restored = await restoreThemeEntry(
+			{
+				ui: {
+					setTheme: (theme) => {
+						calls.push(typeof theme === "string" ? theme : (theme.name ?? "unnamed-theme"));
+						return { success: true };
+					},
+					getTheme: (name: string) =>
+						name === "my-installed-theme"
+							? (new MockTheme(undefined, undefined, undefined, { name }) as Theme)
+							: undefined,
+					theme: new MockTheme(undefined, undefined, undefined, { name: "catppuccin-mocha" }) as Theme,
+				},
+			},
+			state,
+			{ active: "my-installed-theme" },
+		);
+
+		expect(restored).toBe(true);
+		expect(calls).toContain("my-installed-theme");
+		expect(state.getActive()).toBe("my-installed-theme");
+	});
+
+	it("restoreThemeEntry preserves a saved installed theme name when the UI accepts raw names", async () => {
+		const calls: string[] = [];
+		const state = makeThemeState("nord");
+		const restored = await restoreThemeEntry(
+			{
+				ui: {
+					setTheme: (theme) => {
+						calls.push(typeof theme === "string" ? theme : (theme.name ?? "unnamed-theme"));
+						return { success: true };
+					},
+					theme: new MockTheme(undefined, undefined, undefined, { name: "catppuccin-mocha" }) as Theme,
+				},
+			},
+			state,
+			{ active: "stale-installed-theme" },
+		);
+
+		expect(restored).toBe(true);
+		expect(calls).toEqual(["stale-installed-theme"]);
+		expect(state.getActive()).toBe("stale-installed-theme");
+	});
+
+	it("registerThemeLifecycle applies preferred theme on session_start when no saved entry exists", async () => {
+		const handlers = new Map<string, (event: unknown, ctx: ExtensionContext) => Promise<unknown>>();
+		const pi = {
+			on: (event: string, handler: (event: unknown, ctx: ExtensionContext) => Promise<unknown>) => {
+				handlers.set(event, handler);
+			},
+			appendEntry: () => undefined,
+		} as unknown as ExtensionAPI;
+
+		const state = makeThemeState("dracula");
+		registerThemeLifecycle(pi, state);
+
+		const sessionStart = handlers.get("session_start");
+		expect(sessionStart).toBeDefined();
+
+		const setThemeCalls: string[] = [];
+		await sessionStart?.(
+			{} as SessionStartEvent,
+			{
+				cwd: process.cwd(),
+				sessionManager: {
+					getEntries: () => [],
+				},
+				ui: {
+					setTheme: (theme: string | Theme) => {
+						setThemeCalls.push(typeof theme === "string" ? theme : (theme.name ?? "unnamed-theme"));
+						return { success: true };
+					},
+					theme: new MockTheme(undefined, undefined, undefined, { name: "catppuccin-mocha" }) as Theme,
+				},
+			} as unknown as ExtensionContext,
+		);
+
+		expect(setThemeCalls.length).toBeGreaterThan(0);
+		expect(state.getActive()).toBe("dracula");
+	});
+
+	it("registerThemeLifecycle restores installed non-palette themes when getTheme is available", async () => {
+		const handlers = new Map<string, (event: unknown, ctx: ExtensionContext) => Promise<unknown>>();
+		const pi = {
+			on: (event: string, handler: (event: unknown, ctx: ExtensionContext) => Promise<unknown>) => {
+				handlers.set(event, handler);
+			},
+			appendEntry: () => undefined,
+		} as unknown as ExtensionAPI;
+
+		const state = makeThemeState("my-installed-theme");
+		registerThemeLifecycle(pi, state);
+		const sessionStart = handlers.get("session_start");
+		expect(sessionStart).toBeDefined();
+
+		const setThemeCalls: string[] = [];
+		await sessionStart?.(
+			{} as SessionStartEvent,
+			{
+				cwd: process.cwd(),
+				sessionManager: {
+					getEntries: () => [],
+				},
+				ui: {
+					setTheme: (theme: string | Theme) => {
+						setThemeCalls.push(typeof theme === "string" ? theme : (theme.name ?? "unnamed-theme"));
+						return { success: true };
+					},
+					getTheme: (name: string) =>
+						name === "my-installed-theme"
+							? (new MockTheme(undefined, undefined, undefined, { name }) as Theme)
+							: undefined,
+					theme: new MockTheme(undefined, undefined, undefined, { name: "catppuccin-mocha" }) as Theme,
+				},
+			} as unknown as ExtensionContext,
+		);
+
+		expect(setThemeCalls).toContain("my-installed-theme");
+		expect(state.getActive()).toBe("my-installed-theme");
 	});
 });

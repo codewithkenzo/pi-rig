@@ -10,7 +10,6 @@ export const BUILT_IN_PROFILES: readonly FlowProfile[] = [
 		name: "explore",
 		description: "Quick scans, grep, file lookups",
 		reasoning_level: "low",
-		max_iterations: 11,
 		toolsets: ["terminal", "file"],
 		skills: [],
 	},
@@ -18,7 +17,6 @@ export const BUILT_IN_PROFILES: readonly FlowProfile[] = [
 		name: "research",
 		description: "Deep web research, synthesis",
 		reasoning_level: "medium",
-		max_iterations: 18,
 		toolsets: ["terminal", "file", "web"],
 		skills: [],
 	},
@@ -26,7 +24,6 @@ export const BUILT_IN_PROFILES: readonly FlowProfile[] = [
 		name: "coder",
 		description: "Writing code, multi-file impl",
 		reasoning_level: "medium",
-		max_iterations: 35,
 		toolsets: ["code_execution"],
 		skills: [],
 	},
@@ -34,7 +31,6 @@ export const BUILT_IN_PROFILES: readonly FlowProfile[] = [
 		name: "debug",
 		description: "Root-cause analysis, hard bugs",
 		reasoning_level: "high",
-		max_iterations: 20,
 		toolsets: [],
 		skills: [],
 	},
@@ -42,7 +38,6 @@ export const BUILT_IN_PROFILES: readonly FlowProfile[] = [
 		name: "browser",
 		description: "Visual QA, page interaction",
 		reasoning_level: "medium",
-		max_iterations: 25,
 		toolsets: ["browser"],
 		skills: [],
 	},
@@ -50,7 +45,6 @@ export const BUILT_IN_PROFILES: readonly FlowProfile[] = [
 		name: "ambivalent",
 		description: "Default, mixed work",
 		reasoning_level: "medium",
-		max_iterations: 18,
 		toolsets: [],
 		skills: [],
 	},
@@ -69,8 +63,15 @@ export function loadProfiles(cwd: string): FlowProfile[] {
 			const raw = JSON.parse(fs.readFileSync(src, "utf8")) as unknown;
 			if (!Array.isArray(raw)) continue;
 			for (const item of raw) {
-				if (Value.Check(FlowProfileSchema, item)) {
-					map.set(item.name, item);
+				if (typeof item !== "object" || item === null || Array.isArray(item)) {
+					continue;
+				}
+				const normalized = { ...(item as Record<string, unknown>) };
+				if ("max_iterations" in normalized) {
+					delete normalized["max_iterations"];
+				}
+				if (Value.Check(FlowProfileSchema, normalized)) {
+					map.set(normalized.name, normalized);
 				}
 			}
 		} catch {

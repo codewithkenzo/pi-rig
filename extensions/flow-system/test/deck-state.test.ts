@@ -111,4 +111,27 @@ describe("updateFeedFromSnapshot — dedupe", () => {
 		s = updateFeedFromSnapshot(s);
 		expect(s.feed.lines).toHaveLength(0);
 	});
+
+	it("caps feed under flood updates and keeps dedupe behavior", () => {
+		let s = makeInitialDeckState(queue([job("a", { status: "running", lastProgress: "seed" })]));
+		s = updateFeedFromSnapshot(s);
+
+		for (let i = 0; i < 80; i += 1) {
+			const nextProgress = i % 2 === 0 ? `step-${i}` : `step-${i - 1}`;
+			s = {
+				...s,
+				snapshot: queue([
+					job("a", {
+						status: "running",
+						lastProgress: nextProgress,
+						lastAssistantText: `assistant-${Math.floor(i / 3)}`,
+					}),
+				]),
+			};
+			s = updateFeedFromSnapshot(s);
+		}
+
+		expect(s.feed.lines.length).toBeLessThanOrEqual(32);
+		expect(s.feed.lines.at(-1)?.text.length).toBeGreaterThan(0);
+	});
 });

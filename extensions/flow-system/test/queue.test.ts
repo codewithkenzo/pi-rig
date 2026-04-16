@@ -5,16 +5,37 @@ import { FlowCancelledError, JobNotFoundError } from "../src/types.js";
 import type { FlowJob } from "../src/types.js";
 
 describe("FlowQueueService", () => {
-	it("enqueue creates a pending job with correct profile and task", async () => {
+	it("enqueue honors concurrency cap and can leave capacity for pending jobs", async () => {
 		const queue = await Effect.runPromise(makeQueue());
-		const job = await Effect.runPromise(queue.enqueue("explore", "list files"));
+		const [jobOne, jobTwo] = await Promise.all([
+			Effect.runPromise(queue.enqueue("explore", "first job")),
+			Effect.runPromise(queue.enqueue("coder", "second job")),
+		]);
 
-		expect(job.status).toBe("pending");
-		expect(job.profile).toBe("explore");
-		expect(job.task).toBe("list files");
-		expect(typeof job.id).toBe("string");
-		expect(job.id.length).toBeGreaterThan(0);
-		expect(typeof job.createdAt).toBe("number");
+		expect(jobOne.status).toBe("running");
+		expect(jobTwo.status).toBe("running");
+	});
+
+	it("enqueue creates pending jobs when maxConcurrent is 1 and one job is already running", async () => {
+		const queue = await Effect.runPromise(makeQueue({ maxConcurrent: 1 }));
+		const first = await Effect.runPromise(queue.enqueue("explore", "root scan"));
+		const second = await Effect.runPromise(queue.enqueue("explore", "nested scan"));
+
+		expect(first.status).toBe("running");
+		expect(second.status).toBe("pending");
+	});
+
+	it("promotes pending jobs after terminal transition", async () => {
+		const queue = await Effect.runPromise(makeQueue({ maxConcurrent: 1 }));
+		const first = await Effect.runPromise(queue.enqueue("explore", "root scan"));
+		const second = await Effect.runPromise(queue.enqueue("debug", "nested scan"));
+
+		expect(first.status).toBe("running");
+		expect(second.status).toBe("pending");
+
+		await Effect.runPromise(queue.setStatus(first.id, "done", { finishedAt: Date.now() }));
+		const all = await Effect.runPromise(queue.getAll());
+		expect(all.find((job) => job.id === second.id)?.status).toBe("running");
 	});
 
 	it("enqueue stores cwd when provided", async () => {
@@ -146,22 +167,48 @@ describe("FlowQueueService", () => {
 	});
 
 	it("cancel marks a pending job as cancelled", async () => {
-		const queue = await Effect.runPromise(makeQueue());
-		const job = await Effect.runPromise(queue.enqueue("explore", "scan dir"));
+		const queue = await Effect.runPromise(makeQueue({ maxConcurrent: 1 }));
+		await Effect.runPromise(queue.enqueue("explore", "running job"));
+		const pending = await Effect.runPromise(queue.enqueue("explore", "pending job"));
 
-		await Effect.runPromise(queue.cancel(job.id));
+		await Effect.runPromise(queue.cancel(pending.id));
 
 		const all = await Effect.runPromise(queue.getAll());
-		expect(all[0]?.status).toBe("cancelled");
+		expect(all.find((job) => job.id === pending.id)?.status).toBe("cancelled");
 	});
 
-	it("cancel marks a running job as cancelled", async () => {
+
+	it("does not promote pending jobs before running cancellations reach terminal state", async () => {
+		const queue = await Effect.runPromise(makeQueue({ maxConcurrent: 1 }));
+		const running = await Effect.runPromise(queue.enqueue("explore", "first"));
+		const pending = await Effect.runPromise(queue.enqueue("debug", "second"));
+
+		expect(running.status).toBe("running");
+		expect(pending.status).toBe("pending");
+
+		await Effect.runPromise(queue.cancel(running.id));
+		const afterCancelJobs = await Effect.runPromise(queue.getAll());
+		expect(afterCancelJobs.find((job) => job.id === pending.id)?.status).toBe("pending");
+
+		await Effect.runPromise(
+			queue.setStatus(running.id, "cancelled", { finishedAt: Date.now(), toolCount: 0 }),
+		);
+		const afterTerminal = await Effect.runPromise(queue.getAll());
+		expect(afterTerminal.find((job) => job.id === pending.id)?.status).toBe("running");
+	});
+
+	it("cancel marks running jobs as cancelling until terminal status is applied", async () => {
 		const queue = await Effect.runPromise(makeQueue());
 		const job = await Effect.runPromise(queue.enqueue("debug", "trace bug"));
 		await Effect.runPromise(queue.setStatus(job.id, "running"));
 
 		await Effect.runPromise(queue.cancel(job.id));
 
+		const interim = await Effect.runPromise(queue.getAll());
+		expect(interim[0]?.status).toBe("running");
+		expect(interim[0]?.lastProgress).toBe("cancelling");
+
+		await Effect.runPromise(queue.setStatus(job.id, "cancelled", { finishedAt: Date.now() }));
 		const all = await Effect.runPromise(queue.getAll());
 		expect(all[0]?.status).toBe("cancelled");
 	});
@@ -179,7 +226,8 @@ describe("FlowQueueService", () => {
 	});
 
 	it("bindAbort immediately aborts when the job is already cancelled", async () => {
-		const queue = await Effect.runPromise(makeQueue());
+		const queue = await Effect.runPromise(makeQueue({ maxConcurrent: 1 }));
+		await Effect.runPromise(queue.enqueue("debug", "running"));
 		const job = await Effect.runPromise(queue.enqueue("debug", "already cancelled"));
 		await Effect.runPromise(queue.cancel(job.id));
 
@@ -325,5 +373,46 @@ describe("FlowQueueService", () => {
 
 		expect(q1Jobs).toHaveLength(1);
 		expect(q2Jobs).toHaveLength(0);
+	});
+
+	it("survives high-contention cancel/setStatus races on one job", async () => {
+		const queue = await Effect.runPromise(makeQueue());
+		const job = await Effect.runPromise(queue.enqueue("debug", "race-target"));
+
+		await Promise.all(
+			Array.from({ length: 120 }, (_, index) =>
+				index % 2 === 0
+					? Effect.runPromise(queue.cancel(job.id).pipe(Effect.result))
+					: Effect.runPromise(
+							queue
+								.setStatus(job.id, "running", { lastProgress: `tick-${index}` })
+								.pipe(Effect.result),
+						),
+			),
+		);
+
+		const final = await Effect.runPromise(queue.getAll());
+		const target = final.find((entry) => entry.id === job.id);
+		expect(target).toBeDefined();
+		expect(["running", "cancelled", "failed", "done", "pending"]).toContain(target?.status ?? "");
+	});
+
+	it("handles rapid enqueue + terminal cycles without losing bounded state", async () => {
+		const queue = await Effect.runPromise(makeQueue({ maxConcurrent: 4 }));
+		const rounds = 120;
+
+		for (let index = 0; index < rounds; index += 1) {
+			const job = await Effect.runPromise(queue.enqueue("explore", `burst-${index}`));
+			await Effect.runPromise(
+				queue.setStatus(job.id, index % 3 === 0 ? "failed" : "done", {
+					finishedAt: Date.now(),
+					output: `out-${index}`,
+				}),
+			);
+		}
+
+		const snapshot = await Effect.runPromise(queue.snapshot());
+		expect(snapshot.jobs.length).toBeLessThanOrEqual(200);
+		expect(snapshot.jobs.at(-1)?.task ?? "").toBe("burst-119");
 	});
 });

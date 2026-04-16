@@ -16,11 +16,11 @@ export const FlowProfileSchema = Type.Object({
 	name: Type.String({ minLength: 1, maxLength: 64 }),
 	description: Type.Optional(Type.String()),
 	reasoning_level: ReasoningLevelSchema,
-	// TODO: wire to pi CLI flag once upstream exposes a supported iteration-limit argument.
-	// Currently validated and stored but not passed to the subprocess.
-	max_iterations: Type.Number({ minimum: 1, maximum: 200 }),
 	toolsets: Type.Array(Type.String()),
 	skills: Type.Array(Type.String(), { maxItems: 32 }),
+	model: Type.Optional(Type.String()),
+	models: Type.Optional(Type.Array(Type.String(), { maxItems: 3 })),
+	agent: Type.Optional(Type.String()),
 	system_prompt_prefix: Type.Optional(Type.String()),
 });
 
@@ -41,6 +41,8 @@ export const FlowJobSchema = Type.Object({
 	profile: Type.String(),
 	task: Type.String(),
 	cwd: Type.Optional(Type.String()),
+	model: Type.Optional(Type.String()),
+	agent: Type.Optional(Type.String()),
 	status: FlowJobStatusSchema,
 	createdAt: Type.Number(),
 	startedAt: Type.Optional(Type.Number()),
@@ -50,6 +52,7 @@ export const FlowJobSchema = Type.Object({
 	toolCount: Type.Optional(Type.Number({ minimum: 0 })),
 	lastProgress: Type.Optional(Type.String()),
 	lastAssistantText: Type.Optional(Type.String()),
+	recentTools: Type.Optional(Type.Array(Type.String(), { maxItems: 6 })),
 });
 
 export type FlowJob = Static<typeof FlowJobSchema>;
@@ -60,6 +63,12 @@ export const FlowQueueSchema = Type.Object({
 });
 
 export type FlowQueue = Static<typeof FlowQueueSchema>;
+
+export const FlowSystemConfigSchema = Type.Object({
+	maxConcurrent: Type.Optional(Type.Integer({ minimum: 1, maximum: 64 })),
+});
+
+export type FlowSystemConfig = Static<typeof FlowSystemConfigSchema>;
 
 export class ProfileNotFoundError extends Data.TaggedError("ProfileNotFoundError")<{
 	readonly name: string;

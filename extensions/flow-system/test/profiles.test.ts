@@ -1,4 +1,5 @@
 import { describe, it, expect } from "bun:test";
+import * as fs from "node:fs";
 import { Effect } from "effect";
 import { loadProfiles, getProfile, BUILT_IN_PROFILES } from "../src/profiles.js";
 import { ProfileNotFoundError } from "../src/types.js";
@@ -33,19 +34,19 @@ describe("loadProfiles", () => {
 		expect(names).toContain("ambivalent");
 	});
 
-	it("explore profile has reasoning_level low and max_iterations 11", () => {
+	it("explore profile has reasoning_level low and no forced model override", () => {
 		const profiles = loadProfiles(NO_CONFIG_DIR);
 		const explore = profiles.find((p) => p.name === "explore");
 		expect(explore).toBeDefined();
 		expect(explore?.reasoning_level).toBe("low");
-		expect(explore?.max_iterations).toBe(11);
+		expect(explore?.model).toBeUndefined();
 		expect(explore?.toolsets).toEqual(["terminal", "file"]);
 	});
 
-	it("coder profile has max_iterations 35 and toolsets code_execution", () => {
+	it("coder profile has code_execution toolset and no forced model override", () => {
 		const profiles = loadProfiles(NO_CONFIG_DIR);
 		const coder = profiles.find((p) => p.name === "coder");
-		expect(coder?.max_iterations).toBe(35);
+		expect(coder?.model).toBeUndefined();
 		expect(coder?.toolsets).toEqual(["code_execution"]);
 	});
 
@@ -61,6 +62,44 @@ describe("loadProfiles", () => {
 		for (const profile of profiles) {
 			expect(profile.skills).toEqual([]);
 		}
+	});
+
+	it("normalizes legacy max_iterations from custom profile overrides", () => {
+		const cwd = `/tmp/pi-flow-profiles-test-${crypto.randomUUID()}`;
+		const piDir = `${cwd}/.pi`;
+		fs.mkdirSync(piDir, { recursive: true });
+		Bun.write(`${piDir}/flow-profiles.json`, JSON.stringify([
+			{
+				name: "legacy-custom",
+				reasoning_level: "medium",
+				max_iterations: 15,
+				toolsets: ["terminal"],
+				skills: [],
+			},
+		], null, 2));
+		const profiles = loadProfiles(cwd);
+		const custom = profiles.find((profile) => profile.name === "legacy-custom");
+		expect(custom).toBeDefined();
+		expect(custom?.reasoning_level).toBe("medium");
+		expect(custom?.toolsets).toEqual(["terminal"]);
+		expect((custom as { max_iterations?: unknown })?.max_iterations).toBeUndefined();
+	});
+
+	it("does not inherit a model override for partial built-in overrides", () => {
+		const cwd = `/tmp/pi-flow-profiles-test-${crypto.randomUUID()}`;
+		const piDir = `${cwd}/.pi`;
+		fs.mkdirSync(piDir, { recursive: true });
+		Bun.write(`${piDir}/flow-profiles.json`, JSON.stringify([
+			{
+				name: "explore",
+				reasoning_level: "low",
+				toolsets: ["terminal", "file"],
+				skills: [],
+			},
+		], null, 2));
+		const profiles = loadProfiles(cwd);
+		const explore = profiles.find((profile) => profile.name === "explore");
+		expect(explore?.model).toBeUndefined();
 	});
 
 	it("silently skips a cwd with no .pi directory", () => {
@@ -95,7 +134,6 @@ describe("getProfile", () => {
 
 	it("resolves coder profile correctly", async () => {
 		const profile = await Effect.runPromise(getProfile("coder", NO_CONFIG_DIR));
-		expect(profile.max_iterations).toBe(35);
 		expect(profile.reasoning_level).toBe("medium");
 	});
 
