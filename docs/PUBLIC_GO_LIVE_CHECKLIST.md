@@ -4,8 +4,8 @@ Use this when flipping repos from private to public.
 
 ## 0) Launch gate
 
-- [ ] `@codewithkenzo/pi-dispatch@0.1.0` is visible on npm
-- [ ] `@codewithkenzo/pi-theme-switcher@0.1.0` is visible on npm
+- [ ] `@codewithkenzo/pi-dispatch@0.1.1` is visible on npm
+- [ ] `@codewithkenzo/pi-theme-switcher@0.1.1` is visible on npm
 - [ ] README preview assets are in place (PNG/GIF/video links valid)
 - [ ] no confidential files in git history (already rewritten once; re-check before launch)
 
