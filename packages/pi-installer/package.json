@@ -1,7 +1,7 @@
 {
   "name": "@codewithkenzo/pi-rig",
   "version": "0.1.0",
-  "description": "One-command installer for Pi Dispatch and Theme Switcher",
+  "description": "One-command Pi installer for Dispatch and Theme Switcher",
   "type": "module",
   "main": "./dist/lib.js",
   "bin": {
@@ -14,10 +14,15 @@
   },
   "keywords": [
     "pi",
+    "pi-agent",
     "pi-coding-agent",
+    "pi-agent-core",
+    "pi-extensions",
     "installer",
     "cli",
-    "extensions"
+    "agent-orchestration",
+    "workflow-automation",
+    "bunx"
   ],
   "devDependencies": {
     "@types/bun": "latest",

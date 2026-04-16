@@ -4,40 +4,41 @@ A suite of extensions for the Pi coding agent.
 
 Pi Rig handles the execution, messaging, routing, and workflow state layers that matter most during long agent runs: queued work, remote updates, scheduled delivery, and consistent runtime context.
 
-Pi Rig is built on [pi-mono](https://github.com/badlogic/pi-mono), the open-source Pi coding agent by Mario Zechner.
+Pi Rig is built on [pi-mono](https://github.com/badlogic/pi-mono), the open-source Pi coding agent by Mario Zechner, and targets the Pi extension ecosystem around `@mariozechner/pi-agent-core`.
 
 ## Extensions
 
-| Package | Source | Surfaces | Role |
-|---------|--------|----------|------|
-| [Pi Dispatch](https://github.com/codewithkenzo/pi-dispatch) | `extensions/flow-system` | `flow_run`, `flow_batch`, `/flow` | Profile-based execution and queued task dispatch |
-| [Theme Switcher](https://github.com/codewithkenzo/pi-theme-switcher) | `extensions/theme-switcher` | `theme_set`, `theme_list`, `theme_preview`, `/theme` | Runtime theme selection and session-aware restore |
-| Gateway Messaging | `extensions/gateway-messaging` | `gateway_turn_preview`, `/gateway` | Telegram-first turn updates with patch queues and action payloads (source preview) |
-| Notify Cron | `extensions/notify-cron` | `notify_cron_*`, `/notify-cron` | Scheduled notifications with typed destinations and lease-aware ticking (source preview) |
+| Extension | Package | Status | Surfaces | Notes |
+|---|---|---|---|---|
+| [Pi Dispatch](https://github.com/codewithkenzo/pi-dispatch) | [`@codewithkenzo/pi-dispatch`](https://www.npmjs.com/package/@codewithkenzo/pi-dispatch) | **Published** | `flow_run`, `flow_batch`, `/flow` | Core execution and queue lane |
+| [Theme Switcher](https://github.com/codewithkenzo/pi-theme-switcher) | [`@codewithkenzo/pi-theme-switcher`](https://www.npmjs.com/package/@codewithkenzo/pi-theme-switcher) | **Published** | `theme_set`, `theme_list`, `theme_preview`, `/theme` | Runtime theming and session restore |
+| Gateway Messaging | `@codewithkenzo/pi-gateway-messaging` | Source preview | `gateway_turn_preview`, `/gateway` | Remote turn updates + action routing |
+| Notify Cron | `@codewithkenzo/pi-notify-cron` | Source preview | `notify_cron_*`, `/notify-cron` | Scheduled delivery and lease-aware ticks |
 
-## Release scope (now)
+## Planned roadmap (structured)
 
-Published installer scope is intentionally small right now:
+### Planned plugin map
 
-- **Pi Dispatch** (`@codewithkenzo/pi-dispatch`)
-- **Theme Switcher** (`@codewithkenzo/pi-theme-switcher`)
+| Plugin | Status | Primary goal | Notes |
+|---|---|---|---|
+| `fs-sandbox` | Planned | Execution isolation + policy boundaries | sandbox adapter target for Pi Dispatch |
+| `pi-memory` | Planned | Short/long/last-active memory lanes | selective injection, markdown-first storage |
+| `pi-board` | Planned | Mission/task coordination surface | planned to absorb interactive plan-mode workflow |
+| `pi-voice` | Planned | Voice ingress + transcript workflows | pairs with gateway/remote flows |
+| `pi-diff` | Planned | Structured change/delta workflows | token-efficient review lane |
+| `pi-rollback` | Planned | Safe rollback/recovery workflows | revert/undo safety for risky operations |
 
-Gateway Messaging and Notify Cron remain source-preview while packaging hardening finishes.
+### Phase map
 
-## Master plan snapshot (roadmap)
+| Phase | Scope | What ships |
+|---|---|---|
+| Phase 1 (now) | Public release baseline | Dispatch + Theme Switcher + installer path |
+| Phase 2 (next) | Source preview hardening | Gateway Messaging + Notify Cron packaging hardening |
+| Phase 3 (after) | New extension wave | board/memory/sandbox/diff/voice/rollback lanes |
 
-### Planned plugins
+### Pi Dispatch direction
 
-- `fs-sandbox` — execution isolation + policy boundaries
-- `pi-memory` — short/long/last-active memory lanes
-- `pi-board` — mission/task coordination surface (planned to absorb interactive plan-mode workflow)
-- `pi-voice` — voice ingress + transcript workflows
-- `pi-diff` — structured change/delta workflows
-- `pi-rollback` — safe rollback/recovery workflows
-
-### Planned feature phases in Pi Dispatch
-
-- interactive **plan mode** (`/plan` and gated execute flow), converging into the board workflow
+- interactive **plan mode** (`/plan`, gated execute flow) as the bridge into board workflows
 - deeper **VFS/preload** ergonomics and token-safe context injection
 - **sandbox adapter integration** for safer execution boundaries
 

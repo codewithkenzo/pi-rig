@@ -15,10 +15,16 @@
   },
   "keywords": [
     "pi",
+    "pi-agent",
     "pi-coding-agent",
+    "pi-agent-core",
     "dispatch",
     "task-queue",
-    "subagents"
+    "agent-orchestration",
+    "subagents",
+    "vfs",
+    "plan-mode",
+    "workflow"
   ],
   "dependencies": {
     "@mariozechner/pi-tui": "^0.63.1",

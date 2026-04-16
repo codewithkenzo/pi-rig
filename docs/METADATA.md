@@ -16,17 +16,16 @@ Practical Pi plugins for real daily runs.
 
 ### GitHub topics
 
+- pi
+- pi-agent
 - pi-coding-agent
+- pi-agent-core
 - pi-extensions
-- ai-agents
 - agent-orchestration
 - workflow-automation
-- terminal-tools
-- developer-tools
 - task-queue
-- theme-switcher
-- telegram-bot
-- cron-jobs
+- terminal-ui
+- developer-tools
 - bun
 - typescript
 
@@ -38,13 +37,17 @@ Practical Pi plugins for real daily runs.
 
 **Topics:**
 
+- pi
+- pi-agent
 - pi-coding-agent
-- agent-orchestration
+- pi-agent-core
 - dispatch
 - task-queue
+- agent-orchestration
 - subagents
-- workflow-automation
 - vfs
+- plan-mode
+- workflow-automation
 - bun
 - typescript
 
@@ -54,8 +57,12 @@ Practical Pi plugins for real daily runs.
 
 **Topics:**
 
+- pi
+- pi-agent
 - pi-coding-agent
+- pi-agent-core
 - theme-switcher
+- theming
 - terminal-ui
 - tui
 - ansi
@@ -67,7 +74,7 @@ Practical Pi plugins for real daily runs.
 
 ### `@codewithkenzo/pi-rig`
 
-One-command installer for Pi Dispatch and Theme Switcher.
+One-command Pi installer for Dispatch and Theme Switcher.
 
 ### `@codewithkenzo/pi-dispatch`
 
@@ -75,7 +82,7 @@ Queue and run Pi tasks with reusable profiles.
 
 ### `@codewithkenzo/pi-theme-switcher`
 
-Switch and preview Pi themes in a live session.
+Switch and preview Pi themes during live sessions.
 
 ### `@codewithkenzo/pi-gateway-messaging`
 
@@ -90,26 +97,42 @@ Scheduled notifications for Pi with lease-aware ticks. (Coming soon)
 ### `@codewithkenzo/pi-rig`
 
 - pi
+- pi-agent
 - pi-coding-agent
+- pi-agent-core
+- pi-extensions
 - installer
 - cli
-- extensions
+- agent-orchestration
+- workflow-automation
+- bunx
 
 ### `@codewithkenzo/pi-dispatch`
 
 - pi
+- pi-agent
 - pi-coding-agent
+- pi-agent-core
 - dispatch
 - task-queue
+- agent-orchestration
 - subagents
+- vfs
+- plan-mode
+- workflow
 
 ### `@codewithkenzo/pi-theme-switcher`
 
 - pi
+- pi-agent
 - pi-coding-agent
-- theme
+- pi-agent-core
 - theme-switcher
+- theme
+- terminal-ui
 - tui
+- theming
+- workflow
 
 ## Next feature phases
 
