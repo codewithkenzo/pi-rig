@@ -39,8 +39,7 @@ The installer path for getting the published extensions onto a fresh Pi setup.
 | Gateway Messaging | `@codewithkenzo/pi-gateway-messaging` | Source preview | `gateway_turn_preview`, `/gateway` | Remote turn updates + action routing |
 | Notify Cron | `@codewithkenzo/pi-notify-cron` | Source preview | `notify_cron_*`, `/notify-cron` | Scheduled delivery and lease-aware ticks |
 
-## Planned roadmap (structured)
-
+## Planned roadmap
 ### Planned plugin map
 
 | Plugin | Status | Primary goal | Notes |
@@ -132,12 +131,6 @@ Install Pi Rig extensions.
 - Verify: `/flow profiles` and `/theme list`
 - Report what was installed.
 ````
-
-## Media
-
-- Stable README demo files live in [`docs/media/demos/`](./docs/media/demos/)
-- Historical capture iterations live in [`docs/media/showcase/`](./docs/media/showcase/)
-- Embed/template guidance lives in [docs/PREVIEWS.md](./docs/PREVIEWS.md)
 
 ## Development
 
