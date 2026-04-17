@@ -1,7 +1,7 @@
 import { tokens, icons, isTTY } from "./tokens.js";
 import type { ExtensionCatalogEntry, InstallerResult } from "./lib.js";
 
-const VERSION = "0.1.2";
+const VERSION = "0.1.3";
 
 const pad = (str: string, len: number): string => {
 	const visible = str.replace(/\x1b\[[0-9;]*m/g, "");
