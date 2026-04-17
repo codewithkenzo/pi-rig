@@ -1,6 +1,6 @@
 {
   "name": "@codewithkenzo/pi-theme-switcher",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Switch and preview Pi themes during live sessions",
   "type": "module",
   "main": "./dist/index.js",
@@ -12,6 +12,11 @@
       "./dist/index.js"
     ]
   },
+  "files": [
+    "dist",
+    "skills",
+    "README.md"
+  ],
   "scripts": {
     "build": "bun build ./index.ts --outfile ./dist/index.js --target node",
     "tsc": "tsc",
@@ -44,5 +49,13 @@
   "peerDependencies": {
     "@mariozechner/pi-agent-core": "*",
     "@mariozechner/pi-coding-agent": "*"
+  },
+  "peerDependenciesMeta": {
+    "@mariozechner/pi-agent-core": {
+      "optional": true
+    },
+    "@mariozechner/pi-coding-agent": {
+      "optional": true
+    }
   }
 }
