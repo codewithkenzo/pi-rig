@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
 import type { InstallerArgs } from "./args.js";
+import { tokens, icons } from "./tokens.js";
 
 export interface InstallerIO {
 	log(message: string): void;
@@ -28,51 +29,6 @@ export interface ExtensionCatalogEntry {
 	availableNow: boolean;
 	aliases: readonly string[];
 }
-
-const NO_COLOR = process.env.NO_COLOR === "1";
-const USE_ASCII_ICONS = process.env.PI_ASCII_ICONS === "1" || process.env.TERM === "dumb";
-
-const fg = (hex: string, text: string): string => {
-	if (NO_COLOR) return text;
-	const normalized = hex.startsWith("#") ? hex.slice(1) : hex;
-	if (normalized.length !== 6) return text;
-	const r = Number.parseInt(normalized.slice(0, 2), 16);
-	const g = Number.parseInt(normalized.slice(2, 4), 16);
-	const b = Number.parseInt(normalized.slice(4, 6), 16);
-	return `\x1b[38;2;${r};${g};${b}m${text}\x1b[39m`;
-};
-
-const COLORS = {
-	green: (text: string) => fg("#3B82F6", text),
-	blue: (text: string) => fg("#8B5CF6", text),
-	yellow: (text: string) => fg("#A1A1AA", text),
-	red: (text: string) => fg("#DC2626", text),
-	text: (text: string) => fg("#E4E4E7", text),
-	dim: (text: string) => fg("#52525B", text),
-	bold: (text: string) => (NO_COLOR ? text : `\x1b[1m${text}\x1b[22m`),
-};
-
-const ICONS = USE_ASCII_ICONS
-	? {
-			app: "[pi-rig]",
-			step: "->",
-			ok: "[ok]",
-			warn: "[!]",
-			error: "[x]",
-			info: "[i]",
-			pkg: "[pkg]",
-			pi: "[pi]",
-		}
-	: {
-			app: "",
-			step: "➜",
-			ok: "",
-			warn: "",
-			error: "",
-			info: "",
-			pkg: "󰏗",
-			pi: "",
-		};
 
 export const EXTENSION_CATALOG: readonly ExtensionCatalogEntry[] = [
 	{
@@ -172,7 +128,7 @@ const runCommand = async (
 	options: { cwd: string; dryRun: boolean; io: InstallerIO },
 ): Promise<boolean> => {
 	if (options.dryRun) {
-		options.io.log(COLORS.dim(`  [dry-run] ${command} ${args.join(" ")}`.trim()));
+		options.io.log(tokens.dim(`  [dry-run] ${command} ${args.join(" ")}`.trim()));
 		return true;
 	}
 
@@ -226,7 +182,7 @@ const installSkillBundles = async (
 	for (const bundle of bundles) {
 		const targetDir = join(homedir(), ".pi", "skills", bundle.name);
 		if (dryRun) {
-			io.log(COLORS.dim(`  [dry-run] copy ${bundle.path} -> ${targetDir}`));
+			io.log(tokens.dim(`  [dry-run] copy ${bundle.path} -> ${targetDir}`));
 			continue;
 		}
 		await rm(targetDir, { recursive: true, force: true });
@@ -245,14 +201,14 @@ const runSourceInstaller = async (
 	io: InstallerIO,
 ): Promise<InstallerResult> => {
 	if (!args.skipInstall) {
-		io.log(COLORS.blue(`  ${ICONS.step} Installing workspace dependencies...`));
+		io.log(tokens.secondary(`  ${icons.step} Installing workspace dependencies...`));
 		const installed = await runCommand("bun", ["install"], { cwd: root, dryRun: args.dryRun, io });
 		if (!installed) {
 			throw new Error("bun install failed");
 		}
 	}
 
-	io.log(COLORS.blue(`  ${ICONS.step} Typechecking shared/...`));
+	io.log(tokens.secondary(`  ${icons.step} Typechecking shared/...`));
 	await runCommand("bun", ["tsc", "--noEmit"], { cwd: join(root, "shared"), dryRun: args.dryRun, io });
 
 	const results: ExtensionInstallResult[] = [];
@@ -260,10 +216,10 @@ const runSourceInstaller = async (
 		const metadata = getExtensionMetadata(extension);
 		const label = metadata?.label ?? extension;
 		const extensionDir = join(root, "extensions", extension);
-		io.log(COLORS.blue(`  ${ICONS.pkg} Preparing ${label} (${extension})...`));
+		io.log(tokens.secondary(`  ${icons.pkg} Preparing ${label} (${extension})...`));
 
 		if (!existsSync(extensionDir)) {
-			io.log(COLORS.red(`    extension path not found: ${extensionDir}`));
+			io.log(tokens.error(`    extension path not found: ${extensionDir}`));
 			results.push({ name: extension, ready: false, skillInstalled: false });
 			continue;
 		}
@@ -305,7 +261,7 @@ const runSourceInstaller = async (
 
 	const piBinary = await findPiBinary(args.piPath);
 	if (piBinary !== null) {
-		io.log(COLORS.blue(`  ${ICONS.pi} Installing selected extensions into Pi via ${piBinary}...`));
+		io.log(tokens.secondary(`  ${icons.pi} Installing selected extensions into Pi via ${piBinary}...`));
 		for (const result of results) {
 			if (!result.ready) continue;
 			await runCommand(piBinary, ["install", join(root, "extensions", result.name)], {
@@ -315,7 +271,7 @@ const runSourceInstaller = async (
 			});
 		}
 	} else {
-		io.log(COLORS.yellow(`  ${ICONS.warn} Pi coding agent binary not found — skipping extension install`));
+		io.log(tokens.warning(`  ${icons.warn} Pi coding agent binary not found — skipping extension install`));
 	}
 
 	return { results, piPath: piBinary };
@@ -327,12 +283,12 @@ const runPackageInstaller = async (
 	args: InstallerArgs,
 	io: InstallerIO,
 ): Promise<InstallerResult> => {
-	io.log(COLORS.blue(`  ${ICONS.info} Package mode detected (no local extensions workspace).`));
-	io.log(COLORS.dim("    Installing published plugins only."));
+	io.log(tokens.secondary(`  ${icons.info} Package mode detected (no local extensions workspace).`));
+	io.log(tokens.dim("    Installing published plugins only."));
 
 	const piBinary = await findPiBinary(args.piPath);
 	if (piBinary === null) {
-		io.log(COLORS.yellow(`  ${ICONS.warn} Pi coding agent binary not found — skipping extension install`));
+		io.log(tokens.warning(`  ${icons.warn} Pi coding agent binary not found — skipping extension install`));
 		return {
 			results: selectedExtensions.map((name) => ({ name, ready: false, skillInstalled: false })),
 			piPath: null,
@@ -343,18 +299,18 @@ const runPackageInstaller = async (
 	for (const extension of selectedExtensions) {
 		const metadata = getExtensionMetadata(extension);
 		if (metadata === null) {
-			io.log(COLORS.red(`  ${ICONS.error} Unknown plugin: ${extension}`));
+			io.log(tokens.error(`  ${icons.error} Unknown plugin: ${extension}`));
 			results.push({ name: extension, ready: false, skillInstalled: false });
 			continue;
 		}
 		if (!metadata.availableNow) {
-			io.log(COLORS.yellow(`  ${ICONS.warn} ${metadata.label} is coming soon — skipping for now.`));
+			io.log(tokens.warning(`  ${icons.warn} ${metadata.label} is coming soon — skipping for now.`));
 			results.push({ name: extension, ready: false, skillInstalled: false });
 			continue;
 		}
 
 		const packageSource = `npm:${metadata.packageName}`;
-		io.log(COLORS.blue(`  ${ICONS.pkg} Installing ${metadata.label} (${metadata.packageName})...`));
+		io.log(tokens.secondary(`  ${icons.pkg} Installing ${metadata.label} (${metadata.packageName})...`));
 		const installOk = await runCommand(piBinary, ["install", packageSource], {
 			cwd: root,
 			dryRun: args.dryRun,
@@ -372,13 +328,8 @@ export const runInstaller = async (
 	args: InstallerArgs,
 	io: InstallerIO,
 ): Promise<InstallerResult> => {
-	io.log("");
-	io.log(COLORS.bold(COLORS.blue(`  ${ICONS.app} @codewithkenzo/pi-rig`)));
-	io.log(COLORS.dim("  Install Pi Dispatch + Theme Switcher in one command · Electric Midnight by Kenzo"));
-	io.log("");
-
 	if (selectedExtensions.length === 0) {
-		io.log(COLORS.yellow(`  ${ICONS.warn} No plugins selected.`));
+		io.log(tokens.warning(`  ${icons.warn} No plugins selected.`));
 		return { results: [], piPath: null };
 	}
 

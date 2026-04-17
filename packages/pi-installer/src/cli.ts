@@ -9,28 +9,20 @@ import {
 	createConsoleIO,
 	discoverExtensions,
 	getAvailableExtensions,
+	getComingSoonExtensions,
 	resolveExtensionToken,
 	runInstaller,
 	type ExtensionCatalogEntry,
 } from "./lib.js";
 import { parseInstallerArgs, resolveSelectedExtensions } from "./args.js";
-
-const USE_ASCII_ICONS = process.env.PI_ASCII_ICONS === "1" || process.env.TERM === "dumb";
-const ICONS = USE_ASCII_ICONS
-	? {
-			ok: "[ok]",
-			dot: "-",
-			wait: "[..]",
-			auth: "[auth]",
-			pi: "[pi]",
-		}
-	: {
-			ok: "",
-			dot: "",
-			wait: "",
-			auth: "",
-			pi: "",
-		};
+import { isTTY } from "./tokens.js";
+import {
+	renderHeader,
+	renderExtensionList,
+	renderSelectorPrompt,
+	renderAutoSelect,
+	renderResults,
+} from "./render.js";
 
 const installerDir = dirname(fileURLToPath(import.meta.url));
 const packageRoot = join(installerDir, "..");
@@ -44,13 +36,8 @@ const rootDir =
 const promptForExtensions = async (options: readonly ExtensionCatalogEntry[]): Promise<string[]> => {
 	const rl = createInterface({ input: stdin, output: stdout });
 	try {
-		console.log("");
-		console.log("Select plugins to install:");
-		options.forEach((entry, index) => {
-			console.log(`  ${index + 1}. ${entry.label} (${entry.id}) — ${entry.description}`);
-		});
-		console.log("  a. all");
-		const answer = (await rl.question("Selection (comma-separated numbers or 'a'): ")).trim();
+		const prompt = renderSelectorPrompt();
+		const answer = (await rl.question(prompt)).trim();
 		if (answer.toLowerCase() === "a") {
 			return options.map((entry) => entry.id);
 		}
@@ -110,12 +97,16 @@ export const runCli = async (argv: string[]): Promise<void> => {
 		return;
 	}
 
-	io.log("");
-	io.log(`${ICONS.ok} Available now:`);
-	for (const entry of installableCatalog) {
-		io.log(`  ${ICONS.dot} ${entry.label} (${entry.id})`);
+	const comingSoon = getComingSoonExtensions();
+
+	for (const line of renderHeader()) {
+		io.log(line);
 	}
-	io.log(`  ${ICONS.wait} More plugins are planned and will be added in future phases.`);
+
+	const listLines = renderExtensionList(installableCatalog, comingSoon);
+	for (const line of listLines) {
+		io.log(line);
+	}
 
 	const allExtensionIds = installableCatalog.map((entry) => entry.id);
 	const normalized = normalizeRequestedExtensionIds(args.extensions, allExtensionIds);
@@ -129,25 +120,21 @@ export const runCli = async (argv: string[]): Promise<void> => {
 
 	let selected = resolveSelectedExtensions(allExtensionIds, args);
 	if (selected.length === 0) {
-		if (stdin.isTTY) {
+		if (isTTY) {
 			selected = await promptForExtensions(installableCatalog);
 		} else {
+			for (const line of renderAutoSelect(allExtensionIds)) {
+				io.log(line);
+			}
 			selected = [...allExtensionIds];
 		}
 	}
 
 	const result = await runInstaller(rootDir, selected, args, io);
-	const ready = result.results.filter((entry) => entry.ready).length;
-	const withSkills = result.results.filter((entry) => entry.skillInstalled).length;
 
-	io.log("");
-	io.log(`  ${ICONS.ok} Ready: ${ready}/${result.results.length}`);
-	io.log(`  ${ICONS.dot} Skills installed: ${withSkills}`);
-	if (result.piPath !== null) {
-		io.log(`  ${ICONS.pi} pi: ${result.piPath}`);
+	for (const line of renderResults(result)) {
+		io.log(line);
 	}
-	io.log(`  ${ICONS.auth} Auth: uses existing Pi provider auth/environment`);
-	io.log("");
 };
 
 const isMain = (() => {
