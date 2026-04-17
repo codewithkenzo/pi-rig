@@ -13,7 +13,7 @@ Theme Switcher lets the agent switch, preview, and cycle themes during a live se
 
 ## Quick demo
 
-[![Theme Switcher demo preview](../../docs/media/demos/theme-switcher-demo-poster.jpg)](../../docs/media/demos/theme-switcher-demo.mp4)
+[![Theme Switcher demo](../../docs/media/demos/theme-switcher-demo.gif)](../../docs/media/demos/theme-switcher-demo.mp4)
 
 Shows live preview, theme changes, and session-aware runtime theming in action.
 

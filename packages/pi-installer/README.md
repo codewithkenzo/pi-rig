@@ -4,7 +4,7 @@ Interactive installer for all published Pi Rig extensions.
 
 ## Quick demo
 
-[![Pi Rig installer demo preview](../../docs/media/demos/pi-rig-installer-demo-poster.jpg)](../../docs/media/demos/pi-rig-installer-demo.mp4)
+[![Pi Rig installer demo](../../docs/media/demos/pi-rig-installer-demo.gif)](../../docs/media/demos/pi-rig-installer-demo.mp4)
 
 Shows the interactive install path for the published Pi Rig packages.
 
