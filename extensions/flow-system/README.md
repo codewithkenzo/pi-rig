@@ -68,29 +68,31 @@ src/
 
 ## Install
 
-### Direct setup
-
-#### Bun (`bunx`)
+### One command (published package)
 
 ```bash
-bunx @codewithkenzo/pi-dispatch@latest
+pi install npm:@codewithkenzo/pi-dispatch
 ```
 
-#### npm (`npx`)
+### All Pi Rig extensions at once
+
+#### Bun
 
 ```bash
-npx @codewithkenzo/pi-dispatch@latest
+bunx @codewithkenzo/pi-rig@latest
 ```
 
-### From source (Pi Rig suite)
+#### npm
 
 ```bash
-bun run setup
+npx @codewithkenzo/pi-rig@latest
 ```
 
-or individually:
+### From source
 
 ```bash
+bun run setup              # full workspace
+# or individually:
 pi install ./extensions/flow-system
 ```
 

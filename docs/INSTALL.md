@@ -6,9 +6,16 @@
 - [Pi coding agent](https://github.com/badlogic/pi-mono) installed and available on your machine
 - a fresh Pi coding agent session after install so new command surfaces load cleanly
 
-## Direct setup (recommended)
+## Single extension (fastest)
 
-Current one-command installer scope: **Pi Dispatch + Theme Switcher**.
+Install one extension directly with `pi install`:
+
+```bash
+pi install npm:@codewithkenzo/pi-dispatch
+pi install npm:@codewithkenzo/pi-theme-switcher
+```
+
+## All extensions at once
 
 ### Bun (`bunx`)
 
@@ -22,21 +29,20 @@ bunx @codewithkenzo/pi-rig@latest
 npx @codewithkenzo/pi-rig@latest
 ```
 
-If you prefer local development or full workspace control, use source install below.
+The Pi Rig installer shows an interactive selector in TTY mode. Non-interactive mode (agents, CI) auto-installs all available extensions.
 
 ### For your agent (copy/paste prompt)
 
 ````md
-Install Pi Rig with direct setup.
+Install Pi Rig extensions.
 
 Requirements:
-- Prefer Bun:
-  - `bunx @codewithkenzo/pi-rig@latest`
-- If Bun is unavailable, use npm:
-  - `npx @codewithkenzo/pi-rig@latest`
-- Install current core set only:
-  - Pi Dispatch
-  - Theme Switcher
+- Install individually:
+  - `pi install npm:@codewithkenzo/pi-dispatch`
+  - `pi install npm:@codewithkenzo/pi-theme-switcher`
+- Or install all at once:
+  - `bunx @codewithkenzo/pi-rig@latest` (if Bun available)
+  - `npx @codewithkenzo/pi-rig@latest` (fallback)
 - Restart Pi if needed.
 - Verify:
   - `/flow profiles`
@@ -44,9 +50,9 @@ Requirements:
 - Report exactly what was installed.
 ````
 
-## Current source path
+## From source
 
-Use this if direct setup is unavailable in your environment or you want a local dev install.
+Use this for local development or full workspace control.
 
 From the repository root:
 
@@ -62,16 +68,16 @@ That flow:
 4. copies bundled skills
 5. installs each extension into the Pi coding agent
 
-## Current source installer CLI
+## Source installer CLI
 
-If you want the selector flow from the repository today:
+If you want the selector flow from the repository:
 
 ```bash
 bun run --filter @codewithkenzo/pi-rig build
 node packages/pi-installer/dist/cli.js
 ```
 
-Useful options:
+Options:
 
 ```bash
 node packages/pi-installer/dist/cli.js --all
@@ -81,7 +87,7 @@ node packages/pi-installer/dist/cli.js --no-skills
 node packages/pi-installer/dist/cli.js --pi-path /absolute/path/to/pi
 ```
 
-## Individual package install from source
+## Individual extensions from source
 
 ```bash
 pi install ./extensions/flow-system
@@ -95,7 +101,7 @@ pi install ./extensions/gateway-messaging
 pi install ./extensions/notify-cron
 ```
 
-Current source path to public label mapping:
+Source path to public label mapping:
 
 - `extensions/flow-system` → Pi Dispatch
 - `extensions/theme-switcher` → Theme Switcher
@@ -127,14 +133,12 @@ Usually one of these applies:
 2. the extension path is not present in `pi list`
 3. project-local Pi settings differ from user-level settings
 
-Fast recovery path (current one-command scope):
+Fast recovery path:
 
 ```bash
-pi install ./extensions/flow-system
-pi install ./extensions/theme-switcher
+pi install npm:@codewithkenzo/pi-dispatch
+pi install npm:@codewithkenzo/pi-theme-switcher
 ```
-
-(Optional source plugins can still be installed manually.)
 
 Then start a fresh Pi coding agent session.
 

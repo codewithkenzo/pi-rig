@@ -66,29 +66,31 @@ skills/
 
 ## Install
 
-### Direct setup
-
-#### Bun (`bunx`)
+### One command (published package)
 
 ```bash
-bunx @codewithkenzo/pi-theme-switcher@latest
+pi install npm:@codewithkenzo/pi-theme-switcher
 ```
 
-#### npm (`npx`)
+### All Pi Rig extensions at once
+
+#### Bun
 
 ```bash
-npx @codewithkenzo/pi-theme-switcher@latest
+bunx @codewithkenzo/pi-rig@latest
 ```
 
-### From source (Pi Rig suite)
+#### npm
 
 ```bash
-bun run setup
+npx @codewithkenzo/pi-rig@latest
 ```
 
-or individually:
+### From source
 
 ```bash
+bun run setup              # full workspace
+# or individually:
 pi install ./extensions/theme-switcher
 ```
 

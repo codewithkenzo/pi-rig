@@ -44,40 +44,41 @@ Pi Rig is built on [pi-mono](https://github.com/badlogic/pi-mono), the open-sour
 
 ## Install
 
-### Direct setup (recommended)
+### Individual extensions (recommended for one plugin)
 
-Current one-command scope installs:
+```bash
+pi install npm:@codewithkenzo/pi-dispatch
+pi install npm:@codewithkenzo/pi-theme-switcher
+```
 
-- Pi Dispatch
-- Theme Switcher
+### All at once (recommended for full suite)
 
-#### Bun (`bunx`)
+#### Bun
 
 ```bash
 bunx @codewithkenzo/pi-rig@latest
 ```
 
-#### npm (`npx`)
+#### npm
 
 ```bash
 npx @codewithkenzo/pi-rig@latest
 ```
 
-If you prefer a local dev install or full workspace setup, use source install below.
+The Pi Rig installer selects and installs all published extensions interactively. Non-interactive mode (agents, CI) auto-installs everything.
 
 ### For your agent (copy/paste prompt)
 
 ````md
-Install Pi Rig using direct setup.
+Install Pi Rig extensions.
 
 Requirements:
-- Prefer Bun:
-  - `bunx @codewithkenzo/pi-rig@latest`
-- If Bun is unavailable, use npm:
-  - `npx @codewithkenzo/pi-rig@latest`
-- Install the current core only:
-  - Pi Dispatch
-  - Theme Switcher
+- Install individually:
+  - `pi install npm:@codewithkenzo/pi-dispatch`
+  - `pi install npm:@codewithkenzo/pi-theme-switcher`
+- Or install all at once:
+  - `bunx @codewithkenzo/pi-rig@latest` (if Bun available)
+  - `npx @codewithkenzo/pi-rig@latest` (fallback)
 - Restart Pi if needed.
 - Verify:
   - `/flow profiles`
@@ -109,22 +110,6 @@ Optional source-preview extensions:
 ```bash
 pi install ./extensions/gateway-messaging
 pi install ./extensions/notify-cron
-```
-
-### Installer CLI
-
-```bash
-bun run --filter @codewithkenzo/pi-rig build
-node packages/pi-installer/dist/cli.js
-```
-
-Options:
-
-```bash
-node packages/pi-installer/dist/cli.js --all
-node packages/pi-installer/dist/cli.js --extensions flow-system,theme-switcher
-node packages/pi-installer/dist/cli.js --dry-run
-node packages/pi-installer/dist/cli.js --pi-path /absolute/path/to/pi
 ```
 
 ### Verify
