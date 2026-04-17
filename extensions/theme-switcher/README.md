@@ -11,6 +11,10 @@ Part of the [Pi Rig suite](https://github.com/codewithkenzo/pi-rig).
 
 Theme Switcher lets the agent switch, preview, and cycle themes during a live session. It persists the active theme across restarts and injects current-theme context into each session.
 
+## Quick demo
+
+- [Watch the Theme Switcher demo (MP4)](../../docs/media/demos/theme-switcher-demo.mp4) — shows live preview, theme changes, and session-aware runtime theming in action.
+
 ## Surfaces
 
 | Type | Name | Purpose |

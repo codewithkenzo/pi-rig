@@ -13,6 +13,12 @@ Pi Rig handles the execution, messaging, routing, and workflow state layers that
 
 Pi Rig is built on [pi-mono](https://github.com/badlogic/pi-mono), the open-source Pi coding agent by Mario Zechner, and targets the Pi extension ecosystem around `@mariozechner/pi-agent-core`.
 
+## Quick demos
+
+- [Pi Dispatch demo (MP4)](./docs/media/demos/pi-dispatch-demo.mp4) — queue-aware profile runs, background jobs, and the flow deck in one short clip.
+- [Theme Switcher demo (MP4)](./docs/media/demos/theme-switcher-demo.mp4) — live theme preview, set, and cycle flow inside a real Pi session.
+- [Pi Rig installer demo (MP4)](./docs/media/demos/pi-rig-installer-demo.mp4) — the installer path for getting the published extensions onto a fresh Pi setup.
+
 ## Extensions
 
 | Extension | Package | Status | Surfaces | Notes |
@@ -116,12 +122,11 @@ Install Pi Rig extensions.
 - Report what was installed.
 ````
 
-## Preview gallery (WIP)
+## Media
 
-Preview PNG/GIF/video assets are being prepared.
-
-- planned location: `docs/previews/`
-- embed/template guide: [docs/PREVIEWS.md](./docs/PREVIEWS.md)
+- Stable README demo files live in [`docs/media/demos/`](./docs/media/demos/)
+- Historical capture iterations live in [`docs/media/showcase/`](./docs/media/showcase/)
+- Embed/template guidance lives in [docs/PREVIEWS.md](./docs/PREVIEWS.md)
 
 ## Development
 

@@ -11,6 +11,10 @@ Part of the [Pi Rig suite](https://github.com/codewithkenzo/pi-rig).
 
 Pi Dispatch registers execution primitives that let the agent launch tasks with named profiles, manage background jobs, and inject skills into subagent runs — without writing boilerplate for each new task type.
 
+## Quick demo
+
+- [Watch the Pi Dispatch demo (MP4)](../../docs/media/demos/pi-dispatch-demo.mp4) — shows the flow deck, profile routing, and a background run in one short capture.
+
 ## Surfaces
 
 | Type | Name | Purpose |

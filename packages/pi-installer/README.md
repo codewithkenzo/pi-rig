@@ -2,6 +2,10 @@
 
 Interactive installer for all published Pi Rig extensions.
 
+## Quick demo
+
+- [Watch the installer demo (MP4)](../../docs/media/demos/pi-rig-installer-demo.mp4) — shows the interactive install path for the published Pi Rig packages.
+
 ## Install everything
 
 With Bun:
