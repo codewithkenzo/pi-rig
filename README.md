@@ -15,9 +15,20 @@ Pi Rig is built on [pi-mono](https://github.com/badlogic/pi-mono), the open-sour
 
 ## Quick demos
 
-- [Pi Dispatch demo (MP4)](./docs/media/demos/pi-dispatch-demo.mp4) — queue-aware profile runs, background jobs, and the flow deck in one short clip.
-- [Theme Switcher demo (MP4)](./docs/media/demos/theme-switcher-demo.mp4) — live theme preview, set, and cycle flow inside a real Pi session.
-- [Pi Rig installer demo (MP4)](./docs/media/demos/pi-rig-installer-demo.mp4) — the installer path for getting the published extensions onto a fresh Pi setup.
+### Pi Dispatch
+[![Pi Dispatch demo preview](./docs/media/demos/pi-dispatch-demo-poster.jpg)](./docs/media/demos/pi-dispatch-demo.mp4)
+
+Queue-aware profile runs, background jobs, and the flow deck in one short clip.
+
+### Theme Switcher
+[![Theme Switcher demo preview](./docs/media/demos/theme-switcher-demo-poster.jpg)](./docs/media/demos/theme-switcher-demo.mp4)
+
+Live theme preview, set, and cycle flow inside a real Pi session.
+
+### Pi Rig installer
+[![Pi Rig installer demo preview](./docs/media/demos/pi-rig-installer-demo-poster.jpg)](./docs/media/demos/pi-rig-installer-demo.mp4)
+
+The installer path for getting the published extensions onto a fresh Pi setup.
 
 ## Extensions
 
