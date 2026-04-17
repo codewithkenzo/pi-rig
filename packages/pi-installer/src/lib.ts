@@ -353,8 +353,9 @@ const runPackageInstaller = async (
 			continue;
 		}
 
+		const packageSource = `npm:${metadata.packageName}`;
 		io.log(COLORS.blue(`  ${ICONS.pkg} Installing ${metadata.label} (${metadata.packageName})...`));
-		const installOk = await runCommand(piBinary, ["install", metadata.packageName], {
+		const installOk = await runCommand(piBinary, ["install", packageSource], {
 			cwd: root,
 			dryRun: args.dryRun,
 			io,

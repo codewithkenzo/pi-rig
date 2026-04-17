@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { resolve } from "node:path";
-import { getSkillBundles } from "../src/lib.js";
+import { getSkillBundles, runInstaller } from "../src/lib.js";
 import { defaultInstallerArgs, parseInstallerArgs, resolveSelectedExtensions } from "../src/args.js";
 
 describe("parseInstallerArgs", () => {
@@ -78,5 +78,30 @@ describe("getSkillBundles", () => {
 		const notifyCron = await getSkillBundles(root, "notify-cron");
 		expect(gateway.some((bundle) => bundle.name === "gateway-messaging")).toBe(true);
 		expect(notifyCron.some((bundle) => bundle.name === "notify-cron")).toBe(true);
+	});
+});
+
+describe("runInstaller", () => {
+	it("uses npm package sources in package mode", async () => {
+		const logs: string[] = [];
+		const result = await runInstaller(
+			process.cwd(),
+			["theme-switcher"],
+			{
+				...defaultInstallerArgs(),
+				dryRun: true,
+				piPath: "/custom/pi",
+			},
+			{
+				log(message) {
+					logs.push(message);
+				},
+			},
+		);
+
+		expect(result.results).toEqual([{ name: "theme-switcher", ready: true, skillInstalled: true }]);
+		expect(logs.some((message) => message.includes("/custom/pi install npm:@codewithkenzo/pi-theme-switcher"))).toBe(
+			true,
+		);
 	});
 });
