@@ -1,5 +1,12 @@
 # Pi Rig
 
+[![pi-rig](https://img.shields.io/npm/v/@codewithkenzo/pi-rig?label=pi-rig&color=8B5CF6&style=flat-square)](https://www.npmjs.com/package/@codewithkenzo/pi-rig)
+[![pi-dispatch](https://img.shields.io/npm/v/@codewithkenzo/pi-dispatch?label=pi-dispatch&color=3B82F6&style=flat-square)](https://www.npmjs.com/package/@codewithkenzo/pi-dispatch)
+[![pi-theme-switcher](https://img.shields.io/npm/v/@codewithkenzo/pi-theme-switcher?label=pi-theme-switcher&color=3B82F6&style=flat-square)](https://www.npmjs.com/package/@codewithkenzo/pi-theme-switcher)
+[![Bun](https://img.shields.io/badge/Bun-%23000?style=flat-square&logo=bun&logoColor=white)](https://bun.sh)
+[![Effect](https://img.shields.io/badge/Effect--TS-black?style=flat-square&logo=data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48Y2lyY2xlIGN4PSIxMiIgY3k9IjEyIiByPSIxMCIgZmlsbD0iI2ZmZiIvPjwvc3ZnPg==)](https://effect.website)
+[![TypeScript](https://img.shields.io/badge/TypeScript-%23007ACC?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+
 A suite of extensions for the Pi coding agent.
 
 Pi Rig handles the execution, messaging, routing, and workflow state layers that matter most during long agent runs: queued work, remote updates, scheduled delivery, and consistent runtime context.
