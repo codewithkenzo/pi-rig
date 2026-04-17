@@ -51,84 +51,70 @@ Pi Rig is built on [pi-mono](https://github.com/badlogic/pi-mono), the open-sour
 
 ## Install
 
-### Individual extensions (recommended for one plugin)
+> Requires [Pi coding agent](https://github.com/badlogic/pi-mono) on your PATH.
+
+### Pick one extension
 
 ```bash
 pi install npm:@codewithkenzo/pi-dispatch
+```
+
+```bash
 pi install npm:@codewithkenzo/pi-theme-switcher
 ```
 
-### All at once (recommended for full suite)
+### Install everything
 
-#### Bun
+With Bun:
 
 ```bash
 bunx @codewithkenzo/pi-rig@latest
 ```
 
-#### npm
+With npm:
 
 ```bash
 npx @codewithkenzo/pi-rig@latest
 ```
 
-The Pi Rig installer selects and installs all published extensions interactively. Non-interactive mode (agents, CI) auto-installs everything.
-
-### For your agent (copy/paste prompt)
-
-````md
-Install Pi Rig extensions.
-
-Requirements:
-- Install individually:
-  - `pi install npm:@codewithkenzo/pi-dispatch`
-  - `pi install npm:@codewithkenzo/pi-theme-switcher`
-- Or install all at once:
-  - `bunx @codewithkenzo/pi-rig@latest` (if Bun available)
-  - `npx @codewithkenzo/pi-rig@latest` (fallback)
-- Restart Pi if needed.
-- Verify:
-  - `/flow profiles`
-  - `/theme list`
-- Report exactly what was installed.
-````
-
 ### From source
 
-From the repository root:
-
 ```bash
+git clone https://github.com/codewithkenzo/pi-rig.git
+cd pi-rig
 bun run setup
 ```
 
-This installs workspace dependencies, builds the extensions, copies bundled skills, and registers each extension with the Pi coding agent.
-
-Restart the Pi coding agent after setup so the new command surfaces load cleanly.
-
-### Individual extensions (source)
-
-```bash
-pi install ./extensions/flow-system
-pi install ./extensions/theme-switcher
-```
-
-Optional source-preview extensions:
+<details>
+<summary>Source-only extensions (not yet published)</summary>
 
 ```bash
 pi install ./extensions/gateway-messaging
 pi install ./extensions/notify-cron
 ```
 
+</details>
+
 ### Verify
 
-After install, open a fresh Pi coding agent session:
+Open a fresh Pi session and run:
 
 ```
 /flow profiles
 /theme list
 ```
 
-If you manually install source-preview plugins, also verify their commands.
+### Agent prompt (copy/paste)
+
+````md
+Install Pi Rig extensions.
+
+- `pi install npm:@codewithkenzo/pi-dispatch`
+- `pi install npm:@codewithkenzo/pi-theme-switcher`
+- Restart Pi if needed.
+- Verify: `/flow profiles` and `/theme list`
+- Report what was installed.
+````
 
 ## Preview gallery (WIP)
 
