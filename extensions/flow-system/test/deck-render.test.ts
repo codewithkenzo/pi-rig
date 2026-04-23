@@ -3,6 +3,7 @@ import { sanitize } from "../src/deck/summary.js";
 import { renderHeader } from "../src/deck/header.js";
 import { renderSummary } from "../src/deck/summary.js";
 import { renderColumns } from "../src/deck/columns.js";
+import { computeDeckFrameLayout } from "../src/deck/frame.js";
 import type { ThemeEngine } from "../../../shared/theme/engine.js";
 import type { Palette, ThemeConfig } from "../../../shared/theme/types.js";
 import type { AnimationState } from "../../../shared/theme/animation.js";
@@ -214,7 +215,7 @@ describe("renderColumns — compact mode (width < 96)", () => {
 		const config = mockConfig();
 		const j = makeJob();
 		const feed = emptyFeed();
-		const lines = renderColumns(engine, palette, config, j, feed, mockAnimState(), 80, true);
+		const lines = renderColumns(engine, palette, config, j, feed, mockAnimState(), 80, true, 10);
 		expect(Array.isArray(lines)).toBe(true);
 		expect(lines.length).toBeGreaterThan(0);
 	});
@@ -225,7 +226,7 @@ describe("renderColumns — compact mode (width < 96)", () => {
 		const config = mockConfig();
 		const j = makeJob();
 		const feed = emptyFeed();
-		const lines = renderColumns(engine, palette, config, j, feed, mockAnimState(), 80, true);
+		const lines = renderColumns(engine, palette, config, j, feed, mockAnimState(), 80, true, 10);
 		// In compact mode, no column separator
 		expect(lines.join("")).not.toContain("│");
 	});
@@ -236,7 +237,7 @@ describe("renderColumns — compact mode (width < 96)", () => {
 		const config = mockConfig();
 		const j = makeJob();
 		const feed: FeedState = { lines: [{ text: "activity", ts: 2000 }], last_progress: undefined, last_assistant: undefined };
-		const lines = renderColumns(engine, palette, config, j, feed, mockAnimState(), 100, false);
+		const lines = renderColumns(engine, palette, config, j, feed, mockAnimState(), 100, false, 12);
 		const all = lines.join("\n");
 		expect(all).not.toContain("│");
 		expect(all).toContain("WORK ITEM");
@@ -257,7 +258,7 @@ describe("renderColumns — compact mode (width < 96)", () => {
 			error: "Restored active job has no live process; stale restore: previous process not live",
 		};
 		expect(() => {
-			renderColumns(engine, palette, config, j, emptyFeed(), mockAnimState(), 80, true);
+			renderColumns(engine, palette, config, j, emptyFeed(), mockAnimState(), 80, true, 10);
 		}).not.toThrow();
 	});
 
@@ -275,14 +276,12 @@ describe("renderColumns — compact mode (width < 96)", () => {
 			},
 		});
 
-		const lines = renderColumns(engine, palette, config, j, emptyFeed(), mockAnimState(), 80, true);
+		const lines = renderColumns(engine, palette, config, j, emptyFeed(), mockAnimState(), 80, true, 10);
 		const all = lines.join("\n");
-		expect(all).toContain("Model");
+		expect(all).toContain("MODEL");
 		expect(all).toContain("gpt-5.4@openai");
-		expect(all).toContain("Reasoning");
-		expect(all).toContain("high");
-		expect(all).toContain("Effort");
-		expect(all).toContain("minimal");
+		expect(all).toContain("r:high");
+		expect(all).toContain("e:minimal");
 	});
 
 	it("shows default fallback values when envelope data is missing", () => {
@@ -297,13 +296,91 @@ describe("renderColumns — compact mode (width < 96)", () => {
 			createdAt: 1000,
 		};
 
-		const lines = renderColumns(engine, palette, config, j, emptyFeed(), mockAnimState(), 80, true);
+		const lines = renderColumns(engine, palette, config, j, emptyFeed(), mockAnimState(), 80, true, 10);
 		const all = lines.join("\n");
-		expect(all).toContain("Model");
+		expect(all).toContain("MODEL");
 		expect(all).toContain("(default)");
-		expect(all).toContain("Reasoning");
-		expect(all).toContain("(profile default)");
-		expect(all).toContain("Effort");
-		expect(all).toContain("auto");
+		expect(all).toContain("r:(profile default)");
+		expect(all).toContain("e:auto");
+	});
+
+	it("keeps columns section height stable across streaming state deltas", () => {
+		const engine = mockEngine();
+		const palette = mockPalette();
+		const config = mockConfig();
+		const base = makeJob({
+			status: "running",
+			lastProgress: "starting",
+		});
+		const quiet = renderColumns(engine, palette, config, base, emptyFeed(), mockAnimState(), 80, true, 10);
+		const busy = renderColumns(
+			engine,
+			palette,
+			config,
+			makeJob({
+				status: "running",
+				toolCount: 3,
+				writingSummary: true,
+				summaryPhaseSource: "explicit",
+				recentTools: ["read", "bash", "edit"],
+			}),
+			{
+				lines: [
+					{ text: "line 1", ts: 1000 },
+					{ text: "line 2", ts: 1100 },
+					{ text: "line 3", ts: 1200 },
+				],
+				last_progress: "line 3",
+				last_assistant: "line 3",
+			},
+			mockAnimState(),
+			80,
+			true,
+			10,
+		);
+
+		expect(quiet).toHaveLength(10);
+		expect(busy).toHaveLength(10);
+	});
+
+	it("keeps summary section height stable across short and long output", () => {
+		const engine = mockEngine();
+		const palette = mockPalette();
+		const config = mockConfig();
+		const shortLines = renderSummary(
+			engine,
+			palette,
+			config,
+			makeJob({ output: "short" }),
+			0,
+			80,
+			8,
+			mockAnimState(),
+		);
+		const longLines = renderSummary(
+			engine,
+			palette,
+			config,
+			makeJob({ output: Array.from({ length: 20 }, (_, i) => `line ${i}`).join("\n") }),
+			3,
+			80,
+			8,
+			mockAnimState(),
+		);
+
+		expect(shortLines).toHaveLength(8);
+		expect(longLines).toHaveLength(8);
+	});
+});
+
+describe("computeDeckFrameLayout", () => {
+	it("locks deck frame height to terminal layout, not content", () => {
+		const wide = computeDeckFrameLayout(36, false);
+		const compact = computeDeckFrameLayout(24, true);
+
+		expect(wide.frameHeight).toBe(wide.columnsHeight + wide.summaryHeight + 6);
+		expect(compact.frameHeight).toBe(compact.columnsHeight + compact.summaryHeight + 6);
+		expect(wide.frameHeight).toBeLessThanOrEqual(Math.floor(36 * 0.88));
+		expect(compact.frameHeight).toBeLessThanOrEqual(Math.floor(24 * 0.88));
 	});
 });

@@ -31,49 +31,59 @@ export const renderSummary = (
 	job: FlowJob | undefined,
 	scrollOffset: number,
 	width: number,
-	maxLines: number,
+	sectionHeight: number,
 	animState: AnimationState,
 ): string[] => {
 	const reducedMotion = !config.animation.enabled || config.animation.reducedMotion;
 	const divider = engine.fg("border", "─".repeat(width));
-
-	if (job === undefined) {
-		return [
-			divider,
-			engine.fg("muted", "  No flow jobs yet."),
-			divider,
-		];
+	if (sectionHeight <= 2) {
+		return [divider, divider].slice(0, Math.max(1, sectionHeight));
 	}
 
+	const innerHeight = Math.max(1, sectionHeight - 2);
+	const contentLines = Math.max(1, innerHeight - 3);
 	const innerWidth = Math.max(20, width - 4);
+
+	if (job === undefined) {
+		const emptyBody = [
+			engine.fg("label", "  OUTPUT"),
+			engine.fg("muted", "  No flow jobs yet."),
+			...Array.from({ length: contentLines }, () => ""),
+			"",
+		].slice(0, innerHeight);
+		while (emptyBody.length < innerHeight) {
+			emptyBody.push("");
+		}
+		return [divider, ...emptyBody, divider];
+	}
+
 	const content = pickContent(job);
 	const allLines = content.length > 0 ? wrapLines(content, innerWidth) : ["(no output)"];
-
 	const totalLines = allLines.length;
-	const maxScroll = Math.max(0, totalLines - maxLines);
+	const maxScroll = Math.max(0, totalLines - contentLines);
 	const clamped = Math.min(scrollOffset, maxScroll);
-	const visible = allLines.slice(clamped, clamped + maxLines);
+	const visible = allLines.slice(clamped, clamped + contentLines);
+	while (visible.length < contentLines) {
+		visible.push("");
+	}
 
-	const cwdStr =
-		job.cwd !== undefined
-			? engine.fg("dim", `  cwd: ${width > 120 ? job.cwd : basename(job.cwd)}`)
-			: undefined;
-
-	const hasMore = totalLines > maxLines;
-	const scrollHint = hasMore
+	const cwdLine = job.cwd !== undefined
+		? engine.fg("dim", `  cwd: ${width > 120 ? job.cwd : basename(job.cwd)}`)
+		: "";
+	const hintLine = totalLines > contentLines
 		? withMotion(
 			() => breathe(`  PgUp/PgDn · line ${clamped + 1}/${totalLines}`, palette.semantic.dim, animState),
 			engine.fg("dim", `  PgUp/PgDn · line ${clamped + 1}/${totalLines}`),
 			reducedMotion,
 		)
-		: undefined;
+		: "";
 
 	return [
 		divider,
 		engine.fg("label", "  OUTPUT"),
-		...(cwdStr !== undefined ? [cwdStr] : []),
+		truncateToWidth(cwdLine, width),
 		...visible.map((line) => engine.fg("text", `  ${truncateToWidth(line, innerWidth)}`)),
-		...(scrollHint !== undefined ? [scrollHint] : []),
+		truncateToWidth(hintLine, width),
 		divider,
 	];
 };

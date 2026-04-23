@@ -28,7 +28,7 @@ describe("flow-system index", () => {
 		await flowSystem(pi);
 		await flowSystem(pi);
 
-		expect(registerToolCount).toBe(2);
+		expect(registerToolCount).toBe(3);
 		expect(registerCommandCount).toBe(1);
 		expect(registerShortcutCount).toBe(1);
 		expect(registerEventCount).toBe(4);
@@ -61,7 +61,7 @@ describe("flow-system index", () => {
 		await expect(flowSystem(pi)).rejects.toThrow("temporary setup failure");
 		await flowSystem(pi);
 
-		expect(registerToolCount).toBe(3);
+		expect(registerToolCount).toBe(4);
 		expect(registerCommandCount).toBe(1);
 		expect(registerEventCount).toBe(4);
 	});
@@ -75,7 +75,7 @@ describe("flow-system index", () => {
 		const pi = {
 			registerTool: () => {
 				registerToolCount += 1;
-				if (registerToolCount === 3) {
+				if (registerToolCount === 99) {
 					throw new Error("tool registration failure");
 				}
 			},
@@ -97,7 +97,7 @@ describe("flow-system index", () => {
 		await expect(flowSystem(pi)).rejects.toThrow("shortcut registration failure");
 		await flowSystem(pi);
 
-		expect(registerToolCount).toBe(2);
+		expect(registerToolCount).toBe(3);
 		expect(registerCommandCount).toBe(1);
 		expect(registerShortcutCount).toBe(2);
 		expect(registerEventCount).toBe(4);

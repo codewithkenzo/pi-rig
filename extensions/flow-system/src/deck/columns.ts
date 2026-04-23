@@ -1,6 +1,6 @@
 import type { ThemeEngine } from "../../../../shared/theme/engine.js";
 import type { Palette, ThemeConfig } from "../../../../shared/theme/types.js";
-import { spin, breathe, withMotion, type AnimationState } from "../../../../shared/theme/animation.js";
+import { breathe, spin, withMotion, type AnimationState } from "../../../../shared/theme/animation.js";
 import { ellipsize } from "../../../../shared/ui/hud.js";
 import type { FlowJob } from "../types.js";
 import type { FeedState } from "./state.js";
@@ -83,116 +83,85 @@ const modelText = (job: FlowJob): string => {
 const reasoningText = (job: FlowJob): string => job.envelope?.reasoning ?? "(profile default)";
 const effortText = (job: FlowJob): string => job.envelope?.effort ?? "auto";
 
-const metaRows = (job: FlowJob): Array<[string, string, "value" | "dim" | "success"]> => {
-	const rows: Array<[string, string, "value" | "dim" | "success"]> = [];
-	rows.push(["Model", modelText(job), "value"]);
-	rows.push(["Reasoning", reasoningText(job), "value"]);
-	rows.push(["Effort", effortText(job), "value"]);
-
-	if (job.toolCount !== undefined) {
-		rows.push(["Tool calls", `${job.toolCount}`, "value"]);
-	}
-	if (job.status === "running" && job.writingSummary === true) {
-		rows.push([
-			"Phase",
-			`writing-summary${job.summaryPhaseSource !== undefined ? `:${job.summaryPhaseSource}` : ""}`,
-			"success",
-		]);
-	}
-	if (job.startedAt !== undefined) {
-		rows.push(["Started", fmtTime(job.startedAt), "dim"]);
-	}
-	if (job.finishedAt !== undefined && job.startedAt !== undefined) {
-		rows.push(["Duration", fmtDuration(job.finishedAt - job.startedAt), "dim"]);
-	} else if (job.startedAt !== undefined && (job.status === "running" || job.status === "pending")) {
-		rows.push(["Running", fmtDuration(Date.now() - job.startedAt), "dim"]);
-	}
-	return rows;
-};
-
-const toneText = (
+const renderRow = (
 	engine: ThemeEngine,
-	tone: "value" | "dim" | "success",
+	label: string,
 	value: string,
-): string => {
-	if (tone === "dim") {
-		return engine.fg("dim", value);
-	}
-	if (tone === "success") {
-		return engine.fg("success", value);
-	}
-	return engine.fg("value", value);
-};
+	width: number,
+	one: "text" | "accent" | "muted" = "text",
+): string =>
+	engine.fg(one, truncateToWidth(`  ${label.padEnd(10)} ${value}`, width));
 
-const renderHierarchy = (
+const buildTopCandidates = (
 	engine: ThemeEngine,
 	palette: Palette,
 	config: ThemeConfig,
 	job: FlowJob | undefined,
-	feed: FeedState,
 	animState: AnimationState,
-	width: number,
-	compact: boolean,
 	reducedMotion: boolean,
+	width: number,
 ): string[] => {
 	if (job === undefined) {
-		return [engine.fg("muted", truncateToWidth("  No selection", width))];
+		return [
+			engine.fg("header", truncateToWidth("  WORK ITEM", width)),
+			engine.fg("muted", truncateToWidth("  No selection", width)),
+		];
 	}
 
-	const lines: string[] = [];
-	const isStale = job.error?.includes("stale restore") === true;
-	const valueTone: "value" | "inactive" = isStale ? "inactive" : "value";
 	const icon = spinnerIcon(job, palette, config, animState, reducedMotion);
-	const tone = statusTone(job.status);
-	const status = engine.fg(tone, `${icon} ${job.status}`);
+	const status = engine.fg(statusTone(job.status), `${icon} ${job.status}`);
+	const model = `${modelText(job)} · r:${reasoningText(job)} · e:${effortText(job)}`;
+	const timeParts = [job.startedAt !== undefined ? `start ${fmtTime(job.startedAt)}` : undefined];
+	if (job.finishedAt !== undefined && job.startedAt !== undefined) {
+		timeParts.push(`dur ${fmtDuration(job.finishedAt - job.startedAt)}`);
+	} else if (job.startedAt !== undefined && (job.status === "running" || job.status === "pending")) {
+		timeParts.push(`run ${fmtDuration(Date.now() - job.startedAt)}`);
+	}
+	const stateParts = [job.toolCount !== undefined ? `tools ${job.toolCount}` : undefined];
+	if (job.status === "running" && job.writingSummary === true) {
+		stateParts.push(`writing-summary${job.summaryPhaseSource !== undefined ? `:${job.summaryPhaseSource}` : ""}`);
+	}
+	const tools = Array.isArray(job.recentTools) && job.recentTools.length > 0
+		? job.recentTools.slice(-4).join(" · ")
+		: "—";
 
-	lines.push(engine.fg("header", truncateToWidth("  WORK ITEM", width)));
-	lines.push(
+	return [
+		engine.fg("header", truncateToWidth("  WORK ITEM", width)),
 		engine.fg(
 			"text",
 			truncateToWidth(`  TASK       ${ellipsize(job.task, Math.max(20, width - 13))}`, width),
 		),
-	);
-	lines.push(
-		truncateToWidth(
-			`  AGENT      ${engine.strip(status)} ${job.profile}`,
-			width,
-		),
-	);
+		truncateToWidth(`  AGENT      ${engine.strip(status)} ${job.profile}`, width),
+		renderRow(engine, "MODEL", model, width),
+		renderRow(engine, "TIME", timeParts.filter(Boolean).join(" · ") || "—", width),
+		renderRow(engine, "STATE", stateParts.filter(Boolean).join(" · ") || "—", width),
+		renderRow(engine, "TOOLS", tools, width, tools === "—" ? "muted" : "accent"),
+	];
+};
 
-	const rows = metaRows(job);
-	for (const [label, value, rowTone] of rows) {
-		const labelCell = truncateToWidth(label, 10);
-		const valueCell = toneText(engine, rowTone, value);
-		const content = `    ${labelCell} ${engine.strip(engine.fg(valueTone, engine.strip(valueCell)))}`;
-		lines.push(truncateToWidth(content, width));
+const buildFeedViewport = (
+	engine: ThemeEngine,
+	feed: FeedState,
+	job: FlowJob | undefined,
+	width: number,
+	feedLines: number,
+): string[] => {
+	if (feedLines <= 0) {
+		return [];
 	}
-
-	if (Array.isArray(job.recentTools) && job.recentTools.length > 0) {
-		const tools = job.recentTools.slice(-4).join(" · ");
-		lines.push(engine.fg("accent", truncateToWidth(`  TOOLS      ${tools}`, width)));
-	}
-
-	lines.push(engine.fg("header", truncateToWidth("  LIVE ACTIVITY", width)));
-	const visible = feed.lines.slice(-(compact ? 5 : 8));
-	for (const entry of visible) {
-		const ts = engine.fg("dim", relTs(entry.ts, job.startedAt).padStart(5));
+	const visible = feed.lines.slice(-feedLines);
+	const rendered = visible.map((entry) => {
+		const ts = engine.fg("dim", relTs(entry.ts, job?.startedAt).padStart(5));
 		const text = engine.fg("text", truncateToWidth(entry.text, Math.max(10, width - 9)));
-		lines.push(`${ts}  ${text}`);
+		return `${ts}  ${text}`;
+	});
+	if (rendered.length === 0) {
+		rendered.push(engine.fg("muted", truncateToWidth("  (waiting…)", width)));
 	}
-	if (visible.length === 0) {
-		lines.push(engine.fg("muted", truncateToWidth("  (waiting…)", width)));
+	while (rendered.length < feedLines) {
+		rendered.push("");
 	}
-	if (feed.lines.length > 0) {
-		const trailer = withMotion(
-			() => breathe("  auto-refresh", palette.semantic.muted, animState),
-			engine.fg("dim", "  auto-refresh"),
-			reducedMotion,
-		);
-		lines.push(truncateToWidth(trailer, width));
-	}
-
-	return lines;
+	return rendered.slice(0, feedLines);
 };
 
 export const renderColumns = (
@@ -204,10 +173,33 @@ export const renderColumns = (
 	animState: AnimationState,
 	width: number,
 	compact: boolean,
+	sectionHeight: number,
 ): string[] => {
 	const reducedMotion = !config.animation.enabled || config.animation.reducedMotion;
 	const divider = engine.fg("border", "─".repeat(width));
-	const contentWidth = compact ? width - 2 : width;
-	const lines = renderHierarchy(engine, palette, config, job, feed, animState, contentWidth, compact, reducedMotion);
-	return [divider, ...lines, divider];
+	if (sectionHeight <= 2) {
+		return [divider, divider].slice(0, Math.max(1, sectionHeight));
+	}
+
+	const innerHeight = Math.max(1, sectionHeight - 2);
+	const maxFeedLines = compact ? 4 : 6;
+	const feedLines = Math.max(1, Math.min(maxFeedLines, Math.max(1, Math.floor((innerHeight - 2) / 3))));
+	const topBudget = Math.max(0, innerHeight - feedLines - 2);
+	const topCandidates = buildTopCandidates(engine, palette, config, job, animState, reducedMotion, width);
+	const topLines = topCandidates.slice(0, topBudget);
+	while (topLines.length < topBudget) {
+		topLines.push("");
+	}
+
+	const activityHeader = engine.fg("header", truncateToWidth("  LIVE ACTIVITY", width));
+	const feedViewport = buildFeedViewport(engine, feed, job, width, feedLines);
+	const trailer = feed.lines.length > 0
+		? withMotion(
+			() => breathe("  auto-refresh", palette.semantic.muted, animState),
+			engine.fg("dim", "  auto-refresh"),
+			reducedMotion,
+		)
+		: "";
+
+	return [divider, ...topLines, activityHeader, ...feedViewport, truncateToWidth(trailer, width), divider];
 };

@@ -18,6 +18,7 @@ import { renderColumns } from "./columns.js";
 import { renderSummary } from "./summary.js";
 import { renderFooter } from "./footer.js";
 import { suspendFlowHud } from "../ui.js";
+import { computeDeckFrameLayout } from "./frame.js";
 
 type CustomFn = NonNullable<ExtensionCommandContext["ui"]["custom"]>;
 
@@ -27,8 +28,19 @@ const SHIFT_UP = "\x1b[1;2A";
 const SHIFT_DN = "\x1b[1;2B";
 
 const SCROLL_STEP = 5;
-const SUMMARY_LINES_WIDE = 8;
-const SUMMARY_LINES_COMPACT = 5;
+
+const padDeckFrame = (lines: string[], frameHeight: number, footerLines = 3): string[] => {
+	const next = lines.slice(0, frameHeight);
+	if (next.length >= frameHeight) {
+		return next;
+	}
+	const pad = Array.from({ length: frameHeight - next.length }, () => "");
+	if (next.length <= footerLines) {
+		return [...pad, ...next];
+	}
+	const footerStart = Math.max(0, next.length - footerLines);
+	return [...next.slice(0, footerStart), ...pad, ...next.slice(footerStart)];
+};
 
 export const showFlowDeck = async (
 	queue: FlowQueueService,
@@ -54,7 +66,7 @@ export const showFlowDeck = async (
 			const ticker = new AnimationTicker();
 
 			// Cache theme to avoid sync disk I/O on every render tick (4–8 fps).
-			// Refreshed on each queue update — theme changes are rare vs render frequency.
+			// Refreshed via invalidate() instead of on each queue update.
 			let cachedTheme = loadTheme(cwd);
 			const theme = () => cachedTheme;
 
@@ -72,7 +84,6 @@ export const showFlowDeck = async (
 			};
 
 			const unsubscribe = queue.subscribe((next: FlowQueue) => {
-				cachedTheme = loadTheme(cwd);
 				const prevId = state.selected_id;
 				state = { ...state, snapshot: next };
 				state = clampSelection(state);
@@ -110,7 +121,10 @@ export const showFlowDeck = async (
 						clearTimeout(state.key_flash.flash_timeout);
 					}
 				},
-				invalidate: () => {},
+				invalidate: () => {
+					cachedTheme = loadTheme(cwd);
+					syncTicker();
+				},
 
 				handleInput: (data: string) => {
 					// Exit
@@ -174,11 +188,12 @@ export const showFlowDeck = async (
 
 					const { engine, palette, config } = theme();
 					const animState = ticker.current;
+					const layout = computeDeckFrameLayout(tui.terminal.rows, compact);
 
 					// Empty state
 					if (state.snapshot.jobs.length === 0) {
 						const divider = engine.fg("border", "─".repeat(width));
-						return [
+						return padDeckFrame([
 							divider,
 							`  ${engine.fg("label", `${DECK_ICONS.agent} FLOW DECK`)}`,
 							divider,
@@ -186,18 +201,36 @@ export const showFlowDeck = async (
 							divider,
 							engine.fg("dim", "  [esc] close"),
 							divider,
-						];
+						], layout.frameHeight);
 					}
 
 					const job = selectedJob();
-					const summaryLines = compact ? SUMMARY_LINES_COMPACT : SUMMARY_LINES_WIDE;
 
-					return [
+					return padDeckFrame([
 						...renderHeader(engine, palette, config, state.snapshot, animState, width, compact),
-						...renderColumns(engine, palette, config, job, state.feed, animState, width, compact),
-						...renderSummary(engine, palette, config, job, state.scroll_offset, width, summaryLines, animState),
+						...renderColumns(
+							engine,
+							palette,
+							config,
+							job,
+							state.feed,
+							animState,
+							width,
+							compact,
+							layout.columnsHeight,
+						),
+						...renderSummary(
+							engine,
+							palette,
+							config,
+							job,
+							state.scroll_offset,
+							width,
+							layout.summaryHeight,
+							animState,
+						),
 						...renderFooter(engine, state.key_flash, width, compact, veryNarrow),
-					];
+					], layout.frameHeight);
 				},
 			};
 		},
