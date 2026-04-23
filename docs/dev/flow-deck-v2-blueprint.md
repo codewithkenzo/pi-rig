@@ -2,113 +2,118 @@
 
 ## Goal
 
-Ship a sharper, more professional `flow-system` overlay for supervising AI subagents in Pi.
+Ship sharper `flow-system` overlay for supervising AI subagents in Pi.
 
 Target outcome:
 - visually closer to curated pro software than current utility layout
-- clearer queue + selected subagent + live progress + summary hierarchy
-- lightweight enough to keep Bun/TUI redraws stable
-- minimal runtime overhead
-- no heavy framework or state-library addition
+- clearer hierarchy: queue rail → selected subagent facts → live stream → summary/output
+- stable overlay height during streaming
+- lightweight enough for Bun/TUI redraws
+- no heavy runtime deps or state-library addition
 
-This is a **spec-first** blueprint, not an implementation commit.
+This file is sprint-0 source of truth for Flow Deck v2 implementation.
 
 ---
 
 ## Design direction from reference
 
-Reference image direction worth preserving:
-- single strong hero overlay, not a sheet of many tiny widgets
-- selected subagent feels primary and obvious
-- queue list reads like operators supervising autonomous workers
-- live progress stream is treated as first-class, not just a sidebar note
-- summary/output area feels like payoff panel
-- palette is calmer, more curated, less rainbow-chip / dashboard-y
-- more negative space and sharper rhythm than current layout
+Reference image establishes target product language.
+
+Keep these traits:
+- one strong hero overlay, not card soup
+- selected subagent feels pinned and obvious
+- queue reads like operators supervising autonomous workers
+- live progress stream is first-class
+- summary/output feels like payoff panel, not dump box
+- palette calmer, more editorial, less rainbow widget chrome
+- top and bottom bars anchor whole frame
+- frame size stays stable while content streams
 
 Retain from current product:
 - terminal-native aesthetic
 - keyboard-first controls
-- lightweight streaming updates
-- explicit status phases like `pending`, `running`, `writing summary`, `done`, `failed`, `cancelled`
+- explicit statuses: `pending`, `running`, `writing summary`, `done`, `failed`, `cancelled`
+- low-overhead redraw model
 
----
-
-## Non-goals
-
-Not in first redesign pass:
-- replacing queue execution model
-- adding web UI or GUI toolkit
-- introducing a heavyweight client-state layer
-- making background jobs auto-resume an already-finished assistant turn
-- persisting a full historical event journal across restarts
-- redesigning unrelated plugin surfaces outside `flow-system`
+Non-goals:
+- changing queue execution semantics
+- adding GUI/web UI
+- adding persistent event journal
+- adding heavyweight client state
+- redesigning non-`flow-system` plugin surfaces
 
 ---
 
 ## Current architecture findings
 
-### Current strengths
-- `queue.ts` already acts as lifecycle source of truth for job status.
-- `executor.ts` now handles summary stabilization and final-answer completion better.
-- `status-tool.ts` gives a strong inspection surface for background jobs.
+### Strengths
+- `queue.ts` already owns lifecycle truth.
+- `progress.ts` already normalizes tool / assistant / summary-phase signals.
+- `tool.ts`, `batch-tool.ts`, and `commands.ts` already centralize run lanes.
 - `ui.ts` already separates compact HUD/widget from overlay deck.
-- overlay HUD suspension is already in place.
+- overlay HUD suspension already exists.
 
-### Current limitations
-1. **Overlay data model too thin**
-   - `FlowJob` has only coarse fields: `lastProgress`, `lastAssistantText`, `recentTools`, `toolCount`, `output`, `error`.
-   - this is enough for a utilitarian deck, but not enough for a premium “subagent supervision” UI.
-
-2. **Feed model is local + lossy**
-   - `deck/state.ts` derives a tiny append-only feed from the selected job only.
-   - switching selection resets feed.
-   - feed is reconstructed from a few snapshot fields, not a proper journal.
-
-3. **Render loop and data model are tightly coupled**
-   - `deck/index.ts` owns queue subscription, ticker lifecycle, selection state, and render state.
-   - makes deeper UX improvements harder without tangling redraw logic.
-
-4. **Current composition reflects implementation constraints more than product intent**
-   - hierarchy reads as “metadata block + output block” instead of “subagent mission control”.
-   - selected job detail and live stream are not rich enough to carry the premium design.
-
-5. **Theme / layout feel too literal for target taste**
-   - current deck can be good-looking, but reference suggests fewer boxes, stronger pacing, calmer color use, and clearer structural confidence.
+### Limits blocking v2
+1. `FlowJob` fields are coarse snapshots, not stream history.
+2. `deck/state.ts` feed is selected-job-only and resets on selection change.
+3. `deck/index.ts` mixes queue subscription, local state, key handling, ticker, and render composition.
+4. current render hierarchy reads like metadata+output, not mission control.
+5. overlay has too many literal dividers and not enough structural pacing.
 
 ---
 
-## Architecture choice
+## Architecture decision
 
-Use a **lightweight two-layer view model**:
+Use two layers.
 
 1. **Execution truth layer** — existing `FlowQueueService`
-   - remains source of truth for lifecycle, envelope, output, errors, tool counts, completion state
+   - still source of truth for job lifecycle
+   - still owns persisted queue snapshot
+   - queue schema stays lean
 
-2. **Deck presentation layer** — new lightweight in-memory journal/store
-   - tracks richer per-job activity rows and overlay-local UI state
-   - designed only for rendering and interaction
-   - no heavy persistence requirement in first pass
+2. **Presentation layer** — new deck-local services
+   - `FlowActivityJournalService` for bounded per-job activity history
+   - `FlowDeckController` for overlay-local selection, focus, follow, scroll state
+   - pure selector layer for derived hero view model
 
-This avoids a full rewrite while unlocking the richer design.
+Do not make journal persistent in v2.
 
 ---
 
-## Proposed data model additions
+## Locked decisions from sprint 0
 
-### 1. `FlowActivityJournalService` (new)
+### Open question resolutions
+1. **Journal scope**
+   - overlay-first only in v2
+   - may later power `flow_status`, but not in this pass
 
-Purpose:
-- keep a bounded, lightweight per-job stream of normalized activity rows for the overlay
-- decouple live stream rendering from coarse `FlowJob` fields
+2. **Completed jobs in queue rail**
+   - yes, retain compact summary preview row when cheap to derive
+   - preview comes from output/error/assistant/progress fallback selector, not extra queue fields
 
-Shape:
-- in-memory only
-- keyed by `jobId`
-- bounded ring buffer per job, eg `64` or `96` rows max
-- each row normalized to small immutable payload
+3. **Layout choice**
+   - yes, use true 3-region hero body:
+     - left rail = queue
+     - center = selected facts + live stream
+     - right = summary/output
 
-Suggested row shape:
+4. **Background completion in HUD**
+   - keep current notify behavior
+   - no extra pinned HUD strip in v2 first pass
+
+### Spec constraints
+- no theme reload on every render tick
+- overlay height fixed while open
+- stream and summary use fixed viewport heights
+- only bounded journal retained in memory
+- no extra deps
+- no queue persistence contract changes
+
+---
+
+## Implementation contract
+
+### New types
 
 ```ts
 interface FlowActivityRow {
@@ -121,229 +126,313 @@ interface FlowActivityRow {
     | "status"
     | "summary"
     | "system";
-  label?: string;
   text: string;
+  label?: string;
   tone?: "default" | "muted" | "active" | "success" | "warning" | "error";
 }
-```
 
-Why:
-- queue remains lean
-- overlay gains a real stream surface
-- selected job can switch without losing visual continuity
-- summary-writing phase can have better UX than one repeated line
-
-### 2. `FlowDeckViewState` (replace/expand current deck state)
-
-Suggested shape:
-
-```ts
 interface FlowDeckViewState {
   selectedId: string | undefined;
-  leftScroll: number;
-  rightScroll: number;
   panelFocus: "queue" | "stream" | "summary";
+  streamScroll: number;
+  summaryScroll: number;
   followMode: boolean;
   compact: boolean;
   snapshot: FlowQueue;
 }
 ```
 
-Why:
-- current single `scroll_offset` is too limiting for richer layout
-- panel focus + follow mode are useful for premium operator UX
+### Journal rules
+- in-memory only
+- extension-wide ephemeral service, created once in `extensions/flow-system/index.ts`
+- injected from extension root into tool / batch / command / overlay registration just like `queue`
+- keyed by `jobId`
+- ring buffer size: `64` rows per job
+- immutable append model
+- dedupe consecutive identical normalized rows for same job
+- append from explicit event producers, not by reconstructing whole history from queue snapshots
+- accepted producers:
+  - `tool.ts` progress path
+  - `batch-tool.ts` progress path
+  - `commands.ts` progress path
+  - queue status transition observer inside journal service subscription
+- deck opening must not backfill fake history beyond journal rows already captured; fallback selectors may still read current `FlowJob` snapshot for empty streams
 
-### 3. Optional lightweight derived snapshot
+### Journal event mapping
+- `tool_start` → `kind: "tool_start"`, `label: toolName`, tone `active`
+- `tool_end` → `kind: "tool_end"`, `label: toolName`, tone `success`
+- `assistant_text` → `kind: "assistant"`, tone `default`
+- `summary_state active=true` → `kind: "summary"`, text `Writing summary…`, tone `warning`
+- `summary_state active=false` → no row unless needed to end stale summary phase
+- status transitions:
+  - `pending` → muted status row
+  - `running` → active status row
+  - `done` → success status row
+  - `failed` → error status row
+  - `cancelled` → muted status row
+- stale restore normalization should append system/status row only if surfaced after restore
 
-Add a selector layer (not necessarily persisted) for:
+### Controller rules
+- selected job defaults to first visible job
+- if selected job disappears, clamp to first visible job
+- `followMode` defaults true
+- changing selection resets `streamScroll` and `summaryScroll` to `0`
+- manual stream scroll disables `followMode`
+- selecting another job re-enables `followMode`
+- summary scroll never affects stream scroll
+- `tab` cycles panel focus: `queue` → `stream` → `summary`
+- focused pane owns arrow/page keys:
+  - `queue`: `↑/↓` moves selection
+  - `stream`: `↑/↓/PgUp/PgDn` scroll stream
+  - `summary`: `↑/↓/PgUp/PgDn` scroll summary
+- if focus is `queue`, stream follows live tail when `followMode=true`
+- if focus is `stream` and user scrolls upward, disable `followMode`
+- `f` toggles follow mode
+- `r` forces render refresh only; no data mutation
+- `c` cancels selected job
+- `esc` and `^C` close overlay
+
+### Selector rules
+Selectors are pure. No side effects.
+
+Required derived fields:
 - queue counts by status
-- selected job model
-- active duration text
-- primary/secondary rows for queue list
-- summary preview text
+- selected job
+- selected job summary preview
+- selected job facts rows
+- queue rail rows with title / subtitle / status / preview
+- stream rows for selected job
+- overlay footer status text
+- compact HUD-compatible summary line reuse where useful
 
-This should be pure derived logic, not another source of truth.
+### Layout contract
+
+Overlay regions:
+1. **Top bar**
+   - title + version-style badge + queue counts + workspace/mode/time
+   - single stable line plus divider
+
+2. **Body**
+   - left rail: queue list
+   - center top: selected subagent facts
+   - center bottom: live progress stream
+   - right: summary/output pane
+
+3. **Bottom bar**
+   - control hints left/center
+   - system metrics/right hints if space allows
+   - final status sentence on narrow widths
+
+### Width behavior
+- compact mode: `< 96`
+  - stack as: header → selected facts → stream → summary → footer
+  - queue rail collapses into short list section above facts
+- wide mode: `>= 96`
+  - 3-region layout
+  - target split starting point:
+    - left rail ~31%
+    - center ~37%
+    - right ~32%
+  - exact widths can clamp for terminal width, but proportions should stay near this balance
+
+### Height behavior
+- overlay max height stable for session
+- body viewport derived once per render from available height
+- stream viewport fixed
+- summary viewport fixed
+- internal content scrolls, outer frame does not grow
+
+### Queue rail content contract
+Each row shows:
+- ordinal / short id hint
+- profile or agent label
+- task title, max 2 wrapped lines in wide mode, 3 in compact stack mode
+- model secondary line when available
+- status at right edge
+- duration or age at right edge secondary position
+- tiny progress bar / recent activity glyphs only if cheap and width allows
+
+Selected row must have:
+- stronger border or prefix marker
+- brighter title
+- clear status emphasis
+
+### Selected facts contract
+Must show:
+- model
+- reasoning
+- tools count
+- started time
+- running/duration
+- task
+- cwd basename or workspace hint if available
+
+Writing summary state must show dedicated phase row.
+
+### Stream contract
+- append-only feel
+- newest rows visible at bottom when `followMode=true`
+- row format:
+  - timestamp
+  - small kind marker / label
+  - text
+- prefer stable single-line rows over wrapped paragraphs
+- if text must truncate, truncate tail, not head
+- empty stream message: muted `Waiting for activity…`
+
+### Summary/output contract
+Priority:
+1. failed job -> `error`
+2. done job -> `output`
+3. cancelled job -> cancelled/error fallback
+4. in-progress summary preview from `lastAssistantText`
+5. fallback task text
+
+Writing summary state:
+- top indicator `IN PROGRESS` or equivalent
+- partial preview allowed
+- clear difference from final output
+
+Done state:
+- final output dominant
+
+Failed state:
+- error dominant
+
+Cancelled state:
+- cancelled reason or muted fallback
+
+### HUD/widget alignment contract
+- compact status text should reuse selector language where practical
+- `writing-summary` wording identical across overlay and HUD
+- no unrelated noise added to widget
 
 ---
 
-## Proposed subsystem layout
+## Module cut for implementation
 
-Keep lightweight. Do **not** add a framework. Refactor into clearer modules.
-
-Suggested structure:
+Target structure for v2:
 
 ```text
 extensions/flow-system/src/
   deck/
-    controller.ts      overlay-local state transitions + input handlers
-    selectors.ts       derive hero view model from queue + journal
-    journal.ts         FlowActivityJournalService (new)
-    layout.ts          width/height math + fixed viewport rules
-    render/
-      frame.ts         shell / root frame
-      queue-list.ts    left rail subagent list
-      details.ts       selected subagent facts
-      stream.ts        live progress stream
-      summary.ts       summary / output pane
-      footer.ts        controls + compact hints
+    journal.ts        FlowActivityJournalService
+    controller.ts     state transitions + input handlers
+    selectors.ts      pure derived view models
+    index.ts          overlay bootstrap only
+    header.ts         top bar
+    columns.ts        wide/compact body composition shell
+    summary.ts        summary pane render
+    footer.ts         bottom controls/status
+    layout.ts         width/height helpers
 ```
 
-Notes:
-- existing files can be evolved instead of fully replaced if diff discipline matters
-- but render responsibilities should become clearer than current `columns.ts` / `summary.ts` split
+Exact responsibilities:
+- `journal.ts`
+  - create service
+  - append event rows
+  - subscribe/snapshot APIs
+  - ring buffer cap
+- `controller.ts`
+  - state init
+  - clamp selection
+  - focus cycling
+  - scroll movement
+  - follow toggle
+  - selection movement
+  - sync on queue snapshot
+- `selectors.ts`
+  - queue counts
+  - selected facts
+  - queue rows
+  - stream rows
+  - summary content selection
+- `index.ts`
+  - queue + journal subscription wiring
+  - ticker lifecycle
+  - render dispatch
+  - input event dispatch to controller
+- `header.ts`, `columns.ts`, `summary.ts`, `footer.ts`
+  - render only
+
+Keep existing file names if diff stays smaller. New files allowed where separation clearly improves code.
 
 ---
 
-## UX model
+## Sprint breakdown
 
-### Primary mental model
-User is not browsing generic jobs.
-User is supervising a **fleet of subagents**.
+### Sprint 0 — refine design direction and implementation spec
+Deliverables:
+- this blueprint tightened and locked
+- ticket dependency chain set
+- acceptance criteria per sprint written
 
-### Core regions
-1. **Queue / subagent rail**
-   - compact list of agents
-   - strong selected row
-   - status + duration + small metadata hints
+Exit criteria:
+- no unresolved questions blocking code
+- exact module cut chosen
+- keyboard model locked
+- layout model locked
 
-2. **Selected subagent facts**
-   - model
-   - reasoning
-   - tool count
-   - started / duration
-   - task / workspace
+### Sprint 1 — lightweight activity journal + deck controller
+Deliverables:
+- `FlowActivityJournalService`
+- controller state split from render loop
+- selectors for queue/facts/stream/summary
+- progress producers append normalized journal rows
 
-3. **Live progress stream**
-   - true append-only feel
-   - tool actions + reasoning/progress/status rows
-   - visually trustworthy and stable
+Acceptance:
+- switching selection does not destroy per-job stream history
+- `writing summary` has dedicated journal rows
+- queue persistence still works unchanged
+- tests cover journal/controller behavior
 
-4. **Summary / output**
-   - partial while writing summary
-   - full output after completion
-   - clear distinction between in-progress and final
+### Sprint 2 — hero overlay + stable streaming layout
+Deliverables:
+- 3-region hero body in wide mode
+- stacked compact mode
+- fixed stream and summary viewports
+- stronger selected row hierarchy
+- calmer header/footer chrome
 
-5. **Controls**
-   - quiet but discoverable
-   - keyboard-first only
+Acceptance:
+- overlay height stable while streaming
+- selected subagent obvious
+- stream reads like true supervision log
+- summary pane clearly distinct from stream
+- render tests updated
 
-### States to support cleanly
-- empty
-- single running subagent
-- multi-subagent concurrency
-- writing summary
-- completed success
-- failed / cancelled
-- background completion surfaced outside overlay
+### Sprint 3 — HUD/widget alignment + controls + review loop
+Deliverables:
+- selector reuse in HUD/status where appropriate
+- `tab`, `f`, `r`, `c`, `esc`, `^C` control polish
+- review cleanup and docs/help text updates if needed
 
----
-
-## Layout principles
-
-Derived from reference and current constraints:
-- favor one strong hero overlay
-- fewer nested boxes
-- stronger section headers, calmer borders
-- use spacing and alignment, not just separators, to create hierarchy
-- selected row should feel like a pinned instrument panel item
-- stream and summary regions should have fixed viewports to reduce redraw jitter
-- overlay height should stay stable while open; do not let content growth change frame size every tick
-
----
-
-## Color / icon direction
-
-Use calmer, more editorial color discipline than current deck.
-
-Guidelines:
-- do not color every metric chip loudly
-- use color semantically, not decoratively
-- running: restrained cyan/blue
-- writing summary: sharp violet/amber accent, subtle only
-- done: mature green
-- failed: controlled red
-- pending: warm amber / muted gold
-- metadata labels: dim
-- values: bright neutral
-
-Icons:
-- keep plug-and-play with Nerd Font set if available
-- preserve ASCII fallback structure
-- selected row + status should still read without icon support
+Acceptance:
+- overlay/HUD language aligned
+- controls discoverable and quiet
+- close/reopen behavior stable
+- all tests/build pass
+- manual flow run validation passes
 
 ---
 
-## Lightweight implementation rules
+## Sprint 0 closure note
 
-1. No new heavy runtime dependencies.
-2. No large retained history; bounded journal only.
-3. No theme reload on every render tick.
-4. Keep render output height stable while overlay is open.
-5. Centralize redraw triggers; avoid multiple competing `requestRender()` paths when possible.
-6. Prefer pure selectors over ad hoc string assembly inside render functions.
-7. Keep queue persistence unchanged unless absolutely required.
+Sprint 0 is complete when:
+- journal ownership and injection seam are explicit
+- layout and control model are explicit
+- summary precedence is explicit
+- ticket dependency chain is explicit
 
----
-
-## Likely refactors needed
-
-### Minimal required
-- introduce activity journal for richer stream rows
-- refactor overlay into controller + selectors + render sections
-- split queue rail from selected detail from summary panel
-- add fixed viewport logic for stream and summary panes
-- stabilize redraw and follow-mode behavior
-
-### Nice-to-have if cheap
-- panel focus state
-- follow toggle for live stream
-- richer status line outside overlay using same selectors
-- better “background job completed” summary strip in HUD
-
-### Avoid in first pass
-- generalized plugin-wide state bus
-- fully persistent event logs
-- fancy animations beyond spinner / subtle shimmer
-
----
-
-## Suggested implementation phases
-
-### Phase 0 — design capture
-- lock reference direction
-- define 1 hero state + 4 key states
-- identify exact copy tone and icon language
-
-### Phase 1 — data model exploration
-- add `FlowActivityJournalService`
-- wire progress events into journal alongside queue updates
-- keep queue schema unchanged or minimally changed
-
-### Phase 2 — overlay controller split
-- move selection, panel focus, follow mode, scroll handling into controller layer
-- separate render state from queue subscription wiring
-
-### Phase 3 — hero layout rebuild
-- implement queue rail
-- implement selected subagent details header block
-- implement dedicated live stream viewport
-- implement summary/output viewport
-
-### Phase 4 — polish + stability
-- clamp viewport heights
-- reduce redraw churn
-- ensure overlay remains visually anchored during streaming
-- fine-tune colors, spacing, and controls
-
-### Phase 5 — compact HUD alignment
-- reuse selectors for status/widget strip
-- keep overlay and HUD language consistent
+After those conditions are met:
+- close `prfdv-ib5z`
+- move `prfdv-nvju` to `in_progress`
 
 ---
 
 ## Verification gates
 
-Required after each major phase:
+Run after each sprint:
 
 ```bash
 cd extensions/flow-system
@@ -352,40 +441,27 @@ bun test --timeout 15000
 bun run build
 ```
 
-Manual validation:
+Manual lane after sprints 2 and 3:
 - start long-running background flow
 - open `/flow manage`
-- verify overlay remains stable while streaming
-- verify selected row is obvious
-- verify writing-summary state reads clearly
-- verify summary/output panel remains usable
-- verify close/reopen does not regress HUD behavior
+- verify fixed frame during streaming
+- verify selected row is unmistakable
+- verify `writing summary` state is explicit
+- verify summary pane remains readable
+- verify HUD suspends/restores cleanly
+
+Review loop after each sprint:
+1. spec compliance review
+2. code quality review
+3. ticket note with findings / follow-ups
 
 ---
 
-## Open questions
+## Implementation notes for next session or agent handoff
 
-1. Should the activity journal stay overlay-only, or also power `flow_status` previews later?
-2. Should completed jobs retain a richer summary preview row in queue rail?
-3. Is a 3-pane hero layout better than current 2-pane composition for the chosen design?
-4. Should background completion toasts also pin a short-lived completion strip in HUD?
-
----
-
-## Research lane
-
-Repo facts are currently enough for initial spec.
-Use Exa / Context7 only if implementation hits unknowns around:
-- pi overlay/custom rendering API limits
-- terminal repaint / animation best practices
-- portability constraints in `@mariozechner/pi-coding-agent`
-
----
-
-## Recommended next step
-
-Before code:
-1. generate 2–3 higher-taste hero mock variants using the new prompt
-2. choose one direction
-3. turn this blueprint into a smaller implementation spec with exact module cuts
-4. only then start refactor
+- branch: `feat/flow-deck-v2`
+- worktree: `/home/kenzo/dev/pi-rig-flow-deck-v2`
+- sprint order is strict: `prfdv-ib5z` → `prfdv-nvju` → `prfdv-hyc2` → `prfdv-8c1g`
+- builder preference: `gpt-5.3-codex` when using flow builder lane
+- reviewer preference: `gpt-5.4` `xhigh`
+- do not start render rebuild before journal/controller layer lands
