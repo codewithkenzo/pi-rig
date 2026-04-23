@@ -28,7 +28,7 @@ describe("flow-system index", () => {
 		await flowSystem(pi);
 		await flowSystem(pi);
 
-		expect(registerToolCount).toBe(2);
+		expect(registerToolCount).toBe(3);
 		expect(registerCommandCount).toBe(1);
 		expect(registerShortcutCount).toBe(1);
 		expect(registerEventCount).toBe(4);
@@ -61,7 +61,7 @@ describe("flow-system index", () => {
 		await expect(flowSystem(pi)).rejects.toThrow("temporary setup failure");
 		await flowSystem(pi);
 
-		expect(registerToolCount).toBe(3);
+		expect(registerToolCount).toBe(4);
 		expect(registerCommandCount).toBe(1);
 		expect(registerEventCount).toBe(4);
 	});
@@ -75,9 +75,6 @@ describe("flow-system index", () => {
 		const pi = {
 			registerTool: () => {
 				registerToolCount += 1;
-				if (registerToolCount === 3) {
-					throw new Error("tool registration failure");
-				}
 			},
 			registerCommand: () => {
 				registerCommandCount += 1;
@@ -97,9 +94,79 @@ describe("flow-system index", () => {
 		await expect(flowSystem(pi)).rejects.toThrow("shortcut registration failure");
 		await flowSystem(pi);
 
-		expect(registerToolCount).toBe(2);
+		expect(registerToolCount).toBe(3);
 		expect(registerCommandCount).toBe(1);
 		expect(registerShortcutCount).toBe(2);
 		expect(registerEventCount).toBe(4);
+	});
+
+	it("clears stale in-memory queue on session_start when no persisted flow entry exists", async () => {
+		const tools: Record<string, { name: string; execute: (...args: any[]) => Promise<any> }> = {};
+		const handlers = new Map<string, (...args: any[]) => any>();
+
+		const pi = {
+			registerTool: (tool: { name: string; execute: (...args: any[]) => Promise<any> }) => {
+				tools[tool.name] = tool;
+			},
+			registerCommand: () => undefined,
+			registerShortcut: () => undefined,
+			on: (event: string, handler: (...args: any[]) => any) => {
+				handlers.set(event, handler);
+			},
+			appendEntry: () => undefined,
+		} as unknown as ExtensionAPI;
+
+		await flowSystem(pi);
+		const sessionStart = handlers.get("session_start");
+		const statusTool = tools["flow_status"];
+		expect(sessionStart).toBeDefined();
+		expect(statusTool).toBeDefined();
+		if (sessionStart === undefined || statusTool === undefined) {
+			throw new Error("expected session_start handler and flow_status tool");
+		}
+
+		await sessionStart(
+			{},
+			{
+				hasUI: false,
+				sessionManager: {
+					getEntries: () => [
+						{
+							type: "custom",
+							customType: "flow_system_state",
+							data: {
+								jobs: [
+									{
+										id: "job-1",
+										profile: "explore",
+										task: "scan repo",
+										status: "done",
+										createdAt: 1,
+										finishedAt: 2,
+										output: "ok",
+									},
+								],
+							},
+						},
+					],
+				},
+				ui: {},
+			} as unknown as Parameters<NonNullable<typeof sessionStart>>[1],
+		);
+
+		let result = await statusTool.execute("status-1", {}, undefined, undefined, {});
+		expect(result.content[0]?.text).toContain("Flow jobs (1)");
+
+		await sessionStart(
+			{},
+			{
+				hasUI: false,
+				sessionManager: { getEntries: () => [] },
+				ui: {},
+			} as unknown as Parameters<NonNullable<typeof sessionStart>>[1],
+		);
+
+		result = await statusTool.execute("status-2", {}, undefined, undefined, {});
+		expect(result.content[0]?.text).toContain("No flow jobs.");
 	});
 });

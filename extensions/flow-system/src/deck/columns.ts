@@ -3,7 +3,7 @@ import type { Palette, ThemeConfig } from "../../../../shared/theme/types.js";
 import { spin, breathe, withMotion, type AnimationState } from "../../../../shared/theme/animation.js";
 import { ellipsize } from "../../../../shared/ui/hud.js";
 import type { FlowJob } from "../types.js";
-import type { FeedState } from "./state.js";
+import type { FlowActivityRow } from "./journal.js";
 import { STATUS_ICONS } from "./icons.js";
 import { truncateToWidth } from "./layout.js";
 
@@ -52,6 +52,26 @@ const statusTone = (status: FlowJob["status"]): "active" | "warning" | "success"
 			return "inactive";
 	}
 };
+
+const rowTone = (tone: FlowActivityRow["tone"]): "text" | "dim" | "success" | "warning" | "error" | "accent" => {
+	switch (tone) {
+		case "muted":
+			return "dim";
+		case "success":
+			return "success";
+		case "warning":
+			return "warning";
+		case "error":
+			return "error";
+		case "active":
+			return "accent";
+		default:
+			return "text";
+	}
+};
+
+const rowText = (row: FlowActivityRow): string =>
+	row.label !== undefined ? `${row.label} ${row.text}` : row.text;
 
 const spinnerIcon = (
 	job: FlowJob,
@@ -129,7 +149,7 @@ const renderHierarchy = (
 	palette: Palette,
 	config: ThemeConfig,
 	job: FlowJob | undefined,
-	feed: FeedState,
+	activityRows: readonly FlowActivityRow[],
 	animState: AnimationState,
 	width: number,
 	compact: boolean,
@@ -161,9 +181,9 @@ const renderHierarchy = (
 	);
 
 	const rows = metaRows(job);
-	for (const [label, value, rowTone] of rows) {
+	for (const [label, value, metaTone] of rows) {
 		const labelCell = truncateToWidth(label, 10);
-		const valueCell = toneText(engine, rowTone, value);
+		const valueCell = toneText(engine, metaTone, value);
 		const content = `    ${labelCell} ${engine.strip(engine.fg(valueTone, engine.strip(valueCell)))}`;
 		lines.push(truncateToWidth(content, width));
 	}
@@ -174,16 +194,16 @@ const renderHierarchy = (
 	}
 
 	lines.push(engine.fg("header", truncateToWidth("  LIVE ACTIVITY", width)));
-	const visible = feed.lines.slice(-(compact ? 5 : 8));
+	const visible = activityRows.slice(-(compact ? 5 : 8));
 	for (const entry of visible) {
 		const ts = engine.fg("dim", relTs(entry.ts, job.startedAt).padStart(5));
-		const text = engine.fg("text", truncateToWidth(entry.text, Math.max(10, width - 9)));
+		const text = engine.fg(rowTone(entry.tone), truncateToWidth(rowText(entry), Math.max(10, width - 9)));
 		lines.push(`${ts}  ${text}`);
 	}
 	if (visible.length === 0) {
 		lines.push(engine.fg("muted", truncateToWidth("  (waiting…)", width)));
 	}
-	if (feed.lines.length > 0) {
+	if (activityRows.length > 0) {
 		const trailer = withMotion(
 			() => breathe("  auto-refresh", palette.semantic.muted, animState),
 			engine.fg("dim", "  auto-refresh"),
@@ -200,7 +220,7 @@ export const renderColumns = (
 	palette: Palette,
 	config: ThemeConfig,
 	job: FlowJob | undefined,
-	feed: FeedState,
+	activityRows: readonly FlowActivityRow[],
 	animState: AnimationState,
 	width: number,
 	compact: boolean,
@@ -208,6 +228,6 @@ export const renderColumns = (
 	const reducedMotion = !config.animation.enabled || config.animation.reducedMotion;
 	const divider = engine.fg("border", "─".repeat(width));
 	const contentWidth = compact ? width - 2 : width;
-	const lines = renderHierarchy(engine, palette, config, job, feed, animState, contentWidth, compact, reducedMotion);
+	const lines = renderHierarchy(engine, palette, config, job, activityRows, animState, contentWidth, compact, reducedMotion);
 	return [divider, ...lines, divider];
 };

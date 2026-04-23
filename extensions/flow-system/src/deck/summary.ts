@@ -5,11 +5,11 @@ import { breathe, withMotion, type AnimationState } from "../../../../shared/the
 import type { FlowJob } from "../types.js";
 import { truncateToWidth } from "./layout.js";
 import { sanitizeFlowText } from "../sanitize.js";
+import { selectSummaryText } from "./selectors.js";
 
 export const sanitize = sanitizeFlowText;
 
-const pickContent = (job: FlowJob): string =>
-	sanitizeFlowText(job.output ?? job.error ?? job.lastAssistantText ?? job.task);
+const pickContent = (job: FlowJob): string => sanitizeFlowText(selectSummaryText(job));
 
 const wrapLines = (content: string, innerWidth: number): string[] =>
 	content.split("\n").flatMap((line) => {

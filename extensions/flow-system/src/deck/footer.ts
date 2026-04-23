@@ -7,14 +7,20 @@ interface Keybind {
 }
 
 const BINDS: Keybind[] = [
+	{ key: "tab",    label: "panel" },
+	{ key: "f",      label: "follow" },
+	{ key: "r",      label: "refresh" },
 	{ key: "^C",     label: "exit" },
 	{ key: "c",      label: "cancel" },
-	{ key: "↑↓",    label: "select" },
+	{ key: "↑↓",    label: "move/scroll" },
 	{ key: "PgUp/Dn", label: "scroll" },
 	{ key: "esc",    label: "close" },
 ];
 
 const BINDS_ICON_ONLY: Keybind[] = [
+	{ key: "tab", label: "" },
+	{ key: "f", label: "" },
+	{ key: "r", label: "" },
 	{ key: "^C",  label: "" },
 	{ key: "c",   label: "" },
 	{ key: "↑↓", label: "" },

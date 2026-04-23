@@ -43,7 +43,9 @@ const makeCtx = (
 		hasUI: true,
 		ui: {
 			notify: (text: string, level?: string) => {
-				notifyCalls?.push({ text, level });
+				if (notifyCalls !== undefined) {
+					notifyCalls.push(level === undefined ? { text } : { text, level });
+				}
 			},
 		},
 	} as unknown as ExtensionContext);

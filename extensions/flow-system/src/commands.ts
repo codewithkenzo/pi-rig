@@ -17,6 +17,7 @@ import {
 	resolveExecutionPromptEnvelope,
 	validateResolvedExecutionEnvelope,
 } from "./envelope.js";
+import { makeFlowActivityJournal, type FlowActivityJournalService } from "./deck/journal.js";
 
 type ExecuteFlowFn = typeof executeFlow;
 
@@ -165,6 +166,7 @@ const summarizeOutput = (text: string): string => {
 
 const runFlowFromCommand = async (
 	queue: FlowQueueService,
+	journal: FlowActivityJournalService,
 	ctx: FlowUiContext,
 	profileName: string,
 	task: string,
@@ -331,6 +333,7 @@ const runFlowFromCommand = async (
 		const systemPrompt = resolveExecutionPromptEnvelope(runEnvelope, preloadExit.value.prompt);
 		const onProgress = (event: FlowProgressEvent): void => {
 			const update = tracker.apply(event);
+			journal.recordProgressEvent(job.id, event, update);
 			if (update === undefined) {
 				return;
 			}
@@ -362,6 +365,13 @@ const runFlowFromCommand = async (
 			const finishedAt = Date.now();
 			const output = exit.value;
 			const flushed = tracker.flush();
+			if (flushed?.extras.lastAssistantText !== undefined) {
+				journal.append(job.id, {
+					kind: "assistant",
+					text: flushed.extras.lastAssistantText,
+					tone: "default",
+				});
+			}
 			await Effect.runPromise(
 				queue.setStatus(job.id, "done", {
 					...profileMeta.metaPatch(),
@@ -437,6 +447,7 @@ const runFlowFromCommand = async (
 
 const selectAndRunFlow = async (
 	queue: FlowQueueService,
+	journal: FlowActivityJournalService,
 	ctx: FlowUiContext,
 	runFlow: ExecuteFlowFn,
 ): Promise<void> => {
@@ -457,14 +468,18 @@ const selectAndRunFlow = async (
 		return;
 	}
 
-	await runFlowFromCommand(queue, ctx, selectedProfile, trimmedTask, runFlow);
+	await runFlowFromCommand(queue, journal, ctx, selectedProfile, trimmedTask, runFlow);
 };
 
-const showFlowManager = async (queue: FlowQueueService, ctx: FlowUiContext): Promise<void> => {
+const showFlowManager = async (
+	queue: FlowQueueService,
+	journal: FlowActivityJournalService,
+	ctx: FlowUiContext,
+): Promise<void> => {
 	const hasCustom = typeof (ctx.ui as { custom?: unknown }).custom === "function";
 	if (hasCustom) {
 		try {
-			return await showFlowDeck(queue, ctx);
+			return await showFlowDeck(queue, journal, ctx);
 		} catch (err) {
 			console.warn("[flow-deck] overlay init failed, falling back to text:", err);
 		}
@@ -485,6 +500,7 @@ export function registerFlowCommands(
 		markCommandRegistered: () => undefined,
 		markShortcutRegistered: () => undefined,
 	},
+	journal: FlowActivityJournalService = makeFlowActivityJournal(),
 ): void {
 	if (!registrationState.commandRegistered) {
 		pi.registerCommand("flow", {
@@ -496,7 +512,7 @@ export function registerFlowCommands(
 
 			switch (sub) {
 				case "manage": {
-					await showFlowManager(queue, ctx);
+					await showFlowManager(queue, journal, ctx);
 					break;
 				}
 
@@ -671,12 +687,12 @@ export function registerFlowCommands(
 						await ctx.ui.notify(C.yellow(RUN_USAGE));
 						return;
 					}
-					await runFlowFromCommand(queue, ctx, parsed.profile, parsed.task, runFlow);
+					await runFlowFromCommand(queue, journal, ctx, parsed.profile, parsed.task, runFlow);
 					break;
 				}
 
 				case "pick": {
-					await selectAndRunFlow(queue, ctx, runFlow);
+					await selectAndRunFlow(queue, journal, ctx, runFlow);
 					break;
 				}
 
@@ -693,7 +709,7 @@ export function registerFlowCommands(
 		pi.registerShortcut("alt+shift+f", {
 		description: "Manage running flows",
 		handler: async (ctx) => {
-			await showFlowManager(queue, ctx);
+			await showFlowManager(queue, journal, ctx);
 		},
 	});
 		registrationState.markShortcutRegistered();

@@ -22,6 +22,7 @@ import {
 	FlowCancelledError,
 } from "./types.js";
 import { waitForRunSlot } from "./scheduler.js";
+import { makeFlowActivityJournal, type FlowActivityJournalService } from "./deck/journal.js";
 
 type ExecuteFlowFn = typeof executeFlow;
 
@@ -197,7 +198,25 @@ const cancelledResult = (
 	} satisfies FlowRenderDetails,
 });
 
-export function makeFlowTool(queue: FlowQueueService, runFlow: ExecuteFlowFn = executeFlow) {
+const resolveJournalAndRunFlow = (
+	arg2?: FlowActivityJournalService | ExecuteFlowFn,
+	arg3?: ExecuteFlowFn,
+): { journal: FlowActivityJournalService; runFlow: ExecuteFlowFn } => {
+	if (typeof arg2 === "function") {
+		return { journal: makeFlowActivityJournal(), runFlow: arg2 };
+	}
+	return {
+		journal: arg2 ?? makeFlowActivityJournal(),
+		runFlow: arg3 ?? executeFlow,
+	};
+};
+
+export function makeFlowTool(
+	queue: FlowQueueService,
+	arg2?: FlowActivityJournalService | ExecuteFlowFn,
+	arg3?: ExecuteFlowFn,
+) {
+	const { journal, runFlow } = resolveJournalAndRunFlow(arg2, arg3);
 	return {
 		name: "flow_run",
 		label: "Run Flow",
@@ -406,6 +425,7 @@ export function makeFlowTool(queue: FlowQueueService, runFlow: ExecuteFlowFn = e
 							const systemPrompt = resolveExecutionPromptEnvelope(runEnvelope, preloadPrompt.prompt);
 							const onProgress = (event: FlowProgressEvent): void => {
 								const update = tracker.apply(event);
+								journal.recordProgressEvent(job.id, event, update);
 								if (update !== undefined) {
 									applyProgress(queue, job.id, update.extras);
 								}
@@ -428,6 +448,13 @@ export function makeFlowTool(queue: FlowQueueService, runFlow: ExecuteFlowFn = e
 						if (Exit.isSuccess(exit)) {
 								const finishedAt = Date.now();
 								const flushed = tracker.flush();
+								if (flushed?.extras.lastAssistantText !== undefined) {
+									journal.append(job.id, {
+										kind: "assistant",
+										text: flushed.extras.lastAssistantText,
+										tone: "default",
+									});
+								}
 								await setTerminalStatus(
 									queue,
 									job.id,
@@ -611,6 +638,7 @@ export function makeFlowTool(queue: FlowQueueService, runFlow: ExecuteFlowFn = e
 
 				const onProgress = (event: FlowProgressEvent): void => {
 					const update = tracker.apply(event);
+					journal.recordProgressEvent(job.id, event, update);
 					if (update === undefined) {
 						return;
 					}
@@ -643,6 +671,13 @@ export function makeFlowTool(queue: FlowQueueService, runFlow: ExecuteFlowFn = e
 					if (Exit.isSuccess(exit)) {
 						const finishedAt = Date.now();
 						const flushed = tracker.flush();
+						if (flushed?.extras.lastAssistantText !== undefined) {
+							journal.append(job.id, {
+								kind: "assistant",
+								text: flushed.extras.lastAssistantText,
+								tone: "default",
+							});
+						}
 						await setTerminalStatus(
 							queue,
 							job.id,

@@ -24,6 +24,7 @@ import {
 	FlowCancelledError,
 } from "./types.js";
 import { waitForRunSlot } from "./scheduler.js";
+import { makeFlowActivityJournal, type FlowActivityJournalService } from "./deck/journal.js";
 
 type ExecuteFlowFn = typeof executeFlow;
 
@@ -164,7 +165,25 @@ const withEnvelopePatch = <T extends object>(
 	envelope,
 });
 
-export function makeFlowBatchTool(queue: FlowQueueService, runFlow: ExecuteFlowFn = executeFlow) {
+const resolveJournalAndRunFlow = (
+	arg2?: FlowActivityJournalService | ExecuteFlowFn,
+	arg3?: ExecuteFlowFn,
+): { journal: FlowActivityJournalService; runFlow: ExecuteFlowFn } => {
+	if (typeof arg2 === "function") {
+		return { journal: makeFlowActivityJournal(), runFlow: arg2 };
+	}
+	return {
+		journal: arg2 ?? makeFlowActivityJournal(),
+		runFlow: arg3 ?? executeFlow,
+	};
+};
+
+export function makeFlowBatchTool(
+	queue: FlowQueueService,
+	arg2?: FlowActivityJournalService | ExecuteFlowFn,
+	arg3?: ExecuteFlowFn,
+) {
+	const { journal, runFlow } = resolveJournalAndRunFlow(arg2, arg3);
 	return {
 		name: "flow_batch",
 		label: "Batch Flow",
@@ -447,6 +466,7 @@ export function makeFlowBatchTool(queue: FlowQueueService, runFlow: ExecuteFlowF
 					const systemPrompt = resolveExecutionPromptEnvelope(runEnvelope, preloadPrompt.prompt);
 					const onProgress = (event: FlowProgressEvent): void => {
 						const update = tracker.apply(event);
+						journal.recordProgressEvent(job.id, event, update);
 						if (update === undefined) {
 							return;
 						}
@@ -481,6 +501,13 @@ export function makeFlowBatchTool(queue: FlowQueueService, runFlow: ExecuteFlowF
 					if (Exit.isSuccess(exit)) {
 						const finishedAt = Date.now();
 						const flushed = tracker.flush();
+						if (flushed?.extras.lastAssistantText !== undefined) {
+							journal.append(job.id, {
+								kind: "assistant",
+								text: flushed.extras.lastAssistantText,
+								tone: "default",
+							});
+						}
 						await setTerminalStatus(
 							queue,
 							job.id,

@@ -9,6 +9,7 @@ import { makeFlowTool } from "./src/tool.js";
 import { makeFlowBatchTool } from "./src/batch-tool.js";
 import { makeFlowStatusTool } from "./src/status-tool.js";
 import { registerFlowCommands } from "./src/commands.js";
+import { makeFlowActivityJournal, type FlowActivityJournalService } from "./src/deck/journal.js";
 import {
 	FLOW_ENTRY_TYPE,
 	FlowStateEntrySchema,
@@ -25,6 +26,8 @@ const FLOW_SYSTEM_CONFIG_FILE = "flow-system.json";
 
 type FlowSystemInitState = {
 	queue: FlowQueueService | undefined;
+	journal: FlowActivityJournalService | undefined;
+	detachJournalSync: (() => void) | undefined;
 	detachUi: (() => void) | undefined;
 	flowToolRegistered: boolean;
 	flowBatchToolRegistered: boolean;
@@ -43,6 +46,8 @@ const states = new WeakMap<ExtensionAPI, FlowSystemInitState>();
 
 const makeFlowSystemState = (): FlowSystemInitState => ({
 	queue: undefined,
+	journal: undefined,
+	detachJournalSync: undefined,
 	detachUi: undefined,
 	flowToolRegistered: false,
 	flowBatchToolRegistered: false,
@@ -111,15 +116,24 @@ export default async function (pi: ExtensionAPI): Promise<void> {
 		if (state.queue === undefined) {
 			state.queue = await Effect.runPromise(makeQueue(loadFlowSystemConfig()));
 		}
+		if (state.journal === undefined) {
+			state.journal = makeFlowActivityJournal();
+		}
 		const queue = state.queue;
+		const journal = state.journal;
 		const skillDir = join(baseDir, "..", "skills", "flow-system");
+		if (state.detachJournalSync === undefined) {
+			state.detachJournalSync = queue.subscribe((snapshot) => {
+				journal.syncQueue(snapshot);
+			});
+		}
 
 		if (!state.flowToolRegistered) {
-			pi.registerTool(makeFlowTool(queue));
+			pi.registerTool(makeFlowTool(queue, journal));
 			state.flowToolRegistered = true;
 		}
 		if (!state.flowBatchToolRegistered) {
-			pi.registerTool(makeFlowBatchTool(queue));
+			pi.registerTool(makeFlowBatchTool(queue, journal));
 			state.flowBatchToolRegistered = true;
 		}
 		if (!state.flowStatusToolRegistered) {
@@ -141,6 +155,7 @@ export default async function (pi: ExtensionAPI): Promise<void> {
 						state.shortcutRegistered = true;
 					},
 				},
+				journal,
 			);
 		}
 		if (!state.resourcesDiscoverRegistered) {
@@ -151,6 +166,7 @@ export default async function (pi: ExtensionAPI): Promise<void> {
 		}
 		if (!state.sessionStartRegistered) {
 			pi.on("session_start", async (_event: SessionStartEvent, ctx: ExtensionContext) => {
+				journal.reset();
 				const last = findLatestCustomEntry(
 					ctx.sessionManager.getEntries(),
 					FLOW_ENTRY_TYPE,
@@ -163,6 +179,7 @@ export default async function (pi: ExtensionAPI): Promise<void> {
 					);
 					state.lastPersistedQueueKey = queueSnapshotKey(last.jobs.slice(-100));
 				} else {
+					await Effect.runPromise(queue.restoreFrom([]));
 					delete state.lastPersistedQueueKey;
 				}
 				state.detachUi?.();
@@ -183,6 +200,7 @@ export default async function (pi: ExtensionAPI): Promise<void> {
 				if (state.queue !== undefined) {
 					await persistQueueSnapshot(pi, state.queue, state);
 				}
+				state.journal?.reset();
 				state.detachUi?.();
 				state.detachUi = undefined;
 			});

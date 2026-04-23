@@ -5,13 +5,21 @@ import { AnimationTicker } from "../../../../shared/theme/animation.js";
 import { loadTheme } from "../../../../shared/theme/index.js";
 import type { FlowQueueService } from "../queue.js";
 import type { FlowQueue } from "../types.js";
+import type { FlowActivityJournalService } from "./journal.js";
 import {
-	makeInitialDeckState,
+	makeInitialDeckControllerState,
 	clampSelection,
-	updateFeedFromSnapshot,
-	resetFeed,
-	type DeckState,
-} from "./state.js";
+	cyclePanelFocus,
+	moveSelection,
+	scrollFocusedPanel,
+	selectedJob,
+	setCompactMode,
+	setKeyFlash,
+	syncSnapshot,
+	toggleFollowMode,
+	type FlowDeckControllerState,
+} from "./controller.js";
+import { selectStreamRows, selectVisibleStreamRows } from "./selectors.js";
 import { DECK_ICONS } from "./icons.js";
 import { renderHeader } from "./header.js";
 import { renderColumns } from "./columns.js";
@@ -21,22 +29,24 @@ import { suspendFlowHud } from "../ui.js";
 
 type CustomFn = NonNullable<ExtensionCommandContext["ui"]["custom"]>;
 
-const PGUP    = "\x1b[5~";
-const PGDN    = "\x1b[6~";
+const PGUP = "\x1b[5~";
+const PGDN = "\x1b[6~";
 const SHIFT_UP = "\x1b[1;2A";
 const SHIFT_DN = "\x1b[1;2B";
 
 const SCROLL_STEP = 5;
 const SUMMARY_LINES_WIDE = 8;
 const SUMMARY_LINES_COMPACT = 5;
+const STREAM_LINES_WIDE = 8;
+const STREAM_LINES_COMPACT = 5;
 
 export const showFlowDeck = async (
 	queue: FlowQueueService,
+	journal: FlowActivityJournalService,
 	ctx: Pick<ExtensionCommandContext, "cwd" | "ui">,
 ): Promise<void> => {
 	const custom = (ctx.ui as { custom?: CustomFn }).custom;
 	if (typeof custom !== "function") {
-		// Hard guard — callers should use showFlowManager which gates this
 		const snap = await Effect.runPromise(queue.snapshot());
 		const lines = snap.jobs.map(
 			(j) => `${j.status === "running" ? "▶" : "○"} ${j.profile} · ${j.task}`,
@@ -49,158 +59,182 @@ export const showFlowDeck = async (
 	try {
 		await custom<void>(
 			(tui, _theme, _kb, done) => {
-			const cwd = ctx.cwd;
-			let state: DeckState = makeInitialDeckState(queue.peek());
-			const ticker = new AnimationTicker();
+				const cwd = ctx.cwd;
+				let state: FlowDeckControllerState = makeInitialDeckControllerState(queue.peek());
+				const ticker = new AnimationTicker();
+				let cachedTheme = loadTheme(cwd);
+				const theme = () => cachedTheme;
 
-			// Cache theme to avoid sync disk I/O on every render tick (4–8 fps).
-			// Refreshed on each queue update — theme changes are rare vs render frequency.
-			let cachedTheme = loadTheme(cwd);
-			const theme = () => cachedTheme;
-
-			const syncTicker = (): void => {
-				const { config } = theme();
-				const hasRunning = state.snapshot.jobs.some((j) => j.status === "running");
-				const fps = Math.min(8, Math.max(4, config.animation.fps));
-				if (config.animation.enabled && !config.animation.reducedMotion && hasRunning) {
-					if (!ticker.running) {
-						ticker.start(fps, () => tui.requestRender());
+				const syncTicker = (): void => {
+					const { config } = theme();
+					const hasRunning = state.snapshot.jobs.some((job) => job.status === "running");
+					const fps = Math.min(8, Math.max(4, config.animation.fps));
+					if (config.animation.enabled && !config.animation.reducedMotion && hasRunning) {
+						if (!ticker.running) {
+							ticker.start(fps, () => tui.requestRender());
+						}
+					} else {
+						ticker.stop();
 					}
-				} else {
-					ticker.stop();
-				}
-			};
+				};
 
-			const unsubscribe = queue.subscribe((next: FlowQueue) => {
-				cachedTheme = loadTheme(cwd);
-				const prevId = state.selected_id;
-				state = { ...state, snapshot: next };
-				state = clampSelection(state);
-				if (state.selected_id !== prevId) {
-					state = resetFeed(state);
-				}
-				state = updateFeedFromSnapshot(state);
-				syncTicker();
-				tui.requestRender();
-			});
-
-			syncTicker();
-
-			const flashKey = (key: string): void => {
-				if (state.key_flash.flash_timeout !== null) {
-					clearTimeout(state.key_flash.flash_timeout);
-				}
-				const t = setTimeout(() => {
-					state = { ...state, key_flash: { active_key: null, flash_timeout: null } };
+				const unsubscribeQueue = queue.subscribe((next: FlowQueue) => {
+					cachedTheme = loadTheme(cwd);
+					state = clampSelection(syncSnapshot(state, next));
+					syncTicker();
 					tui.requestRender();
-				}, 120);
-				state = { ...state, key_flash: { active_key: key, flash_timeout: t } };
-			};
+				});
+				const unsubscribeJournal = journal.subscribe(() => {
+					tui.requestRender();
+				});
 
-			const selectedJob = (): (typeof state.snapshot.jobs)[number] | undefined =>
-				state.snapshot.jobs.find((j) => j.id === state.selected_id);
+				syncTicker();
 
-			const jobList = (): typeof state.snapshot.jobs => state.snapshot.jobs;
-
-			return {
-				dispose: () => {
-					unsubscribe();
-					ticker.stop();
-					if (state.key_flash.flash_timeout !== null) {
-						clearTimeout(state.key_flash.flash_timeout);
+				const flashKey = (key: string): void => {
+					if (state.keyFlash.flashTimeout !== null) {
+						clearTimeout(state.keyFlash.flashTimeout);
 					}
-				},
-				invalidate: () => {},
+					const timeout = setTimeout(() => {
+						state = setKeyFlash(state, null, null);
+						tui.requestRender();
+					}, 120);
+					state = setKeyFlash(state, key, timeout);
+				};
 
-				handleInput: (data: string) => {
-					// Exit
-					if (matchesKey(data, Key.escape) || matchesKey(data, Key.ctrl("c"))) {
-						flashKey(data === "\x1b" ? "esc" : "^C");
-						done(undefined);
-						return;
-					}
+				const streamMetrics = (): { rowCount: number; pageSize: number } => {
+					const job = selectedJob(state);
+					return {
+						rowCount: selectStreamRows(journal, job).length,
+						pageSize: state.compact ? STREAM_LINES_COMPACT : STREAM_LINES_WIDE,
+					};
+				};
 
-					if (data === "c" || data === "C") {
-						const job = selectedJob();
-						if (job !== undefined) {
-							flashKey("c");
-							void Effect.runPromise(queue.cancel(job.id).pipe(Effect.result));
+				return {
+					dispose: () => {
+						unsubscribeQueue();
+						unsubscribeJournal();
+						ticker.stop();
+						if (state.keyFlash.flashTimeout !== null) {
+							clearTimeout(state.keyFlash.flashTimeout);
 						}
-						tui.requestRender();
-						return;
-					}
-
-					if (matchesKey(data, Key.up)) {
-						const list = jobList();
-						const idx = list.findIndex((j) => j.id === state.selected_id);
-						if (idx > 0) {
-							state = updateFeedFromSnapshot(resetFeed({ ...state, selected_id: list[idx - 1]!.id }));
+					},
+					invalidate: () => {},
+					handleInput: (data: string) => {
+						if (matchesKey(data, Key.escape) || matchesKey(data, Key.ctrl("c"))) {
+							flashKey(data === "\x1b" ? "esc" : "^C");
+							done(undefined);
+							return;
 						}
-						flashKey("↑");
-						tui.requestRender();
-						return;
-					}
 
-					if (matchesKey(data, Key.down)) {
-						const list = jobList();
-						const idx = list.findIndex((j) => j.id === state.selected_id);
-						if (idx >= 0 && idx < list.length - 1) {
-							state = updateFeedFromSnapshot(resetFeed({ ...state, selected_id: list[idx + 1]!.id }));
+						if (data === "\t") {
+							state = cyclePanelFocus(state);
+							flashKey("tab");
+							tui.requestRender();
+							return;
 						}
-						flashKey("↓");
-						tui.requestRender();
-						return;
-					}
 
-					if (data === PGUP || data === SHIFT_UP) {
-						state = { ...state, scroll_offset: Math.max(0, state.scroll_offset - SCROLL_STEP) };
-						flashKey("PgUp");
-						tui.requestRender();
-						return;
-					}
+						if (data === "f" || data === "F") {
+							state = toggleFollowMode(state);
+							flashKey("f");
+							tui.requestRender();
+							return;
+						}
 
-					if (data === PGDN || data === SHIFT_DN) {
-						state = { ...state, scroll_offset: state.scroll_offset + SCROLL_STEP };
-						flashKey("PgDn");
-						tui.requestRender();
-						return;
-					}
-				},
+						if (data === "r" || data === "R") {
+							flashKey("r");
+							tui.requestRender(true);
+							return;
+						}
 
-				render: (width: number) => {
-					const compact = width < 96;
-					const veryNarrow = width < 60;
-					state = { ...state, compact };
+						if (data === "c" || data === "C") {
+							const job = selectedJob(state);
+							if (job !== undefined) {
+								flashKey("c");
+								void Effect.runPromise(queue.cancel(job.id).pipe(Effect.result));
+							}
+							tui.requestRender();
+							return;
+						}
 
-					const { engine, palette, config } = theme();
-					const animState = ticker.current;
+						if (matchesKey(data, Key.up)) {
+							state =
+								state.panelFocus === "queue"
+									? moveSelection(state, -1)
+									: scrollFocusedPanel(state, 1, streamMetrics());
+							flashKey("↑");
+							tui.requestRender();
+							return;
+						}
 
-					// Empty state
-					if (state.snapshot.jobs.length === 0) {
-						const divider = engine.fg("border", "─".repeat(width));
+						if (matchesKey(data, Key.down)) {
+							state =
+								state.panelFocus === "queue"
+									? moveSelection(state, 1)
+									: scrollFocusedPanel(state, -1, streamMetrics());
+							flashKey("↓");
+							tui.requestRender();
+							return;
+						}
+
+						if (data === PGUP || data === SHIFT_UP) {
+							if (state.panelFocus !== "queue") {
+								state = scrollFocusedPanel(state, SCROLL_STEP, streamMetrics());
+							}
+							flashKey("PgUp");
+							tui.requestRender();
+							return;
+						}
+
+						if (data === PGDN || data === SHIFT_DN) {
+							if (state.panelFocus !== "queue") {
+								state = scrollFocusedPanel(state, -SCROLL_STEP, streamMetrics());
+							}
+							flashKey("PgDn");
+							tui.requestRender();
+						}
+					},
+					render: (width: number) => {
+						const compact = width < 96;
+						const veryNarrow = width < 60;
+						state = setCompactMode(state, compact);
+
+						const { engine, palette, config } = theme();
+						const animState = ticker.current;
+
+						if (state.snapshot.jobs.length === 0) {
+							const divider = engine.fg("border", "─".repeat(width));
+							return [
+								divider,
+								`  ${engine.fg("label", `${DECK_ICONS.agent} FLOW DECK`)}`,
+								divider,
+								engine.fg("muted", "  No flow jobs yet."),
+								divider,
+								engine.fg("dim", "  [esc] close"),
+								divider,
+							];
+						}
+
+						const job = selectedJob(state);
+						const summaryLines = compact ? SUMMARY_LINES_COMPACT : SUMMARY_LINES_WIDE;
+						const streamRows = selectVisibleStreamRows(
+							selectStreamRows(journal, job),
+							compact ? STREAM_LINES_COMPACT : STREAM_LINES_WIDE,
+							state.streamScroll,
+							state.followMode,
+						);
+
 						return [
-							divider,
-							`  ${engine.fg("label", `${DECK_ICONS.agent} FLOW DECK`)}`,
-							divider,
-							engine.fg("muted", "  No flow jobs yet."),
-							divider,
-							engine.fg("dim", "  [esc] close"),
-							divider,
+							...renderHeader(engine, palette, config, state.snapshot, animState, width, compact),
+							...renderColumns(engine, palette, config, job, streamRows, animState, width, compact),
+							...renderSummary(engine, palette, config, job, state.summaryScroll, width, summaryLines, animState),
+							...renderFooter(engine, {
+								active_key: state.keyFlash.activeKey,
+								flash_timeout: state.keyFlash.flashTimeout,
+							}, width, compact, veryNarrow),
 						];
-					}
-
-					const job = selectedJob();
-					const summaryLines = compact ? SUMMARY_LINES_COMPACT : SUMMARY_LINES_WIDE;
-
-					return [
-						...renderHeader(engine, palette, config, state.snapshot, animState, width, compact),
-						...renderColumns(engine, palette, config, job, state.feed, animState, width, compact),
-						...renderSummary(engine, palette, config, job, state.scroll_offset, width, summaryLines, animState),
-						...renderFooter(engine, state.key_flash, width, compact, veryNarrow),
-					];
-				},
-			};
-		},
+					},
+				};
+			},
 			{
 				overlay: true,
 				overlayOptions: {

@@ -7,7 +7,7 @@ import type { ThemeEngine } from "../../../shared/theme/engine.js";
 import type { Palette, ThemeConfig } from "../../../shared/theme/types.js";
 import type { AnimationState } from "../../../shared/theme/animation.js";
 import type { FlowJob, FlowQueue } from "../src/types.js";
-import type { FeedState } from "../src/deck/state.js";
+import type { FlowActivityRow } from "../src/deck/journal.js";
 
 // ─── Test helpers ─────────────────────────────────────────────────────────────
 
@@ -75,11 +75,7 @@ const makeJob = (overrides: Partial<FlowJob> = {}): FlowJob => ({
 
 const makeQueue = (jobs: FlowJob[]): FlowQueue => ({ jobs, mode: "sequential" });
 
-const emptyFeed = (): FeedState => ({
-	lines: [],
-	last_progress: undefined,
-	last_assistant: undefined,
-});
+const emptyActivity = (): FlowActivityRow[] => [];
 
 // ─── sanitize() ───────────────────────────────────────────────────────────────
 
@@ -213,8 +209,8 @@ describe("renderColumns — compact mode (width < 96)", () => {
 		const palette = mockPalette();
 		const config = mockConfig();
 		const j = makeJob();
-		const feed = emptyFeed();
-		const lines = renderColumns(engine, palette, config, j, feed, mockAnimState(), 80, true);
+		const activity = emptyActivity();
+		const lines = renderColumns(engine, palette, config, j, activity, mockAnimState(), 80, true);
 		expect(Array.isArray(lines)).toBe(true);
 		expect(lines.length).toBeGreaterThan(0);
 	});
@@ -224,8 +220,8 @@ describe("renderColumns — compact mode (width < 96)", () => {
 		const palette = mockPalette();
 		const config = mockConfig();
 		const j = makeJob();
-		const feed = emptyFeed();
-		const lines = renderColumns(engine, palette, config, j, feed, mockAnimState(), 80, true);
+		const activity = emptyActivity();
+		const lines = renderColumns(engine, palette, config, j, activity, mockAnimState(), 80, true);
 		// In compact mode, no column separator
 		expect(lines.join("")).not.toContain("│");
 	});
@@ -235,8 +231,8 @@ describe("renderColumns — compact mode (width < 96)", () => {
 		const palette = mockPalette();
 		const config = mockConfig();
 		const j = makeJob();
-		const feed: FeedState = { lines: [{ text: "activity", ts: 2000 }], last_progress: undefined, last_assistant: undefined };
-		const lines = renderColumns(engine, palette, config, j, feed, mockAnimState(), 100, false);
+		const activity: FlowActivityRow[] = [{ kind: "progress", text: "activity", ts: 2000 }];
+		const lines = renderColumns(engine, palette, config, j, activity, mockAnimState(), 100, false);
 		const all = lines.join("\n");
 		expect(all).not.toContain("│");
 		expect(all).toContain("WORK ITEM");
@@ -257,7 +253,7 @@ describe("renderColumns — compact mode (width < 96)", () => {
 			error: "Restored active job has no live process; stale restore: previous process not live",
 		};
 		expect(() => {
-			renderColumns(engine, palette, config, j, emptyFeed(), mockAnimState(), 80, true);
+			renderColumns(engine, palette, config, j, emptyActivity(), mockAnimState(), 80, true);
 		}).not.toThrow();
 	});
 
@@ -275,7 +271,7 @@ describe("renderColumns — compact mode (width < 96)", () => {
 			},
 		});
 
-		const lines = renderColumns(engine, palette, config, j, emptyFeed(), mockAnimState(), 80, true);
+		const lines = renderColumns(engine, palette, config, j, emptyActivity(), mockAnimState(), 80, true);
 		const all = lines.join("\n");
 		expect(all).toContain("Model");
 		expect(all).toContain("gpt-5.4@openai");
@@ -297,7 +293,7 @@ describe("renderColumns — compact mode (width < 96)", () => {
 			createdAt: 1000,
 		};
 
-		const lines = renderColumns(engine, palette, config, j, emptyFeed(), mockAnimState(), 80, true);
+		const lines = renderColumns(engine, palette, config, j, emptyActivity(), mockAnimState(), 80, true);
 		const all = lines.join("\n");
 		expect(all).toContain("Model");
 		expect(all).toContain("(default)");
