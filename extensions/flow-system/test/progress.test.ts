@@ -57,6 +57,26 @@ describe("createFlowProgressTracker", () => {
 		expect(explicitEnd?.extras.summaryPhaseSource).toBeUndefined();
 	});
 
+	it("auto-clears stale explicit writing-summary after timeout", () => {
+		let now = 1_000;
+		const tracker = createFlowProgressTracker({
+			now: () => now,
+			explicitSummaryAutoClearMs: 500,
+			assistantTextThrottleMs: 0,
+		});
+
+		const explicitStart = tracker.apply({ _tag: "summary_state", active: true, source: "explicit" });
+		now = 1_700;
+		const assistant = tracker.apply({
+			_tag: "assistant_text",
+			detail: "Final answer body arrives after stale summary flag should clear.",
+		});
+
+		expect(explicitStart?.extras.writingSummary).toBe(true);
+		expect(assistant?.extras.writingSummary).toBe(false);
+		expect(assistant?.extras.summaryPhaseSource).toBeUndefined();
+	});
+
 	it("activates heuristic writing-summary after tools settle and long assistant text", () => {
 		let now = 1_000;
 		const tracker = createFlowProgressTracker({

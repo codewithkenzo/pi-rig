@@ -98,6 +98,36 @@ const summarize = (text: string): string => {
 	return normalized.length > 160 ? `${normalized.slice(0, 160)}…` : normalized;
 };
 
+const notifyFlowBackgroundResult = (
+	ctx: ExtensionContext,
+	args: {
+		jobId: string;
+		profileName: string;
+		status: "done" | "failed" | "cancelled";
+		summary?: string;
+		durationMs?: number;
+	},
+): void => {
+	const duration =
+		args.durationMs !== undefined
+			? ` · ${Math.max(1, Math.round(args.durationMs / 100)) / 10}s`
+			: "";
+	const summary =
+		args.summary !== undefined && args.summary.trim().length > 0
+			? `\n${summarize(args.summary)}`
+			: "";
+	const next = `\nJob ${args.jobId} · run flow_status jobId=${args.jobId} for full result.`;
+	if (args.status === "done") {
+		ctx.ui.notify(`✓ ${args.profileName} done${duration}${summary}${next}`, "info");
+		return;
+	}
+	if (args.status === "cancelled") {
+		ctx.ui.notify(`⊘ ${args.profileName} cancelled${duration}${summary}${next}`, "warning");
+		return;
+	}
+	ctx.ui.notify(`✗ ${args.profileName} failed${duration}${summary}${next}`, "error");
+};
+
 const applyProgress = (
 	queue: FlowQueueService,
 	jobId: string,
@@ -329,7 +359,11 @@ export function makeFlowTool(queue: FlowQueueService, runFlow: ExecuteFlowFn = e
 						if (slotStatus !== "running") {
 							if (slotStatus === "cancelled") {
 								await markCancelled(queue, job.id, tracker.toolCount, tracker.recentTools);
-								ctx.ui.notify(`⊘ ${profileName} cancelled`, "warning");
+								notifyFlowBackgroundResult(ctx, {
+									jobId: job.id,
+									profileName,
+									status: "cancelled",
+								});
 								return;
 							}
 							await setTerminalStatus(queue, job.id, "failed", {
@@ -340,7 +374,12 @@ export function makeFlowTool(queue: FlowQueueService, runFlow: ExecuteFlowFn = e
 								lastProgress: "failed",
 								...(tracker.recentTools.length > 0 ? { recentTools: tracker.recentTools } : {}),
 							});
-							ctx.ui.notify(`✗ ${profileName} failed`, "error");
+							notifyFlowBackgroundResult(ctx, {
+								jobId: job.id,
+								profileName,
+								status: "failed",
+								summary: `Flow ${job.id} reached terminal status ${slotStatus} before execution.`,
+							});
 							return;
 						}
 
@@ -406,13 +445,21 @@ export function makeFlowTool(queue: FlowQueueService, runFlow: ExecuteFlowFn = e
 										runEnvelope,
 									),
 								);
-							ctx.ui.notify(
-								`✓ ${profileName} (${Math.max(1, Math.round((finishedAt - startedAt) / 100)) / 10}s)`,
-								"info",
-							);
+							notifyFlowBackgroundResult(ctx, {
+								jobId: job.id,
+								profileName,
+								status: "done",
+								summary: exit.value,
+								durationMs: finishedAt - startedAt,
+							});
 						} else if (isFlowCancelledCause(exit.cause)) {
 							await markCancelled(queue, job.id, tracker.toolCount, tracker.recentTools);
-							ctx.ui.notify(`⊘ ${profileName} cancelled`, "warning");
+							notifyFlowBackgroundResult(ctx, {
+								jobId: job.id,
+								profileName,
+								status: "cancelled",
+								durationMs: Date.now() - startedAt,
+							});
 						} else {
 								const finishedAt = Date.now();
 								await setTerminalStatus(
@@ -431,7 +478,13 @@ export function makeFlowTool(queue: FlowQueueService, runFlow: ExecuteFlowFn = e
 										runEnvelope,
 									),
 								);
-								ctx.ui.notify(`✗ ${profileName} failed`, "error");
+								notifyFlowBackgroundResult(ctx, {
+									jobId: job.id,
+									profileName,
+									status: "failed",
+									summary: formatFlowError(exit.cause),
+									durationMs: finishedAt - startedAt,
+								});
 							}
 						} catch (error) {
 							const errorText = describeError(error);
@@ -456,7 +509,12 @@ export function makeFlowTool(queue: FlowQueueService, runFlow: ExecuteFlowFn = e
 								);
 							}
 						const summary = jobController.signal.aborted ? `Flow ${job.id} cancelled.` : `Flow ${job.id} failed.`;
-						ctx.ui.notify(summary, jobController.signal.aborted ? "warning" : "error");
+						notifyFlowBackgroundResult(ctx, {
+							jobId: job.id,
+							profileName,
+							status: jobController.signal.aborted ? "cancelled" : "failed",
+							summary: errorText,
+						});
 						emitUpdate(onUpdate, summary, {
 							jobId: job.id,
 							profile: profileName,
@@ -474,7 +532,7 @@ export function makeFlowTool(queue: FlowQueueService, runFlow: ExecuteFlowFn = e
 					content: [
 						{
 							type: "text" as const,
-							text: `Job enqueued in background.\nID:      ${job.id}\nProfile: ${profileName}\nTask:    ${task}`,
+							text: `Job enqueued in background.\nID:      ${job.id}\nProfile: ${profileName}\nTask:    ${task}\nNext:    call flow_status with jobId ${job.id} to inspect or wait for result.`,
 						},
 					],
 					details: {

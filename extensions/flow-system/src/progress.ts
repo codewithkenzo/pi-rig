@@ -5,6 +5,7 @@ export const PROGRESS_TEXT_MAX_CHARS = 96;
 export const ASSISTANT_TEXT_THROTTLE_MS = 250;
 export const SUMMARY_HEURISTIC_IDLE_MS = 900;
 export const SUMMARY_HEURISTIC_MIN_CHARS = 120;
+export const EXPLICIT_SUMMARY_AUTO_CLEAR_MS = 5_000;
 const SUMMARY_COMPLETION_HINT_RE =
 	/\b(final (summary|answer)|in summary|to summarize|conclusion|wrapp?(?:ing)?\s+up|summary:)\b/i;
 const SUMMARY_NOT_FINAL_RE =
@@ -17,6 +18,7 @@ interface ProgressTrackerOptions {
 	assistantTextThrottleMs?: number;
 	summaryHeuristicIdleMs?: number;
 	summaryHeuristicMinChars?: number;
+	explicitSummaryAutoClearMs?: number;
 }
 
 export type SummaryPhaseSource = "explicit" | "heuristic";
@@ -61,6 +63,8 @@ export const createFlowProgressTracker = (options?: ProgressTrackerOptions): Flo
 	const assistantTextThrottleMs = options?.assistantTextThrottleMs ?? ASSISTANT_TEXT_THROTTLE_MS;
 	const summaryHeuristicIdleMs = options?.summaryHeuristicIdleMs ?? SUMMARY_HEURISTIC_IDLE_MS;
 	const summaryHeuristicMinChars = options?.summaryHeuristicMinChars ?? SUMMARY_HEURISTIC_MIN_CHARS;
+	const explicitSummaryAutoClearMs =
+		options?.explicitSummaryAutoClearMs ?? EXPLICIT_SUMMARY_AUTO_CLEAR_MS;
 
 	let toolCount = 0;
 	let completedToolCount = 0;
@@ -68,6 +72,7 @@ export const createFlowProgressTracker = (options?: ProgressTrackerOptions): Flo
 	let lastToolActivityAt: number | undefined;
 	let writingSummary = false;
 	let summaryPhaseSource: SummaryPhaseSource | undefined;
+	let summaryPhaseActivatedAt: number | undefined;
 	let lastAssistantPublishedText: string | undefined;
 	let lastAssistantEmitAt: number | undefined;
 	let pendingAssistantText: string | undefined;
@@ -83,7 +88,15 @@ export const createFlowProgressTracker = (options?: ProgressTrackerOptions): Flo
 	const clearSummaryPhase = (): void => {
 		writingSummary = false;
 		summaryPhaseSource = undefined;
+		summaryPhaseActivatedAt = undefined;
 	};
+
+	const shouldAutoClearExplicitSummary = (at: number): boolean =>
+		explicitSummaryAutoClearMs > 0 &&
+		writingSummary &&
+		summaryPhaseSource === "explicit" &&
+		summaryPhaseActivatedAt !== undefined &&
+		at - summaryPhaseActivatedAt >= explicitSummaryAutoClearMs;
 
 	const fromProgress = (detail: string): ProgressUpdate | undefined => {
 		const clipped = clipText(detail, progressTextMaxChars);
@@ -141,6 +154,7 @@ export const createFlowProgressTracker = (options?: ProgressTrackerOptions): Flo
 			return recentTools;
 		},
 		apply(event) {
+			const at = now();
 			if (event._tag === "summary_state") {
 				const nextWritingSummary = event.active;
 				const nextSource = event.active ? event.source : undefined;
@@ -149,12 +163,13 @@ export const createFlowProgressTracker = (options?: ProgressTrackerOptions): Flo
 				}
 				writingSummary = nextWritingSummary;
 				summaryPhaseSource = nextSource;
+				summaryPhaseActivatedAt = event.active ? at : undefined;
 				return fromProgress(event.active ? "writing summary…" : "summary phase cleared");
 			}
 
 			if (event._tag === "tool_start") {
-				lastToolActivityAt = now();
-				if (summaryPhaseSource !== "explicit") {
+				lastToolActivityAt = at;
+				if (summaryPhaseSource !== "explicit" || shouldAutoClearExplicitSummary(at)) {
 					clearSummaryPhase();
 				}
 				toolCount += 1;
@@ -162,8 +177,8 @@ export const createFlowProgressTracker = (options?: ProgressTrackerOptions): Flo
 				return fromProgress(event.detail);
 			}
 			if (event._tag === "tool_end") {
-				lastToolActivityAt = now();
-				if (summaryPhaseSource !== "explicit") {
+				lastToolActivityAt = at;
+				if (summaryPhaseSource !== "explicit" || shouldAutoClearExplicitSummary(at)) {
 					clearSummaryPhase();
 				}
 				completedToolCount += 1;
@@ -171,13 +186,16 @@ export const createFlowProgressTracker = (options?: ProgressTrackerOptions): Flo
 				return fromProgress(event.detail);
 			}
 
+			if (shouldAutoClearExplicitSummary(at)) {
+				clearSummaryPhase();
+			}
 			let shouldForceEmit = false;
 			if (!writingSummary && summaryPhaseSource !== "explicit") {
 				const settledTools =
 					toolCount > 0 &&
 					completedToolCount >= toolCount &&
 					lastToolActivityAt !== undefined &&
-					now() - lastToolActivityAt >= summaryHeuristicIdleMs;
+					at - lastToolActivityAt >= summaryHeuristicIdleMs;
 				if (
 					settledTools &&
 					event.detail.trim().length >= summaryHeuristicMinChars &&
@@ -186,6 +204,7 @@ export const createFlowProgressTracker = (options?: ProgressTrackerOptions): Flo
 				) {
 					writingSummary = true;
 					summaryPhaseSource = "heuristic";
+					summaryPhaseActivatedAt = at;
 					shouldForceEmit = true;
 				}
 			}

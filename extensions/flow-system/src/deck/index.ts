@@ -17,6 +17,7 @@ import { renderHeader } from "./header.js";
 import { renderColumns } from "./columns.js";
 import { renderSummary } from "./summary.js";
 import { renderFooter } from "./footer.js";
+import { suspendFlowHud } from "../ui.js";
 
 type CustomFn = NonNullable<ExtensionCommandContext["ui"]["custom"]>;
 
@@ -44,8 +45,10 @@ export const showFlowDeck = async (
 		return;
 	}
 
-	await custom<void>(
-		(tui, _theme, _kb, done) => {
+	const releaseHud = suspendFlowHud();
+	try {
+		await custom<void>(
+			(tui, _theme, _kb, done) => {
 			const cwd = ctx.cwd;
 			let state: DeckState = makeInitialDeckState(queue.peek());
 			const ticker = new AnimationTicker();
@@ -198,16 +201,19 @@ export const showFlowDeck = async (
 				},
 			};
 		},
-		{
-			overlay: true,
-			overlayOptions: {
-				anchor: "bottom-center",
-				offsetY: -2,
-				width: "82%",
-				minWidth: 72,
-				maxHeight: "88%",
-				margin: 1,
+			{
+				overlay: true,
+				overlayOptions: {
+					anchor: "bottom-center",
+					offsetY: -2,
+					width: "82%",
+					minWidth: 72,
+					maxHeight: "88%",
+					margin: 1,
+				},
 			},
-		},
-	);
+		);
+	} finally {
+		releaseHud();
+	}
 };

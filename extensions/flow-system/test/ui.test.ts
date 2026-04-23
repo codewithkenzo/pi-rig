@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { Effect } from "effect";
 import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { stripAnsi } from "../../../shared/ui/hud.js";
-import { renderFlowWidgetLines, flowStatusText, attachFlowUi } from "../src/ui.js";
+import { renderFlowWidgetLines, flowStatusText, attachFlowUi, suspendFlowHud } from "../src/ui.js";
 import { makeQueue } from "../src/queue.js";
 
 describe("flow UI helpers", () => {
@@ -145,5 +145,38 @@ describe("flow UI helpers", () => {
 		expect(statusCalls.at(-1)).toBeUndefined();
 		expect(widgetCalls.some((value) => typeof value === "function")).toBe(true);
 		expect(widgetCalls.at(-1)).toBeUndefined();
+	});
+
+	it("suspends widget and status updates while flow overlay is open, then restores them", async () => {
+		const queue = await Effect.runPromise(makeQueue());
+		const statusCalls: Array<string | undefined> = [];
+		const widgetCalls: Array<unknown> = [];
+		const ctx = {
+			cwd: process.cwd(),
+			ui: {
+				setStatus: (_key: string, value?: string) => {
+					statusCalls.push(value);
+				},
+				setWidget: (_key: string, value?: unknown) => {
+					widgetCalls.push(value);
+				},
+			},
+		} as unknown as ExtensionContext;
+
+		const detach = attachFlowUi(queue, ctx);
+		const job = await Effect.runPromise(queue.enqueue("coder", "stream output"));
+		await Effect.runPromise(queue.setStatus(job.id, "running", { lastProgress: "streaming…" }));
+		const releaseHud = suspendFlowHud();
+		await Effect.runPromise(queue.setStatus(job.id, "running", { lastProgress: "writing summary…", writingSummary: true }));
+		const widgetCallsBeforeResume = widgetCalls.length;
+		releaseHud();
+		await Effect.runPromise(queue.setStatus(job.id, "running", { lastProgress: "resumed" }));
+		detach();
+
+		expect(widgetCalls.some((value) => typeof value === "function")).toBe(true);
+		expect(statusCalls.some((value) => value === undefined)).toBe(true);
+		expect(widgetCalls.length).toBeGreaterThan(widgetCallsBeforeResume);
+		expect(stripAnsi(statusCalls.at(-2) ?? "")).toContain("resumed");
+		expect(statusCalls.at(-1)).toBeUndefined();
 	});
 });

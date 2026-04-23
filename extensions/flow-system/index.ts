@@ -7,6 +7,7 @@ import { Effect } from "effect";
 import { makeQueue, type FlowQueueService } from "./src/queue.js";
 import { makeFlowTool } from "./src/tool.js";
 import { makeFlowBatchTool } from "./src/batch-tool.js";
+import { makeFlowStatusTool } from "./src/status-tool.js";
 import { registerFlowCommands } from "./src/commands.js";
 import {
 	FLOW_ENTRY_TYPE,
@@ -27,6 +28,7 @@ type FlowSystemInitState = {
 	detachUi: (() => void) | undefined;
 	flowToolRegistered: boolean;
 	flowBatchToolRegistered: boolean;
+	flowStatusToolRegistered: boolean;
 	commandRegistered: boolean;
 	shortcutRegistered: boolean;
 	resourcesDiscoverRegistered: boolean;
@@ -34,6 +36,7 @@ type FlowSystemInitState = {
 	agentEndRegistered: boolean;
 	sessionShutdownRegistered: boolean;
 	initialized: boolean;
+	lastPersistedQueueKey?: string;
 };
 
 const states = new WeakMap<ExtensionAPI, FlowSystemInitState>();
@@ -43,6 +46,7 @@ const makeFlowSystemState = (): FlowSystemInitState => ({
 	detachUi: undefined,
 	flowToolRegistered: false,
 	flowBatchToolRegistered: false,
+	flowStatusToolRegistered: false,
 	commandRegistered: false,
 	shortcutRegistered: false,
 	resourcesDiscoverRegistered: false,
@@ -51,6 +55,23 @@ const makeFlowSystemState = (): FlowSystemInitState => ({
 	sessionShutdownRegistered: false,
 	initialized: false,
 });
+
+const queueSnapshotKey = (jobs: FlowStateEntry["jobs"]): string => JSON.stringify({ jobs });
+
+const persistQueueSnapshot = async (
+	pi: ExtensionAPI,
+	queue: FlowQueueService,
+	state: FlowSystemInitState,
+): Promise<void> => {
+	const snap = await Effect.runPromise(queue.snapshot());
+	const persistJobs = snap.jobs.slice(-100);
+	const key = queueSnapshotKey(persistJobs);
+	if (state.lastPersistedQueueKey === key) {
+		return;
+	}
+	pi.appendEntry(FLOW_ENTRY_TYPE, { jobs: persistJobs } satisfies FlowStateEntry);
+	state.lastPersistedQueueKey = key;
+};
 
 const loadFlowSystemConfig = (): FlowSystemConfig => {
 	const cwd = typeof process.cwd === "function" ? process.cwd() : baseDir;
@@ -101,6 +122,10 @@ export default async function (pi: ExtensionAPI): Promise<void> {
 			pi.registerTool(makeFlowBatchTool(queue));
 			state.flowBatchToolRegistered = true;
 		}
+		if (!state.flowStatusToolRegistered) {
+			pi.registerTool(makeFlowStatusTool(queue));
+			state.flowStatusToolRegistered = true;
+		}
 		if (!state.commandRegistered || !state.shortcutRegistered) {
 			registerFlowCommands(
 				pi,
@@ -136,6 +161,9 @@ export default async function (pi: ExtensionAPI): Promise<void> {
 					await Effect.runPromise(
 						queue.restoreFrom(last.jobs, { normalizeStaleActive: true, restoredAt: Date.now() }),
 					);
+					state.lastPersistedQueueKey = queueSnapshotKey(last.jobs.slice(-100));
+				} else {
+					delete state.lastPersistedQueueKey;
 				}
 				state.detachUi?.();
 				if (ctx.hasUI) {
@@ -146,15 +174,15 @@ export default async function (pi: ExtensionAPI): Promise<void> {
 		}
 		if (!state.agentEndRegistered) {
 			pi.on("agent_end", async (_event, _ctx: ExtensionContext) => {
-				const snap = await Effect.runPromise(queue.snapshot());
-				// Persist only the most recent 100 jobs to keep session state bounded.
-				const persistJobs = snap.jobs.slice(-100);
-				pi.appendEntry(FLOW_ENTRY_TYPE, { jobs: persistJobs } satisfies FlowStateEntry);
+				await persistQueueSnapshot(pi, queue, state);
 			});
 			state.agentEndRegistered = true;
 		}
 		if (!state.sessionShutdownRegistered) {
 			pi.on("session_shutdown", async () => {
+				if (state.queue !== undefined) {
+					await persistQueueSnapshot(pi, state.queue, state);
+				}
 				state.detachUi?.();
 				state.detachUi = undefined;
 			});

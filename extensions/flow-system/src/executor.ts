@@ -109,8 +109,64 @@ const FLOW_CANCELLED_REASON = "Flow cancelled.";
 const cancelledError = (): FlowCancelledError =>
 	new FlowCancelledError({ reason: FLOW_CANCELLED_REASON });
 
+// ── Watchdog configuration ────────────────────────────────────────────────────
+
+export const DEFAULT_SUMMARY_IDLE_MS = 60_000;
+export const DEFAULT_STREAM_IDLE_MS = 180_000;
+export const DEFAULT_SUMMARY_FINALIZE_GRACE_MS = 4_000;
+export const WATCHDOG_TICK_MS = 1_000;
+export const PARTIAL_OUTPUT_PREFIX = "[flow-system partial:";
+
+export interface WatchdogOptions {
+	/** Max ms in summary phase with no new progress events before the child is killed. 0 disables. */
+	summaryIdleMs?: number;
+	/** Max ms with no JSON event from the child before the child is killed. 0 disables. */
+	streamIdleMs?: number;
+	/** Max ms to wait after final-answer text stops changing before treating it as complete. 0 disables. */
+	summaryFinalizeGraceMs?: number;
+}
+
+const parsePositiveIntEnv = (key: string): number | undefined => {
+	const raw = process.env[key];
+	if (raw === undefined || raw.length === 0) return undefined;
+	const n = Number.parseInt(raw, 10);
+	if (!Number.isFinite(n) || n < 0) return undefined;
+	return n;
+};
+
+const resolveWatchdog = (opts: WatchdogOptions | undefined): Required<WatchdogOptions> => ({
+	summaryIdleMs:
+		opts?.summaryIdleMs ??
+		parsePositiveIntEnv("FLOW_SYSTEM_SUMMARY_IDLE_MS") ??
+		DEFAULT_SUMMARY_IDLE_MS,
+	streamIdleMs:
+		opts?.streamIdleMs ?? parsePositiveIntEnv("FLOW_SYSTEM_STREAM_IDLE_MS") ?? DEFAULT_STREAM_IDLE_MS,
+	summaryFinalizeGraceMs:
+		opts?.summaryFinalizeGraceMs ??
+		parsePositiveIntEnv("FLOW_SYSTEM_SUMMARY_FINALIZE_GRACE_MS") ??
+		DEFAULT_SUMMARY_FINALIZE_GRACE_MS,
+});
+
 const failIfAborted = (signal: AbortSignal | undefined): Effect.Effect<void, FlowCancelledError> =>
 	signal?.aborted ? Effect.fail(cancelledError()) : Effect.void;
+
+export function extractAssistantMessageText(v: unknown): string | undefined {
+	if (typeof v !== "object" || v === null) return undefined;
+	const obj = v as Record<string, unknown>;
+	const type = obj["type"];
+	if (type !== "message_update" && type !== "message_end") {
+		return undefined;
+	}
+	const message = obj["message"] as Record<string, unknown> | undefined;
+	if (message?.["role"] !== "assistant") return undefined;
+	const content = message["content"] as ReadonlyArray<Record<string, unknown>> | undefined;
+	if (!Array.isArray(content)) return undefined;
+	const texts = content
+		.filter((c) => c["type"] === "text" && typeof c["text"] === "string")
+		.map((c) => c["text"] as string)
+		.filter(Boolean);
+	return texts.length > 0 ? texts.join("\n").trim() : undefined;
+}
 
 function extractText(v: unknown): string | undefined {
 	if (typeof v !== "object" || v === null) return undefined;
@@ -257,8 +313,10 @@ export const runSubprocess = (
 	cwd: string,
 	onProgress?: (event: FlowProgressEvent) => void,
 	abortSignal?: AbortSignal,
+	watchdog?: WatchdogOptions,
 ): Effect.Effect<string, SubprocessError | FlowCancelledError> =>
 	Effect.callback<string, SubprocessError | FlowCancelledError>((resume, effectSignal) => {
+		const { summaryIdleMs, streamIdleMs, summaryFinalizeGraceMs } = resolveWatchdog(watchdog);
 		const MAX_STDERR_BYTES = 64 * 1024;
 		const args: string[] = ["--mode", "json", "-p", "--no-session"];
 
@@ -298,10 +356,17 @@ export const runSubprocess = (
 		let finished = false;
 		let cancelled = false;
 		let killTimer: ReturnType<typeof setTimeout> | undefined;
+		let watchdogTimer: ReturnType<typeof setInterval> | undefined;
+		let watchdogReason: string | undefined;
 
 		let lastText = "";
+		let lastAssistantText = "";
 		let stderrBuf = "";
 		let stderrTruncated = false;
+
+		let lastActivityAt = Date.now();
+		let summaryActiveSince: number | undefined;
+		let summaryFinalTextAt: number | undefined;
 
 		const finish = (effect: Effect.Effect<string, SubprocessError | FlowCancelledError>): void => {
 			if (finished) return;
@@ -309,6 +374,10 @@ export const runSubprocess = (
 			if (killTimer !== undefined) {
 				clearTimeout(killTimer);
 				killTimer = undefined;
+			}
+			if (watchdogTimer !== undefined) {
+				clearInterval(watchdogTimer);
+				watchdogTimer = undefined;
 			}
 			effectSignal.removeEventListener("abort", onAbort);
 			abortSignal?.removeEventListener("abort", onAbort);
@@ -329,9 +398,45 @@ export const runSubprocess = (
 			}, 1500);
 		};
 
+		const triggerWatchdog = (reason: string): void => {
+			if (watchdogReason !== undefined) return;
+			watchdogReason = reason;
+			if (watchdogTimer !== undefined) {
+				clearInterval(watchdogTimer);
+				watchdogTimer = undefined;
+			}
+			terminateChild();
+		};
+
 		const onAbort = (): void => {
 			cancelled = true;
 			terminateChild();
+		};
+
+		const checkWatchdog = (): void => {
+			if (finished || cancelled || watchdogReason !== undefined) return;
+			const now = Date.now();
+			if (streamIdleMs > 0 && now - lastActivityAt >= streamIdleMs) {
+				triggerWatchdog(`stream-idle ${streamIdleMs}ms`);
+				return;
+			}
+			if (
+				summaryFinalizeGraceMs > 0 &&
+				summaryActiveSince !== undefined &&
+				summaryFinalTextAt !== undefined &&
+				lastAssistantText.length > 0 &&
+				now - summaryFinalTextAt >= summaryFinalizeGraceMs
+			) {
+				triggerWatchdog(`summary-complete ${summaryFinalizeGraceMs}ms`);
+				return;
+			}
+			if (
+				summaryIdleMs > 0 &&
+				summaryActiveSince !== undefined &&
+				now - Math.max(summaryActiveSince, lastActivityAt) >= summaryIdleMs
+			) {
+				triggerWatchdog(`summary-idle ${summaryIdleMs}ms`);
+			}
 		};
 
 		if (abortSignal?.aborted || effectSignal.aborted) {
@@ -371,13 +476,49 @@ export const runSubprocess = (
 		effectSignal.addEventListener("abort", onAbort, { once: true });
 		abortSignal?.addEventListener("abort", onAbort, { once: true });
 
+		if (summaryIdleMs > 0 || streamIdleMs > 0) {
+			watchdogTimer = setInterval(checkWatchdog, WATCHDOG_TICK_MS);
+			// Allow the node process to exit even if the interval is live.
+			if (typeof (watchdogTimer as { unref?: () => void }).unref === "function") {
+				(watchdogTimer as { unref: () => void }).unref();
+			}
+		}
+
 		rl.on("line", (line) => {
+			lastActivityAt = Date.now();
 			try {
 				const msg: unknown = JSON.parse(line);
 				const text = extractText(msg);
 				if (text !== undefined) lastText = text;
+				const assistantText = extractAssistantMessageText(msg);
+				if (assistantText !== undefined && assistantText.length > 0) {
+					if (assistantText !== lastAssistantText) {
+						lastAssistantText = assistantText;
+						summaryFinalTextAt = lastActivityAt;
+					} else if (summaryFinalTextAt === undefined) {
+						summaryFinalTextAt = lastActivityAt;
+					}
+				}
 				const progress = extractProgressEvent(msg);
 				if (progress !== undefined) {
+					if (progress._tag === "summary_state") {
+						if (progress.active) {
+							if (summaryActiveSince === undefined) {
+								summaryActiveSince = lastActivityAt;
+							}
+						} else {
+							summaryActiveSince = undefined;
+							summaryFinalTextAt = undefined;
+						}
+					} else if (progress._tag === "tool_start" || progress._tag === "tool_end") {
+						summaryActiveSince = undefined;
+						summaryFinalTextAt = undefined;
+					} else if (progress._tag === "assistant_text") {
+						lastAssistantText = progress.detail;
+						if (summaryActiveSince !== undefined) {
+							summaryFinalTextAt = lastActivityAt;
+						}
+					}
 					onProgress?.(progress);
 				}
 			} catch {
@@ -386,6 +527,7 @@ export const runSubprocess = (
 		});
 
 		proc.stderr.on("data", (chunk: Buffer) => {
+			lastActivityAt = Date.now();
 			const text = chunk.toString();
 			if (stderrBuf.length >= MAX_STDERR_BYTES) {
 				stderrTruncated = true;
@@ -418,8 +560,29 @@ export const runSubprocess = (
 				finish(Effect.fail(cancelledError()));
 				return;
 			}
+			if (watchdogReason !== undefined) {
+				const fallback = lastText.length > 0 ? lastText : lastAssistantText;
+				if (fallback.length > 0) {
+					if (watchdogReason.startsWith("summary-complete ")) {
+						finish(Effect.succeed(fallback));
+						return;
+					}
+					finish(
+						Effect.succeed(`${PARTIAL_OUTPUT_PREFIX}${watchdogReason}]\n${fallback}`),
+					);
+					return;
+				}
+				const watchdogStderr = `${cappedStderr()}\n[flow-system] watchdog: ${watchdogReason}`.trim();
+				finish(
+					Effect.fail(
+						new SubprocessError({ exitCode: code ?? 1, stderr: watchdogStderr }),
+					),
+				);
+				return;
+			}
 			if (code === 0) {
-				finish(Effect.succeed(lastText));
+				const resolved = lastText.length > 0 ? lastText : lastAssistantText;
+				finish(Effect.succeed(resolved));
 			} else {
 				finish(
 					Effect.fail(
@@ -451,6 +614,7 @@ export interface ExecuteOptions {
 	signal?: AbortSignal | undefined;
 	onModelFallback?: () => void;
 	onAgentPromptUnavailable?: () => void;
+	watchdog?: WatchdogOptions;
 }
 
 export const executeFlow = ({
@@ -463,6 +627,7 @@ export const executeFlow = ({
 	cwd = process.cwd(),
 	onProgress,
 	signal,
+	watchdog,
 	onModelFallback: _onModelFallback,
 	onAgentPromptUnavailable: _onAgentPromptUnavailable,
 }: ExecuteOptions): Effect.Effect<string, SubprocessError | SkillLoadError | FlowCancelledError> => {
@@ -482,6 +647,7 @@ export const executeFlow = ({
 					cwd,
 					onProgress,
 					signal,
+					watchdog,
 				),
 			),
 		);
@@ -507,6 +673,7 @@ export const executeFlow = ({
 						cwd,
 						onProgress,
 						signal,
+						watchdog,
 					),
 				// Release: always clean up, even on failure or interruption
 				(skillFile) => cleanupTempFile(skillFile),

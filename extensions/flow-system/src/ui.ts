@@ -9,6 +9,42 @@ import type { FlowJob, FlowQueue } from "./types.js";
 const FLOW_STATUS_KEY = "flow-system";
 const FLOW_WIDGET_KEY = "flow-system";
 
+let flowHudSuspendDepth = 0;
+const flowHudSuspendListeners = new Set<() => void>();
+
+const emitFlowHudSuspendChange = (): void => {
+	for (const listener of flowHudSuspendListeners) {
+		try {
+			listener();
+		} catch (error) {
+			console.warn("[flow-system] flow HUD suspension listener failed", error);
+		}
+	}
+};
+
+const isFlowHudSuspended = (): boolean => flowHudSuspendDepth > 0;
+
+const subscribeFlowHudSuspendChange = (listener: () => void): (() => void) => {
+	flowHudSuspendListeners.add(listener);
+	return () => {
+		flowHudSuspendListeners.delete(listener);
+	};
+};
+
+export const suspendFlowHud = (): (() => void) => {
+	flowHudSuspendDepth += 1;
+	emitFlowHudSuspendChange();
+	let released = false;
+	return () => {
+		if (released) {
+			return;
+		}
+		released = true;
+		flowHudSuspendDepth = Math.max(0, flowHudSuspendDepth - 1);
+		emitFlowHudSuspendChange();
+	};
+};
+
 interface LinesComponent {
 	render(width: number): string[];
 	invalidate(): void;
@@ -265,6 +301,10 @@ export const attachFlowUi = (
 	};
 
 	const syncUi = (snapshot: FlowQueue): void => {
+		if (isFlowHudSuspended()) {
+			clearUi();
+			return;
+		}
 		if (!hasActiveJobs(snapshot)) {
 			clearUi();
 			return;
@@ -280,10 +320,14 @@ export const attachFlowUi = (
 	const unsubscribe = queue.subscribe((snapshot) => {
 		syncUi(snapshot);
 	});
+	const unsubscribeSuspend = subscribeFlowHudSuspendChange(() => {
+		syncUi(queue.peek());
+	});
 
 	syncUi(queue.peek());
 
 	return () => {
+		unsubscribeSuspend();
 		unsubscribe();
 		clearUi();
 	};

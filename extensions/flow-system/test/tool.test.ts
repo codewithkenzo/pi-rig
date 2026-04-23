@@ -34,12 +34,17 @@ const waitForJobTerminalState = async (
 	throw new Error(`timed out waiting for terminal status for ${jobId}`);
 };
 
-const makeCtx = (cwd = process.cwd()): ExtensionContext =>
+const makeCtx = (
+	cwd = process.cwd(),
+	notifyCalls?: Array<{ text: string; level?: string }>,
+): ExtensionContext =>
 	({
 		cwd,
 		hasUI: true,
 		ui: {
-			notify: () => undefined,
+			notify: (text: string, level?: string) => {
+				notifyCalls?.push({ text, level });
+			},
 		},
 	} as unknown as ExtensionContext);
 
@@ -264,9 +269,10 @@ describe("flow_run tool cancellation", () => {
 		expect(jobs.filter((job) => job.status === "cancelled").map((job) => job.task)).toContain("second");
 	});
 
-	it("does not emit a failure update when background flow_run succeeds", async () => {
+	it("does not emit a failure update when background flow_run succeeds and sends a proactive completion notify", async () => {
 		const queue = await Effect.runPromise(makeQueue());
 		const updates: string[] = [];
+		const notifyCalls: Array<{ text: string; level?: string }> = [];
 		const tool = makeFlowTool(queue, () => Effect.succeed("background ok"));
 		const result = await tool.execute(
 			"tool-background-success",
@@ -278,7 +284,7 @@ describe("flow_run tool cancellation", () => {
 					updates.push(text.text);
 				}
 			},
-			makeCtx(),
+			makeCtx(process.cwd(), notifyCalls),
 		);
 
 		expect(result.details).toMatchObject({ status: "pending", background: true });
@@ -287,6 +293,8 @@ describe("flow_run tool cancellation", () => {
 		const terminal = await waitForJobTerminalState(queue, String(jobId));
 		expect(terminal).toBe("done");
 		expect(updates.some((line) => line.toLowerCase().includes("failed"))).toBe(false);
+		expect(notifyCalls.some((call) => call.text.includes("run flow_status jobId="))).toBe(true);
+		expect(notifyCalls.some((call) => call.text.includes("background ok"))).toBe(true);
 	});
 
 	it("throttles and clips high-frequency assistant text progress updates", async () => {

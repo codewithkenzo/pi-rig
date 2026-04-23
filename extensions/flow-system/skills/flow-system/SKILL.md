@@ -76,8 +76,9 @@ Minimum shape for this skill:
 
 - Pick the smallest useful profile first.
 - Apply profile routing defaults above before writing task prompt.
-- Use background jobs for long-running exploration or research.
+- Default long-running exploration, research, and multi-step code scans to `background=true` so main agent does not block on them.
 - Use `/flow` when you want live inspection, quick cancel, or to browse active jobs without leaving the chat band.
+- Treat background flow completion as proactive UI/HUD signal, not as automatic continuation of already-finished parent turn; if you need results in-chat, explicitly follow with `flow_status`.
 - Check `/flow profiles` before assuming which tools or reasoning level a profile uses.
 - Check `/flow status` before starting duplicate jobs.
 - The compact flow deck should stay flow-only: avoid reintroducing unrelated status noise into the bar/widget.

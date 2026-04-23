@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { extractProgressEvent } from "../src/executor.js";
+import { extractAssistantMessageText, extractProgressEvent } from "../src/executor.js";
 
 const signature = (phase: "commentary" | "final_answer"): string =>
 	JSON.stringify({ v: 1, id: "msg_1", phase });
@@ -92,5 +92,26 @@ describe("extractProgressEvent", () => {
 			_tag: "assistant_text",
 			detail: "Still working...",
 		});
+	});
+
+	it("extracts assistant text from final_answer message updates even when progress becomes summary_state", () => {
+		const text = extractAssistantMessageText({
+			type: "message_update",
+			message: {
+				role: "assistant",
+				content: [{ type: "text", text: "SUCCESS extensions/flow-system/src/status-tool.ts", textSignature: signature("final_answer") }],
+			},
+			assistantMessageEvent: {
+				type: "text_end",
+				contentIndex: 0,
+				content: "SUCCESS extensions/flow-system/src/status-tool.ts",
+				partial: {
+					role: "assistant",
+					content: [{ type: "text", text: "SUCCESS extensions/flow-system/src/status-tool.ts", textSignature: signature("final_answer") }],
+				},
+			},
+		});
+
+		expect(text).toBe("SUCCESS extensions/flow-system/src/status-tool.ts");
 	});
 });
