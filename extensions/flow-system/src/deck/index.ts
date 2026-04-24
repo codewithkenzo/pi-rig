@@ -19,6 +19,7 @@ import { renderSummary } from "./summary.js";
 import { renderFooter } from "./footer.js";
 import { suspendFlowHud } from "../ui.js";
 import { computeDeckFrameLayout } from "./frame.js";
+import { fitAnsiColumn } from "./layout.js";
 
 type CustomFn = NonNullable<ExtensionCommandContext["ui"]["custom"]>;
 
@@ -29,12 +30,12 @@ const SHIFT_DN = "\x1b[1;2B";
 
 const SCROLL_STEP = 5;
 
-const padDeckFrame = (lines: string[], frameHeight: number, footerLines = 3): string[] => {
-	const next = lines.slice(0, frameHeight);
+const padDeckFrame = (lines: string[], frameHeight: number, width: number, footerLines = 3): string[] => {
+	const next = lines.slice(0, frameHeight).map((line) => fitAnsiColumn(line, width));
 	if (next.length >= frameHeight) {
 		return next;
 	}
-	const pad = Array.from({ length: frameHeight - next.length }, () => "");
+	const pad = Array.from({ length: frameHeight - next.length }, () => " ".repeat(width));
 	if (next.length <= footerLines) {
 		return [...pad, ...next];
 	}
@@ -201,7 +202,7 @@ export const showFlowDeck = async (
 							divider,
 							engine.fg("dim", "  [esc] close"),
 							divider,
-						], layout.frameHeight);
+						], layout.frameHeight, width);
 					}
 
 					const job = selectedJob();
@@ -230,7 +231,7 @@ export const showFlowDeck = async (
 							animState,
 						),
 						...renderFooter(engine, state.key_flash, width, compact, veryNarrow),
-					], layout.frameHeight);
+					], layout.frameHeight, width);
 				},
 			};
 		},
@@ -238,11 +239,11 @@ export const showFlowDeck = async (
 				overlay: true,
 				overlayOptions: {
 					anchor: "bottom-center",
-					offsetY: -2,
-					width: "82%",
+					offsetY: -1,
+					width: "100%",
 					minWidth: 72,
 					maxHeight: "88%",
-					margin: 1,
+					margin: 0,
 				},
 			},
 		);

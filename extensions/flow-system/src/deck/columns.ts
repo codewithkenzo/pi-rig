@@ -5,7 +5,7 @@ import { ellipsize } from "../../../../shared/ui/hud.js";
 import type { FlowJob } from "../types.js";
 import type { FeedState } from "./state.js";
 import { STATUS_ICONS } from "./icons.js";
-import { truncateToWidth } from "./layout.js";
+import { fitAnsiColumn, truncateToWidth } from "./layout.js";
 
 const DEFAULT_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const;
 
@@ -159,9 +159,9 @@ const buildFeedViewport = (
 		rendered.push(engine.fg("muted", truncateToWidth("  (waiting…)", width)));
 	}
 	while (rendered.length < feedLines) {
-		rendered.push("");
+		rendered.push(" ".repeat(width));
 	}
-	return rendered.slice(0, feedLines);
+	return rendered.slice(0, feedLines).map((line) => fitAnsiColumn(line, width));
 };
 
 export const renderColumns = (
@@ -188,7 +188,7 @@ export const renderColumns = (
 	const topCandidates = buildTopCandidates(engine, palette, config, job, animState, reducedMotion, width);
 	const topLines = topCandidates.slice(0, topBudget);
 	while (topLines.length < topBudget) {
-		topLines.push("");
+		topLines.push(" ".repeat(width));
 	}
 
 	const activityHeader = engine.fg("header", truncateToWidth("  LIVE ACTIVITY", width));
@@ -199,7 +199,8 @@ export const renderColumns = (
 			engine.fg("dim", "  auto-refresh"),
 			reducedMotion,
 		)
-		: "";
+		: " ".repeat(width);
 
-	return [divider, ...topLines, activityHeader, ...feedViewport, truncateToWidth(trailer, width), divider];
+	return [divider, ...topLines, activityHeader, ...feedViewport, truncateToWidth(trailer, width), divider]
+		.map((line) => fitAnsiColumn(line, width));
 };
