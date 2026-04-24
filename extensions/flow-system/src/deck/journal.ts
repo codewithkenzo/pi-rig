@@ -96,6 +96,10 @@ const progressRow = (
 			return event.active && update?.extras.writingSummary === true
 				? { kind: "summary", text: "Writing summary…", tone: "warning" }
 				: undefined;
+		case "budget_warning": {
+			const text = sanitizeText(update?.extras.lastProgress) ?? sanitizeText(event.detail);
+			return text !== undefined ? { kind: "system", label: "budget", text, tone: "warning" } : undefined;
+		}
 	}
 };
 

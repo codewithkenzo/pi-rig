@@ -39,6 +39,23 @@ describe("resolveExecutionEnvelope", () => {
 		expect(envelope.maxIterations).toBeLessThanOrEqual(120);
 	});
 
+	it("normalizes runtime and observed-tool budgets", () => {
+		const envelope = resolveExecutionEnvelope(
+			BASE_PROFILE,
+			"bounded run",
+			{
+				maxToolCalls: 42,
+				maxRuntimeSeconds: 90,
+				runtimeWarningSeconds: 30,
+			},
+			{},
+		);
+
+		expect(envelope.maxToolCalls).toBe(42);
+		expect(envelope.maxRuntimeMs).toBe(90_000);
+		expect(envelope.runtimeWarningMs).toBe(30_000);
+	});
+
 	it("falls back to context-selected model when no explicit model is provided", () => {
 		const envelope = resolveExecutionEnvelope(
 			BASE_PROFILE,

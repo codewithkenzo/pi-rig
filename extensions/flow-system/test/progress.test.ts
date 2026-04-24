@@ -42,6 +42,15 @@ describe("createFlowProgressTracker", () => {
 		expect(end?.summary).toBe("tool end d…");
 	});
 
+	it("surfaces budget warnings as progress without changing tool counts", () => {
+		const tracker = createFlowProgressTracker();
+		const warning = tracker.apply({ _tag: "budget_warning", detail: "runtime warning 30000ms: request checkpoint/summary" });
+
+		expect(warning?.summary).toBe("runtime warning 30000ms: request checkpoint/summary");
+		expect(warning?.extras.lastProgress).toBe("runtime warning 30000ms: request checkpoint/summary");
+		expect(tracker.toolCount).toBe(0);
+	});
+
 	it("keeps explicit writing-summary active until explicit end signal", () => {
 		const tracker = createFlowProgressTracker();
 

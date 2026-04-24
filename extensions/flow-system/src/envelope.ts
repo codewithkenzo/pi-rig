@@ -106,6 +106,24 @@ const clampIterations = (value: unknown): number | undefined => {
 	return value;
 };
 
+const clampInteger = (value: unknown, min: number, max: number): number | undefined => {
+	if (typeof value !== "number" || !Number.isInteger(value)) {
+		return undefined;
+	}
+	if (value < min) return min;
+	if (value > max) return max;
+	return value;
+};
+
+const clampToolCalls = (value: unknown): number | undefined => clampInteger(value, 1, 500);
+
+const clampRuntimeMs = (value: unknown): number | undefined => clampInteger(value, 1, 86_400_000);
+
+const clampRuntimeSecondsToMs = (value: unknown): number | undefined => {
+	const seconds = clampInteger(value, 1, 86_400);
+	return seconds === undefined ? undefined : seconds * 1_000;
+};
+
 const clampPreloadBytes = (value: unknown): number | undefined => {
 	if (typeof value !== "number" || !Number.isInteger(value)) {
 		return undefined;
@@ -399,6 +417,18 @@ export const resolveExecutionEnvelope = (
 
 	const requestedMaxIterations =
 		clampIterations(overrides?.maxIterations) ?? clampIterations(overrides?.max_iterations);
+	const maxToolCalls =
+		clampToolCalls(overrides?.maxToolCalls) ?? clampToolCalls(overrides?.max_tool_calls);
+	const maxRuntimeMs =
+		clampRuntimeMs(overrides?.maxRuntimeMs) ??
+		clampRuntimeMs(overrides?.max_runtime_ms) ??
+		clampRuntimeSecondsToMs(overrides?.maxRuntimeSeconds) ??
+		clampRuntimeSecondsToMs(overrides?.max_runtime_seconds);
+	const runtimeWarningMs =
+		clampRuntimeMs(overrides?.runtimeWarningMs) ??
+		clampRuntimeMs(overrides?.runtime_warning_ms) ??
+		clampRuntimeSecondsToMs(overrides?.runtimeWarningSeconds) ??
+		clampRuntimeSecondsToMs(overrides?.runtime_warning_seconds);
 
 	const preload = normalizePreload(overrides?.preload);
 	const preloadWeight = (preload?.dirs?.length ?? 0) + (preload?.files?.length ?? 0) + (preload?.commands?.length ?? 0);
@@ -420,6 +450,9 @@ export const resolveExecutionEnvelope = (
 		reasoning,
 		maxIterations,
 		...(requestedMaxIterations !== undefined ? { requestedMaxIterations } : {}),
+		...(maxToolCalls !== undefined ? { maxToolCalls } : {}),
+		...(maxRuntimeMs !== undefined ? { maxRuntimeMs } : {}),
+		...(runtimeWarningMs !== undefined ? { runtimeWarningMs } : {}),
 		...(effort !== undefined ? { effort } : {}),
 		...(modelResolution.model !== undefined ? { model: modelResolution.model } : {}),
 		...(modelResolution.provider !== undefined ? { provider: modelResolution.provider } : {}),

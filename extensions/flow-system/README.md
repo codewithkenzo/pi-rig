@@ -29,7 +29,20 @@ Shows the flow deck, profile routing, and a background run in one short capture.
 
 ## Profiles
 
-Built-in profiles control reasoning level, iteration cap, and toolsets:
+Built-in profiles control reasoning level, advisory iteration budget, and toolsets. Per-run overrides can also set Flow-observed safety budgets: `maxToolCalls` (hard observed tool-call cap), `runtimeWarningSeconds` / `runtimeWarningMs` (soft checkpoint warning), and `maxRuntimeSeconds` / `maxRuntimeMs` (hard wall-clock cap). Seconds variants are normalized to milliseconds internally.
+
+Example tool payload:
+
+```json
+{
+  "profile": "research",
+  "task": "Inspect the API surface and return a handoff.",
+  "background": true,
+  "maxToolCalls": 80,
+  "runtimeWarningSeconds": 600,
+  "maxRuntimeSeconds": 900
+}
+```
 
 | Profile | Reasoning | Iterations | Toolsets |
 |---------|-----------|------------|----------|

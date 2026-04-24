@@ -102,7 +102,8 @@ export type FlowProgressEvent =
 	| { readonly _tag: "tool_start"; readonly toolName: string; readonly detail: string }
 	| { readonly _tag: "tool_end"; readonly toolName: string; readonly detail: string }
 	| { readonly _tag: "assistant_text"; readonly detail: string }
-	| { readonly _tag: "summary_state"; readonly active: boolean; readonly source: "explicit" };
+	| { readonly _tag: "summary_state"; readonly active: boolean; readonly source: "explicit" }
+	| { readonly _tag: "budget_warning"; readonly detail: string };
 
 const FLOW_CANCELLED_REASON = "Flow cancelled.";
 
@@ -124,6 +125,12 @@ export interface WatchdogOptions {
 	streamIdleMs?: number;
 	/** Max ms to wait after final-answer text stops changing before treating it as complete. 0 disables. */
 	summaryFinalizeGraceMs?: number;
+	/** Hard cap on observed tool calls. 0 disables. */
+	maxToolCalls?: number;
+	/** Hard cap on wall-clock runtime in ms. 0 disables. */
+	maxRuntimeMs?: number;
+	/** Soft wall-clock warning in ms. Emits budget_warning once. 0 disables. */
+	runtimeWarningMs?: number;
 }
 
 const parsePositiveIntEnv = (key: string): number | undefined => {
@@ -145,6 +152,10 @@ const resolveWatchdog = (opts: WatchdogOptions | undefined): Required<WatchdogOp
 		opts?.summaryFinalizeGraceMs ??
 		parsePositiveIntEnv("FLOW_SYSTEM_SUMMARY_FINALIZE_GRACE_MS") ??
 		DEFAULT_SUMMARY_FINALIZE_GRACE_MS,
+	maxToolCalls: opts?.maxToolCalls ?? parsePositiveIntEnv("FLOW_SYSTEM_MAX_TOOL_CALLS") ?? 0,
+	maxRuntimeMs: opts?.maxRuntimeMs ?? parsePositiveIntEnv("FLOW_SYSTEM_MAX_RUNTIME_MS") ?? 0,
+	runtimeWarningMs:
+		opts?.runtimeWarningMs ?? parsePositiveIntEnv("FLOW_SYSTEM_RUNTIME_WARNING_MS") ?? 0,
 });
 
 const failIfAborted = (signal: AbortSignal | undefined): Effect.Effect<void, FlowCancelledError> =>
@@ -316,7 +327,7 @@ export const runSubprocess = (
 	watchdog?: WatchdogOptions,
 ): Effect.Effect<string, SubprocessError | FlowCancelledError> =>
 	Effect.callback<string, SubprocessError | FlowCancelledError>((resume, effectSignal) => {
-		const { summaryIdleMs, streamIdleMs, summaryFinalizeGraceMs } = resolveWatchdog(watchdog);
+		const { summaryIdleMs, streamIdleMs, summaryFinalizeGraceMs, maxToolCalls, maxRuntimeMs, runtimeWarningMs } = resolveWatchdog(watchdog);
 		const MAX_STDERR_BYTES = 64 * 1024;
 		const args: string[] = ["--mode", "json", "-p", "--no-session"];
 
@@ -367,6 +378,9 @@ export const runSubprocess = (
 		let lastActivityAt = Date.now();
 		let summaryActiveSince: number | undefined;
 		let summaryFinalTextAt: number | undefined;
+		const startedAt = Date.now();
+		let observedToolCalls = 0;
+		let runtimeWarningEmitted = false;
 
 		const finish = (effect: Effect.Effect<string, SubprocessError | FlowCancelledError>): void => {
 			if (finished) return;
@@ -416,6 +430,14 @@ export const runSubprocess = (
 		const checkWatchdog = (): void => {
 			if (finished || cancelled || watchdogReason !== undefined) return;
 			const now = Date.now();
+			if (runtimeWarningMs > 0 && !runtimeWarningEmitted && now - startedAt >= runtimeWarningMs) {
+				runtimeWarningEmitted = true;
+				onProgress?.({ _tag: "budget_warning", detail: `runtime warning ${runtimeWarningMs}ms: request checkpoint/summary` });
+			}
+			if (maxRuntimeMs > 0 && now - startedAt >= maxRuntimeMs) {
+				triggerWatchdog(`runtime-cap ${maxRuntimeMs}ms`);
+				return;
+			}
 			if (streamIdleMs > 0 && now - lastActivityAt >= streamIdleMs) {
 				triggerWatchdog(`stream-idle ${streamIdleMs}ms`);
 				return;
@@ -476,7 +498,7 @@ export const runSubprocess = (
 		effectSignal.addEventListener("abort", onAbort, { once: true });
 		abortSignal?.addEventListener("abort", onAbort, { once: true });
 
-		if (summaryIdleMs > 0 || streamIdleMs > 0) {
+		if (summaryIdleMs > 0 || streamIdleMs > 0 || maxRuntimeMs > 0 || runtimeWarningMs > 0) {
 			watchdogTimer = setInterval(checkWatchdog, WATCHDOG_TICK_MS);
 			// Allow the node process to exit even if the interval is live.
 			if (typeof (watchdogTimer as { unref?: () => void }).unref === "function") {
@@ -513,6 +535,13 @@ export const runSubprocess = (
 					} else if (progress._tag === "tool_start" || progress._tag === "tool_end") {
 						summaryActiveSince = undefined;
 						summaryFinalTextAt = undefined;
+						if (progress._tag === "tool_start") {
+							observedToolCalls += 1;
+							if (maxToolCalls > 0 && observedToolCalls > maxToolCalls) {
+								triggerWatchdog(`tool-cap ${maxToolCalls}`);
+								return;
+							}
+						}
 					} else if (progress._tag === "assistant_text") {
 						lastAssistantText = progress.detail;
 						if (summaryActiveSince !== undefined) {

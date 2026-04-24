@@ -167,6 +167,10 @@ export const createFlowProgressTracker = (options?: ProgressTrackerOptions): Flo
 				return fromProgress(event.active ? "writing summary…" : "summary phase cleared");
 			}
 
+			if (event._tag === "budget_warning") {
+				return fromProgress(event.detail);
+			}
+
 			if (event._tag === "tool_start") {
 				lastToolActivityAt = at;
 				if (summaryPhaseSource !== "explicit" || shouldAutoClearExplicitSummary(at)) {

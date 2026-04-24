@@ -3,7 +3,7 @@ import { Effect, Exit } from "effect";
 import type { AgentToolUpdateCallback } from "@mariozechner/pi-coding-agent";
 import type { FlowQueueService } from "./queue.js";
 import { getProfile } from "./profiles.js";
-import { executeFlow, type ExecuteOptions, type FlowProgressEvent } from "./executor.js";
+import { executeFlow, type ExecuteOptions, type FlowProgressEvent, type WatchdogOptions } from "./executor.js";
 import type { FlowJob } from "./types.js";
 import { formatFlowError, isFlowCancelledCause } from "./errors.js";
 import { renderFlowBatchCall, renderFlowBatchResult, type FlowRenderDetails } from "./renderers.js";
@@ -126,6 +126,16 @@ interface BatchItem {
 	effort?: ExecutionEnvelope["effort"];
 	maxIterations?: number;
 	max_iterations?: number;
+	maxToolCalls?: number;
+	max_tool_calls?: number;
+	maxRuntimeMs?: number;
+	max_runtime_ms?: number;
+	maxRuntimeSeconds?: number;
+	max_runtime_seconds?: number;
+	runtimeWarningMs?: number;
+	runtime_warning_ms?: number;
+	runtimeWarningSeconds?: number;
+	runtime_warning_seconds?: number;
 	preload?: ExecutionEnvelope["preload"];
 }
 
@@ -154,7 +164,23 @@ const toExecutionEnvelopeInput = (item: BatchItem): ExecutionEnvelope => ({
 	...(item.effort !== undefined ? { effort: item.effort } : {}),
 	...(item.maxIterations !== undefined ? { maxIterations: item.maxIterations } : {}),
 	...(item.max_iterations !== undefined ? { max_iterations: item.max_iterations } : {}),
+	...(item.maxToolCalls !== undefined ? { maxToolCalls: item.maxToolCalls } : {}),
+	...(item.max_tool_calls !== undefined ? { max_tool_calls: item.max_tool_calls } : {}),
+	...(item.maxRuntimeMs !== undefined ? { maxRuntimeMs: item.maxRuntimeMs } : {}),
+	...(item.max_runtime_ms !== undefined ? { max_runtime_ms: item.max_runtime_ms } : {}),
+	...(item.maxRuntimeSeconds !== undefined ? { maxRuntimeSeconds: item.maxRuntimeSeconds } : {}),
+	...(item.max_runtime_seconds !== undefined ? { max_runtime_seconds: item.max_runtime_seconds } : {}),
+	...(item.runtimeWarningMs !== undefined ? { runtimeWarningMs: item.runtimeWarningMs } : {}),
+	...(item.runtime_warning_ms !== undefined ? { runtime_warning_ms: item.runtime_warning_ms } : {}),
+	...(item.runtimeWarningSeconds !== undefined ? { runtimeWarningSeconds: item.runtimeWarningSeconds } : {}),
+	...(item.runtime_warning_seconds !== undefined ? { runtime_warning_seconds: item.runtime_warning_seconds } : {}),
 	...(item.preload !== undefined ? { preload: item.preload } : {}),
+});
+
+const watchdogFromEnvelope = (envelope: ResolvedExecutionEnvelope): WatchdogOptions => ({
+	...(envelope.maxToolCalls !== undefined ? { maxToolCalls: envelope.maxToolCalls } : {}),
+	...(envelope.maxRuntimeMs !== undefined ? { maxRuntimeMs: envelope.maxRuntimeMs } : {}),
+	...(envelope.runtimeWarningMs !== undefined ? { runtimeWarningMs: envelope.runtimeWarningMs } : {}),
 });
 
 const withEnvelopePatch = <T extends object>(
@@ -205,6 +231,16 @@ export function makeFlowBatchTool(
 					effort: Type.Optional(ReasoningLevelSchema),
 					maxIterations: Type.Optional(Type.Integer({ minimum: 1, maximum: 300 })),
 					max_iterations: Type.Optional(Type.Integer({ minimum: 1, maximum: 300 })),
+					maxToolCalls: Type.Optional(Type.Integer({ minimum: 1, maximum: 500 })),
+					max_tool_calls: Type.Optional(Type.Integer({ minimum: 1, maximum: 500 })),
+					maxRuntimeMs: Type.Optional(Type.Integer({ minimum: 1, maximum: 86_400_000 })),
+					max_runtime_ms: Type.Optional(Type.Integer({ minimum: 1, maximum: 86_400_000 })),
+					maxRuntimeSeconds: Type.Optional(Type.Integer({ minimum: 1, maximum: 86_400 })),
+					max_runtime_seconds: Type.Optional(Type.Integer({ minimum: 1, maximum: 86_400 })),
+					runtimeWarningMs: Type.Optional(Type.Integer({ minimum: 1, maximum: 86_400_000 })),
+					runtime_warning_ms: Type.Optional(Type.Integer({ minimum: 1, maximum: 86_400_000 })),
+					runtimeWarningSeconds: Type.Optional(Type.Integer({ minimum: 1, maximum: 86_400 })),
+					runtime_warning_seconds: Type.Optional(Type.Integer({ minimum: 1, maximum: 86_400 })),
 					preload: Type.Optional(ExecutionPreloadSchema),
 				}),
 				{ minItems: 1, maxItems: 32 },
@@ -495,6 +531,7 @@ export function makeFlowBatchTool(
 							signal: controller.signal,
 							onModelFallback: profileMeta.onModelFallback,
 							onAgentPromptUnavailable: profileMeta.onAgentPromptUnavailable,
+							watchdog: watchdogFromEnvelope(runEnvelope),
 						} satisfies ExecuteOptions),
 					);
 

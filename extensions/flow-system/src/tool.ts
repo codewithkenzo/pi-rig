@@ -3,7 +3,7 @@ import { Effect, Exit } from "effect";
 import type { AgentToolUpdateCallback, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import type { FlowQueueService } from "./queue.js";
 import { getProfile } from "./profiles.js";
-import { executeFlow, type ExecuteOptions, type FlowProgressEvent } from "./executor.js";
+import { executeFlow, type ExecuteOptions, type FlowProgressEvent, type WatchdogOptions } from "./executor.js";
 import { formatFlowError, isFlowCancelledCause } from "./errors.js";
 import { renderFlowRunCall, renderFlowRunResult, type FlowRenderDetails } from "./renderers.js";
 import { createFlowProgressTracker } from "./progress.js";
@@ -37,6 +37,16 @@ type FlowRunParams = {
 	effort?: ExecutionEnvelope["effort"];
 	maxIterations?: number;
 	max_iterations?: number;
+	maxToolCalls?: number;
+	max_tool_calls?: number;
+	maxRuntimeMs?: number;
+	max_runtime_ms?: number;
+	maxRuntimeSeconds?: number;
+	max_runtime_seconds?: number;
+	runtimeWarningMs?: number;
+	runtime_warning_ms?: number;
+	runtimeWarningSeconds?: number;
+	runtime_warning_seconds?: number;
 	preload?: ExecutionEnvelope["preload"];
 };
 
@@ -55,7 +65,23 @@ const toExecutionEnvelopeInput = (params: FlowRunParams): ExecutionEnvelope => (
 	...(params.effort !== undefined ? { effort: params.effort } : {}),
 	...(params.maxIterations !== undefined ? { maxIterations: params.maxIterations } : {}),
 	...(params.max_iterations !== undefined ? { max_iterations: params.max_iterations } : {}),
+	...(params.maxToolCalls !== undefined ? { maxToolCalls: params.maxToolCalls } : {}),
+	...(params.max_tool_calls !== undefined ? { max_tool_calls: params.max_tool_calls } : {}),
+	...(params.maxRuntimeMs !== undefined ? { maxRuntimeMs: params.maxRuntimeMs } : {}),
+	...(params.max_runtime_ms !== undefined ? { max_runtime_ms: params.max_runtime_ms } : {}),
+	...(params.maxRuntimeSeconds !== undefined ? { maxRuntimeSeconds: params.maxRuntimeSeconds } : {}),
+	...(params.max_runtime_seconds !== undefined ? { max_runtime_seconds: params.max_runtime_seconds } : {}),
+	...(params.runtimeWarningMs !== undefined ? { runtimeWarningMs: params.runtimeWarningMs } : {}),
+	...(params.runtime_warning_ms !== undefined ? { runtime_warning_ms: params.runtime_warning_ms } : {}),
+	...(params.runtimeWarningSeconds !== undefined ? { runtimeWarningSeconds: params.runtimeWarningSeconds } : {}),
+	...(params.runtime_warning_seconds !== undefined ? { runtime_warning_seconds: params.runtime_warning_seconds } : {}),
 	...(params.preload !== undefined ? { preload: params.preload } : {}),
+});
+
+const watchdogFromEnvelope = (envelope: ResolvedExecutionEnvelope): WatchdogOptions => ({
+	...(envelope.maxToolCalls !== undefined ? { maxToolCalls: envelope.maxToolCalls } : {}),
+	...(envelope.maxRuntimeMs !== undefined ? { maxRuntimeMs: envelope.maxRuntimeMs } : {}),
+	...(envelope.runtimeWarningMs !== undefined ? { runtimeWarningMs: envelope.runtimeWarningMs } : {}),
 });
 
 const emitUpdate = (
@@ -248,6 +274,16 @@ export function makeFlowTool(
 			effort: Type.Optional(ReasoningLevelSchema),
 			maxIterations: Type.Optional(Type.Integer({ minimum: 1, maximum: 300 })),
 			max_iterations: Type.Optional(Type.Integer({ minimum: 1, maximum: 300 })),
+			maxToolCalls: Type.Optional(Type.Integer({ minimum: 1, maximum: 500 })),
+			max_tool_calls: Type.Optional(Type.Integer({ minimum: 1, maximum: 500 })),
+			maxRuntimeMs: Type.Optional(Type.Integer({ minimum: 1, maximum: 86_400_000 })),
+			max_runtime_ms: Type.Optional(Type.Integer({ minimum: 1, maximum: 86_400_000 })),
+			maxRuntimeSeconds: Type.Optional(Type.Integer({ minimum: 1, maximum: 86_400 })),
+			max_runtime_seconds: Type.Optional(Type.Integer({ minimum: 1, maximum: 86_400 })),
+			runtimeWarningMs: Type.Optional(Type.Integer({ minimum: 1, maximum: 86_400_000 })),
+			runtime_warning_ms: Type.Optional(Type.Integer({ minimum: 1, maximum: 86_400_000 })),
+			runtimeWarningSeconds: Type.Optional(Type.Integer({ minimum: 1, maximum: 86_400 })),
+			runtime_warning_seconds: Type.Optional(Type.Integer({ minimum: 1, maximum: 86_400 })),
 			preload: Type.Optional(ExecutionPreloadSchema),
 		}),
 		renderCall: (
@@ -443,6 +479,7 @@ export function makeFlowTool(
 									signal: jobController.signal,
 									onModelFallback: profileMeta.onModelFallback,
 									onAgentPromptUnavailable: profileMeta.onAgentPromptUnavailable,
+									watchdog: watchdogFromEnvelope(runEnvelope),
 								} satisfies ExecuteOptions),
 						);
 						if (Exit.isSuccess(exit)) {
@@ -665,6 +702,7 @@ export function makeFlowTool(
 							signal: jobController.signal,
 							onModelFallback: profileMeta.onModelFallback,
 							onAgentPromptUnavailable: profileMeta.onAgentPromptUnavailable,
+							watchdog: watchdogFromEnvelope(runEnvelope),
 						} satisfies ExecuteOptions),
 				);
 
