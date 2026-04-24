@@ -3,7 +3,7 @@ import type { ThemeEngine } from "../../../../shared/theme/engine.js";
 import type { Palette, ThemeConfig } from "../../../../shared/theme/types.js";
 import { breathe, withMotion, type AnimationState } from "../../../../shared/theme/animation.js";
 import type { FlowJob } from "../types.js";
-import { truncateToWidth } from "./layout.js";
+import { fitAnsiColumn, truncateToWidth } from "./layout.js";
 import { sanitizeFlowText } from "../sanitize.js";
 
 export const sanitize = sanitizeFlowText;
@@ -48,13 +48,13 @@ export const renderSummary = (
 		const emptyBody = [
 			engine.fg("label", "  OUTPUT"),
 			engine.fg("muted", "  No flow jobs yet."),
-			...Array.from({ length: contentLines }, () => ""),
-			"",
+			...Array.from({ length: contentLines }, () => " ".repeat(width)),
+			" ".repeat(width),
 		].slice(0, innerHeight);
 		while (emptyBody.length < innerHeight) {
-			emptyBody.push("");
+			emptyBody.push(" ".repeat(width));
 		}
-		return [divider, ...emptyBody, divider];
+		return [divider, ...emptyBody, divider].map((line) => fitAnsiColumn(line, width));
 	}
 
 	const content = pickContent(job);
@@ -64,7 +64,7 @@ export const renderSummary = (
 	const clamped = Math.min(scrollOffset, maxScroll);
 	const visible = allLines.slice(clamped, clamped + contentLines);
 	while (visible.length < contentLines) {
-		visible.push("");
+		visible.push(" ".repeat(innerWidth));
 	}
 
 	const cwdLine = job.cwd !== undefined
@@ -76,7 +76,7 @@ export const renderSummary = (
 			engine.fg("dim", `  PgUp/PgDn · line ${clamped + 1}/${totalLines}`),
 			reducedMotion,
 		)
-		: "";
+		: " ".repeat(width);
 
 	return [
 		divider,
@@ -85,5 +85,5 @@ export const renderSummary = (
 		...visible.map((line) => engine.fg("text", `  ${truncateToWidth(line, innerWidth)}`)),
 		truncateToWidth(hintLine, width),
 		divider,
-	];
+	].map((line) => fitAnsiColumn(line, width));
 };
