@@ -6,6 +6,11 @@ import {
 	ResolvedExecutionEnvelopeSchema,
 	FlowProfileSchema,
 	FlowJobStatusSchema,
+	FlowAgentHandoffSchema,
+	FlowContextPacketSchema,
+	FlowHookDecisionSchema,
+	FlowTeamSessionSchema,
+	FlowTeamSynthesisSchema,
 	ProfileNotFoundError,
 	SkillLoadError,
 	SubprocessError,
@@ -150,6 +155,90 @@ describe("Execution envelope schemas", () => {
 				model: "claude-sonnet-4-6",
 				provider: "anthropic",
 				preloadDigest: "dirs:1, commands:2",
+			}),
+		).toBe(true);
+	});
+});
+
+describe("team orchestration schemas", () => {
+	const handoff = {
+		jobId: "job-1",
+		role: "builder",
+		status: "done",
+		objective: "Implement endpoint",
+		keyFindings: ["Route exists"],
+		decisionsProposed: ["Keep response envelope"],
+		filesRead: ["src/routes/items.ts"],
+		filesChanged: ["src/routes/items.ts"],
+		commandsRun: ["bun test"],
+		artifacts: [{ kind: "diff", path: "artifacts/diff.patch", summary: "Endpoint patch" }],
+		risks: ["Needs review"],
+		nextActions: ["Run final verification"],
+		tokenEfficientSummary: "Endpoint implemented; review pending.",
+	};
+
+	it("accepts team session state", () => {
+		expect(
+			Value.Check(FlowTeamSessionSchema, {
+				id: "team-1",
+				title: "Add item API",
+				coordinator: "main",
+				topology: "review-loop",
+				status: "running",
+				jobIds: ["job-1"],
+				agents: [
+					{
+						jobId: "job-1",
+						role: "builder",
+						label: "api-writer",
+						profile: "coder",
+						phase: "implement",
+						contextState: "fresh",
+						budget: { maxToolCalls: 80, runtimeWarningMs: 600_000, mode: "soft-warning" },
+					},
+				],
+				contextState: "fresh",
+				delegateMode: true,
+				qualityGates: ["final-check"],
+				verificationPolicy: "final-only",
+				createdAt: 1,
+				updatedAt: 2,
+			}),
+		).toBe(true);
+	});
+
+	it("accepts context packet and hook decision state", () => {
+		const packet = {
+			id: "pkt-1",
+			teamId: "team-1",
+			ts: 1,
+			kind: "constraint",
+			source: "coordinator",
+			target: { type: "role", role: "builder" },
+			priority: "high",
+			title: "API contract v2",
+			summary: "Keep response envelope stable.",
+			tokenEstimate: 64,
+			status: "accepted",
+		};
+
+		expect(Value.Check(FlowContextPacketSchema, packet)).toBe(true);
+		expect(Value.Check(FlowHookDecisionSchema, { kind: "injectPacket", packet })).toBe(true);
+	});
+
+	it("accepts handoff and team synthesis outputs", () => {
+		expect(Value.Check(FlowAgentHandoffSchema, handoff)).toBe(true);
+		expect(
+			Value.Check(FlowTeamSynthesisSchema, {
+				teamId: "team-1",
+				topology: "review-loop",
+				result: "needs-review",
+				acceptedFacts: ["Route exists"],
+				rejectedAssumptions: [],
+				decisions: ["Keep response envelope"],
+				outstandingQuestions: ["Reviewer verdict"],
+				agentHandoffs: [handoff],
+				recommendedNextStep: "Run final verification.",
 			}),
 		).toBe(true);
 	});
