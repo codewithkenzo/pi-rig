@@ -117,36 +117,22 @@ const applyOptionsSchema = Type.Object(
 	{ additionalProperties: false },
 );
 
-const patchSymbolSchema = Type.String({
-	minLength: 1,
-	maxLength: 512,
-	description: "Target symbol name (declaration, not call-site).",
+const patchOpValueSchema = Type.Union([Type.String({ maxLength: SNIPPET_MAX }), Type.Number()], {
+	description: "Patch tuple item. Ops: ['replace',symbol,find,replace,occurrence?], ['insert_after',symbol,anchor,text,occurrence?], ['wrap',symbol,before,after,indent?], ['replace_return',symbol,expr,occurrence?], ['try_catch',symbol,catchBody,indent?].",
 });
-const patchTextSchema = Type.String({ minLength: 1, maxLength: SNIPPET_MAX, description: "Patch text payload." });
-const patchOccurrenceValueSchema = Type.Union([
-	Type.Literal("only"),
-	Type.Literal("first"),
-	Type.Literal("last"),
-	Type.Integer({ minimum: 0 }),
-]);
-const patchTupleSchemas = [
-	Type.Tuple([Type.Literal("replace"), patchSymbolSchema, patchTextSchema, patchTextSchema]),
-	Type.Tuple([Type.Literal("replace"), patchSymbolSchema, patchTextSchema, patchTextSchema, patchOccurrenceValueSchema]),
-	Type.Tuple([Type.Literal("insert_after"), patchSymbolSchema, patchTextSchema, patchTextSchema]),
-	Type.Tuple([Type.Literal("insert_after"), patchSymbolSchema, patchTextSchema, patchTextSchema, patchOccurrenceValueSchema]),
-	Type.Tuple([Type.Literal("wrap"), patchSymbolSchema, patchTextSchema, patchTextSchema]),
-	Type.Tuple([Type.Literal("wrap"), patchSymbolSchema, patchTextSchema, patchTextSchema, Type.Integer({ minimum: 0 })]),
-	Type.Tuple([Type.Literal("replace_return"), patchSymbolSchema, patchTextSchema]),
-	Type.Tuple([Type.Literal("replace_return"), patchSymbolSchema, patchTextSchema, patchOccurrenceValueSchema]),
-	Type.Tuple([Type.Literal("try_catch"), patchSymbolSchema, patchTextSchema]),
-	Type.Tuple([Type.Literal("try_catch"), patchSymbolSchema, patchTextSchema, Type.Integer({ minimum: 0 })]),
-] as const;
 
-const patchOpsSchema = Type.Array(Type.Union([...patchTupleSchemas]), {
-	minItems: 1,
-	maxItems: BATCH_MAX_ITEMS,
-	description: "Compact Blitz patch tuples.",
-});
+const patchOpsSchema = Type.Array(
+	Type.Array(patchOpValueSchema, {
+		minItems: 3,
+		maxItems: 5,
+		description: "One compact patch tuple.",
+	}),
+	{
+		minItems: 1,
+		maxItems: BATCH_MAX_ITEMS,
+		description: "Compact Blitz patch tuples.",
+	},
+);
 
 export const patchToolParamsSchema = Type.Object({
 	file: pathSchema,
