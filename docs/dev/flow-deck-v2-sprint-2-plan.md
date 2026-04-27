@@ -50,6 +50,7 @@ Skills: `kenzo-agent-preflight`, `kenzo-pi-flow-stack`, `systematic-debugging`, 
 
 Tasks:
 1. Run branch/worktree preflight before any implementation agent starts:
+   - `git fetch origin main && git merge-base --is-ancestor origin/main HEAD`
    - `git status -sb`
    - `git worktree list`
    - `tk show prfdv-hyc2 fdv-6k8u fdv-tm98 fdv-1mnx`

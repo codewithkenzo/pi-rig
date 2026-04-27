@@ -61,6 +61,8 @@ export const showFlowDeck = async (
 				const cwd = ctx.cwd;
 				let state: FlowDeckControllerState = makeInitialDeckControllerState(queue.peek());
 				const ticker = new AnimationTicker();
+				// Cache theme to avoid sync disk I/O on queue update/render ticks.
+				// Pi TUI invalidate() refreshes external theme changes.
 				let cachedTheme = loadTheme(cwd);
 				const theme = () => cachedTheme;
 
@@ -78,7 +80,6 @@ export const showFlowDeck = async (
 				};
 
 				const unsubscribeQueue = queue.subscribe((next: FlowQueue) => {
-					cachedTheme = loadTheme(cwd);
 					state = clampSelection(syncSnapshot(state, next));
 					syncTicker();
 					tui.requestRender();
@@ -117,7 +118,11 @@ export const showFlowDeck = async (
 							clearTimeout(state.keyFlash.flashTimeout);
 						}
 					},
-					invalidate: () => {},
+					invalidate: () => {
+						cachedTheme = loadTheme(cwd);
+						syncTicker();
+						tui.requestRender();
+					},
 					handleInput: (data: string) => {
 						if (matchesKey(data, Key.escape) || matchesKey(data, Key.ctrl("c"))) {
 							flashKey(data === "\x1b" ? "esc" : "^C");
@@ -232,10 +237,7 @@ export const showFlowDeck = async (
 								...renderHeader(engine, palette, config, state.snapshot, ctx.cwd, animState, width, compact),
 								...renderColumns(engine, palette, config, railRows, job, streamRows, animState, width, compact, layout.columnsHeight),
 								...renderSummary(engine, palette, config, job, state.summaryScroll, width, layout.summaryHeight, animState, allStreamRows),
-								...renderFooter(engine, {
-									active_key: state.keyFlash.activeKey,
-									flash_timeout: state.keyFlash.flashTimeout,
-								}, state.snapshot, width, compact, veryNarrow),
+								...renderFooter(engine, state.keyFlash, state.snapshot, width, compact, veryNarrow),
 							],
 							layout.frameHeight,
 							width,

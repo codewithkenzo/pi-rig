@@ -112,7 +112,7 @@ const renderDeck = ({
 	const config = mockConfig();
 	const compact = compactOverride ?? width < 96;
 	const layout = computeDeckFrameLayout(termRows, compact);
-	const keyFlash = { active_key: null, flash_timeout: null };
+	const keyFlash = { activeKey: null, flashTimeout: null };
 	const snapshot = queue ?? makeQueue(job === undefined ? [] : [job]);
 	const railRows = selectQueueRailRows(snapshot, selectedId ?? job?.id);
 	return padDeckFrame(
@@ -228,7 +228,7 @@ describe("renderHeader — reducedMotion: true", () => {
 describe("renderFooter", () => {
 	it("appends queue health sentence", () => {
 		const engine = mockEngine();
-		const keyFlash = { active_key: null, flash_timeout: null };
+		const keyFlash = { activeKey: null, flashTimeout: null };
 		const queue = makeQueue([
 			makeJob({ status: "running" }),
 			makeJob({ status: "pending", id: "pending-1" }),
@@ -242,7 +242,7 @@ describe("renderFooter", () => {
 
 	it("keeps width exact in compact mode", () => {
 		const engine = mockEngine();
-		const keyFlash = { active_key: null, flash_timeout: null };
+		const keyFlash = { activeKey: null, flashTimeout: null };
 		const queue = makeQueue([makeJob({ status: "done" })]);
 		const lines = renderFooter(engine, keyFlash, queue, 80, true, false);
 		expect(lines).toHaveLength(3);

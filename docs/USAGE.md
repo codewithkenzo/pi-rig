@@ -25,6 +25,7 @@ Tools:
 
 Command:
 
+- `/flow` or `/flow manage`
 - `/flow status | cancel <id> | profiles`
 
 ### Theme Switcher
@@ -81,7 +82,7 @@ Current role:
 
 - launch tasks with named profiles
 - run jobs in foreground or background
-- manage queued work through Pi surfaces
+- manage queued work through Pi surfaces, including the interactive flow deck
 
 ### Gateway Messaging (coming soon in installer)
 

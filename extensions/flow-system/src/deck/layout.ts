@@ -1,5 +1,7 @@
 import { stripAnsi } from "../../../../shared/ui/hud.js";
 
+// Deck renderer keeps richer cell-width accounting for exact column layout.
+// shared/ui/hud.ts exposes smaller generic HUD/status helpers.
 const TAB_STOP = 4;
 const ELLIPSIS = "…";
 

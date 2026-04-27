@@ -13,5 +13,6 @@ __pycache__/
 
 # Generated local docs index
 docs/PI_EXTENSION_MD_INDEX.md
+.dmux/
 # TokenSave semantic graph data
 .tokensave

@@ -9,7 +9,7 @@
 
 Part of the [Pi Rig suite](https://github.com/codewithkenzo/pi-rig).
 
-Pi Dispatch registers execution primitives that let the agent launch tasks with named profiles, manage background jobs, and inject skills into subagent runs — without writing boilerplate for each new task type.
+Pi Dispatch registers execution primitives that let the agent launch tasks with named profiles, manage background jobs, inspect live work through the flow deck, and inject skills into subagent runs — without writing boilerplate for each new task type.
 
 ## Quick demo
 
@@ -23,6 +23,7 @@ Shows the flow deck, profile routing, and a background run in one short capture.
 |------|------|---------|
 | Tool | `flow_run` | Run a single task with a named profile (foreground or background) |
 | Tool | `flow_batch` | Run multiple tasks sequentially or in parallel |
+| Command | `/flow` or `/flow manage` | Open the interactive flow deck |
 | Command | `/flow status` | List active and completed jobs |
 | Command | `/flow cancel <id>` | Cancel a queued or running job |
 | Command | `/flow profiles` | List available profiles and their settings |

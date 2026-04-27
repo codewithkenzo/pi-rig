@@ -1,7 +1,7 @@
 import type { ThemeEngine } from "../../../../shared/theme/engine.js";
 import { fitAnsiColumn } from "./layout.js";
 import type { FlowQueue } from "../types.js";
-import type { KeyFlashState } from "./state.js";
+import type { KeyFlashState } from "./controller.js";
 
 interface Keybind {
 	key: string;
@@ -77,7 +77,7 @@ export const renderFooter = (
 ): string[] => {
 	const binds = veryNarrow ? BINDS_ICON_ONLY : BINDS;
 	const pills = binds.map((b) =>
-		pill(engine, b.key, b.label, keyFlash.active_key === b.key, veryNarrow || compact),
+		pill(engine, b.key, b.label, keyFlash.activeKey === b.key, veryNarrow || compact),
 	);
 	const health = queueHealth(queue);
 	const line = `  ${engine.fg(health.tone, health.text)}${engine.fg("muted", "  ")}${pills.join(engine.fg("muted", "  "))}`;
