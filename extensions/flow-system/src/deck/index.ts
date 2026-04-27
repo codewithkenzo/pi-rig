@@ -22,7 +22,7 @@ import {
 import { selectQueueRailRows, selectStreamRows, selectVisibleStreamRows } from "./selectors.js";
 import { DECK_ICONS } from "./icons.js";
 import { renderHeader } from "./header.js";
-import { renderColumns } from "./columns.js";
+import { renderColumns, renderWideBody } from "./columns.js";
 import { renderSummary } from "./summary.js";
 import { renderFooter } from "./footer.js";
 import { computeDeckFrameLayout, padDeckFrame } from "./frame.js";
@@ -36,7 +36,7 @@ const SHIFT_UP = "\x1b[1;2A";
 const SHIFT_DN = "\x1b[1;2B";
 
 const SCROLL_STEP = 5;
-const STREAM_LINES_WIDE = 8;
+const STREAM_LINES_WIDE = 18;
 const STREAM_LINES_COMPACT = 5;
 
 export const showFlowDeck = async (
@@ -232,11 +232,28 @@ export const showFlowDeck = async (
 						);
 						const railRows = selectQueueRailRows(state.snapshot, state.selectedId);
 
+						const bodyLines = compact
+							? [
+								...renderColumns(engine, palette, config, railRows, job, streamRows, animState, width, compact, layout.columnsHeight),
+								...renderSummary(engine, palette, config, job, state.summaryScroll, width, layout.summaryHeight, animState, allStreamRows),
+							]
+							: renderWideBody(
+								engine,
+								palette,
+								config,
+								railRows,
+								job,
+								streamRows,
+								state.summaryScroll,
+								animState,
+								width,
+								layout.columnsHeight + layout.summaryHeight,
+							);
+
 						return padDeckFrame(
 							[
 								...renderHeader(engine, palette, config, state.snapshot, ctx.cwd, animState, width, compact),
-								...renderColumns(engine, palette, config, railRows, job, streamRows, animState, width, compact, layout.columnsHeight),
-								...renderSummary(engine, palette, config, job, state.summaryScroll, width, layout.summaryHeight, animState, allStreamRows),
+								...bodyLines,
 								...renderFooter(engine, state.keyFlash, state.snapshot, width, compact, veryNarrow),
 							],
 							layout.frameHeight,

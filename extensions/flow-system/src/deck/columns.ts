@@ -6,6 +6,7 @@ import type { FlowActivityRow } from "./journal.js";
 import { selectActivityDisplayRows, type FlowActivityDisplayRow, type FlowQueueRailRow } from "./selectors.js";
 import { STATUS_ICONS } from "./icons.js";
 import { fitAnsiColumn, truncateToWidth, visibleWidth } from "./layout.js";
+import { renderDetailPaneContent } from "./summary.js";
 
 const DEFAULT_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const;
 
@@ -170,6 +171,95 @@ const buildFeedViewport = (
 		rendered.push(" ".repeat(width));
 	}
 	return rendered.slice(0, feedLines).map((line) => fitAnsiColumn(line, width));
+};
+
+const computeWidePaneWidths = (width: number): { left: number; center: number; right: number } => {
+	const separatorWidth = 2;
+	const left = clamp(Math.floor(width * 0.29), 25, 38);
+	const right = clamp(Math.floor(width * 0.3), 28, 42);
+	const center = Math.max(24, width - separatorWidth - left - right);
+	return { left, center, right: Math.max(20, width - separatorWidth - left - center) };
+};
+
+const buildPaneHeader = (engine: ThemeEngine, title: string, meta: string, width: number): string => {
+	const left = engine.fg("header", truncateToWidth(`  ${title}`, Math.min(width, Math.max(0, width - visibleWidth(meta) - 1))));
+	const gap = Math.max(1, width - visibleWidth(left) - visibleWidth(meta));
+	return fitAnsiColumn(`${left}${" ".repeat(gap)}${engine.fg("muted", meta)}`, width);
+};
+
+const buildActivityPane = (
+	engine: ThemeEngine,
+	job: FlowJob | undefined,
+	rows: readonly FlowActivityRow[],
+	width: number,
+	height: number,
+): string[] => {
+	if (height <= 0) {
+		return [];
+	}
+	const label = job?.profile ?? job?.agent ?? "selected";
+	const header = buildPaneHeader(engine, "LIVE ACTIVITY", truncateToWidth(label, Math.max(8, Math.floor(width * 0.32))).trimEnd(), width);
+	const feed = buildFeedViewport(engine, rows, job, width, Math.max(0, height - 1));
+	return [header, ...feed].slice(0, height).map((line) => fitAnsiColumn(line, width));
+};
+
+const zipThreePanes = (
+	left: readonly string[],
+	center: readonly string[],
+	right: readonly string[],
+	leftWidth: number,
+	centerWidth: number,
+	rightWidth: number,
+	separator: string,
+	rows: number,
+): string[] => {
+	const result: string[] = [];
+	for (let index = 0; index < rows; index++) {
+		result.push(`${fitAnsiColumn(left[index] ?? "", leftWidth)}${separator}${fitAnsiColumn(center[index] ?? "", centerWidth)}${separator}${fitAnsiColumn(right[index] ?? "", rightWidth)}`);
+	}
+	return result;
+};
+
+export const renderWideBody = (
+	engine: ThemeEngine,
+	palette: Palette,
+	config: ThemeConfig,
+	railRows: readonly FlowQueueRailRow[],
+	job: FlowJob | undefined,
+	activityRows: readonly FlowActivityRow[],
+	summaryScroll: number,
+	animState: AnimationState,
+	width: number,
+	sectionHeight: number,
+): string[] => {
+	if (sectionHeight <= 2) {
+		const divider = engine.fg("border", "─".repeat(width));
+		return [divider, divider].slice(0, Math.max(1, sectionHeight)).map((line) => fitAnsiColumn(line, width));
+	}
+
+	const separator = engine.fg("border", "│");
+	const { left, center, right } = computeWidePaneWidths(width);
+	const divider = engine.fg("border", "─".repeat(width));
+	const innerHeight = Math.max(1, sectionHeight - 2);
+	const leftPane = buildRailViewport(engine, railRows, left, false, innerHeight);
+	const centerPane = buildActivityPane(engine, job, activityRows, center, innerHeight);
+	const rightPane = renderDetailPaneContent(
+		engine,
+		palette,
+		config,
+		job,
+		summaryScroll,
+		right,
+		innerHeight,
+		animState,
+		activityRows,
+	);
+
+	return [
+		divider,
+		...zipThreePanes(leftPane, centerPane, rightPane, left, center, right, separator, innerHeight),
+		divider,
+	].map((line) => fitAnsiColumn(line, width));
 };
 
 export const renderColumns = (

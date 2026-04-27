@@ -2,7 +2,7 @@ import { describe, it, expect } from "bun:test";
 import { sanitize } from "../src/deck/summary.js";
 import { renderHeader } from "../src/deck/header.js";
 import { renderSummary } from "../src/deck/summary.js";
-import { renderColumns } from "../src/deck/columns.js";
+import { renderColumns, renderWideBody } from "../src/deck/columns.js";
 import { renderFooter } from "../src/deck/footer.js";
 import { computeDeckFrameLayout, padDeckFrame } from "../src/deck/frame.js";
 import { visibleWidth } from "../src/deck/layout.js";
@@ -115,11 +115,28 @@ const renderDeck = ({
 	const keyFlash = { activeKey: null, flashTimeout: null };
 	const snapshot = queue ?? makeQueue(job === undefined ? [] : [job]);
 	const railRows = selectQueueRailRows(snapshot, selectedId ?? job?.id);
+	const bodyLines = compact
+		? [
+			...renderColumns(engine, palette, config, railRows, job, activityRows, mockAnimState(), width, compact, layout.columnsHeight),
+			...renderSummary(engine, palette, config, job, summaryScroll, width, layout.summaryHeight, mockAnimState(), activityRows),
+		]
+		: renderWideBody(
+			engine,
+			palette,
+			config,
+			railRows,
+			job,
+			activityRows,
+			summaryScroll,
+			mockAnimState(),
+			width,
+			layout.columnsHeight + layout.summaryHeight,
+		);
+
 	return padDeckFrame(
 		[
 			...renderHeader(engine, palette, config, snapshot, "/home/kenzo/dev/pi-plugins-repo-kenzo-worktrees/flow-deck-v2", mockAnimState(), width, compact),
-			...renderColumns(engine, palette, config, railRows, job, activityRows, mockAnimState(), width, compact, layout.columnsHeight),
-			...renderSummary(engine, palette, config, job, summaryScroll, width, layout.summaryHeight, mockAnimState(), activityRows),
+			...bodyLines,
 			...renderFooter(engine, keyFlash, snapshot, width, compact, width < 60),
 		],
 		layout.frameHeight,
@@ -541,6 +558,86 @@ describe("renderColumns — compact mode (width < 96)", () => {
 		expect(all).toContain("STATUS");
 		expect(all).toContain("legacy progress row");
 		expect(lines).toHaveLength(12);
+	});
+});
+
+describe("renderWideBody — wide 3-region body", () => {
+	it("renders queue rail, live activity, and right detail side by side at 120 columns", () => {
+		const jobs = makeQueueJobs(12);
+		const selected = jobs[6];
+		if (selected === undefined) {
+			throw new Error("missing selected fixture job");
+		}
+		const snapshot = makeQueue(jobs);
+		const railRows = selectQueueRailRows(snapshot, selected.id, 20_000);
+		const bodyHeight = computeDeckFrameLayout(40, false).columnsHeight + computeDeckFrameLayout(40, false).summaryHeight;
+		const body = renderWideBody(
+			mockEngine(),
+			mockPalette(),
+			mockConfig(),
+			railRows,
+			selected,
+			[
+				{ kind: "tool_start", label: "read", text: "inspect deck body", ts: 2_000, tone: "active" },
+				{ kind: "assistant", text: "center stream row", ts: 3_000 },
+			],
+			0,
+			mockAnimState(),
+			120,
+			bodyHeight,
+		);
+		const all = body.join("\n");
+
+		expect(body).toHaveLength(bodyHeight);
+		expect(all).toContain("FLOW JOBS / AGENTS");
+		expect(all).toContain("LIVE ACTIVITY");
+		expect(all).toContain("DETAIL / SELECTED FLOW");
+		expect(all).toContain("agent-7");
+		expect(all).toContain("TOOL CALL");
+		expect(all).toContain("│");
+		for (const line of body) {
+			expect(line).not.toContain("\n");
+			expect(line).not.toContain("\t");
+			expect(visibleWidth(line)).toBe(120);
+		}
+	});
+
+	it("keeps wide frame exact width and stable height while stream rows append", () => {
+		const job = makeJob({ id: "wide-stable", profile: "planner", startedAt: 2_000, lastProgress: "planning" });
+		const lengths: number[] = [];
+		for (const count of [0, 1, 12, 30]) {
+			const frame = renderDeck({
+				job,
+				queue: makeQueue([job]),
+				selectedId: job.id,
+				activityRows: makeActivityRows(count, `wide-${count}`),
+				width: 120,
+				termRows: 40,
+			});
+			expectExactFrame(frame, 120, 40);
+			expect(frame.join("\n")).toContain("DETAIL / SELECTED FLOW");
+			expect(frame.join("\n")).toContain("│");
+			lengths.push(frame.length);
+		}
+		// Same terminal rows + width must not grow/shrink as journal rows change.
+		expect(new Set(lengths).size).toBe(1);
+	});
+
+	it("leaves compact fallback stacked without wide separators", () => {
+		const job = makeJob({ id: "compact-safe", profile: "research", startedAt: 2_000 });
+		const frame = renderDeck({
+			job,
+			queue: makeQueue([job]),
+			selectedId: job.id,
+			activityRows: makeActivityRows(6, "compact"),
+			width: 80,
+			termRows: 40,
+		});
+		expectExactFrame(frame, 80, 40);
+		expect(frame.join("\n")).toContain("FLOW JOBS / AGENTS");
+		expect(frame.join("\n")).toContain("LIVE ACTIVITY");
+		expect(frame.join("\n")).toContain("DETAIL / SELECTED FLOW");
+		expect(frame.join("\n")).not.toContain("│");
 	});
 });
 

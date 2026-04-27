@@ -47,26 +47,23 @@ const detailLines = (job: FlowJob, activityRows: readonly FlowActivityRow[], inn
 	return lines;
 };
 
-export const renderSummary = (
+export const renderDetailPaneContent = (
 	engine: ThemeEngine,
 	palette: Palette,
 	config: ThemeConfig,
 	job: FlowJob | undefined,
 	scrollOffset: number,
 	width: number,
-	sectionHeight: number,
+	contentHeight: number,
 	animState: AnimationState,
 	activityRows: readonly FlowActivityRow[] = [],
 ): string[] => {
-	const reducedMotion = !config.animation.enabled || config.animation.reducedMotion;
-	const divider = engine.fg("border", "─".repeat(width));
-
-	if (sectionHeight <= 2) {
-		return [divider, divider].slice(0, Math.max(1, sectionHeight)).map((line) => fitAnsiColumn(line, width));
+	if (contentHeight <= 0) {
+		return [];
 	}
 
-	const innerHeight = Math.max(1, sectionHeight - 2);
-	const contentLines = Math.max(1, innerHeight - 2);
+	const reducedMotion = !config.animation.enabled || config.animation.reducedMotion;
+	const contentLines = Math.max(1, contentHeight - 2);
 	const innerWidth = Math.max(20, width - 4);
 
 	if (job === undefined) {
@@ -74,11 +71,11 @@ export const renderSummary = (
 			engine.fg("label", "  DETAIL / SELECTED FLOW"),
 			engine.fg("muted", "  No flow jobs yet."),
 			...Array.from({ length: contentLines }, () => " ".repeat(width)),
-		].slice(0, innerHeight);
-		while (emptyBody.length < innerHeight) {
+		].slice(0, contentHeight);
+		while (emptyBody.length < contentHeight) {
 			emptyBody.push(" ".repeat(width));
 		}
-		return [divider, ...emptyBody, divider].map((line) => fitAnsiColumn(line, width));
+		return emptyBody.map((line) => fitAnsiColumn(line, width));
 	}
 
 	const detail = selectCoordinatorDetail(job, activityRows);
@@ -100,10 +97,45 @@ export const renderSummary = (
 		: " ".repeat(width);
 
 	return [
-		divider,
 		engine.fg("label", `  ${detail.title}`),
 		...visible.map((line) => engine.fg("text", truncateToWidth(line, width))),
 		truncateToWidth(hintLine, width),
+	].slice(0, contentHeight).map((line) => fitAnsiColumn(line, width));
+};
+
+export const renderSummary = (
+	engine: ThemeEngine,
+	palette: Palette,
+	config: ThemeConfig,
+	job: FlowJob | undefined,
+	scrollOffset: number,
+	width: number,
+	sectionHeight: number,
+	animState: AnimationState,
+	activityRows: readonly FlowActivityRow[] = [],
+): string[] => {
+	const divider = engine.fg("border", "─".repeat(width));
+
+	if (sectionHeight <= 2) {
+		return [divider, divider].slice(0, Math.max(1, sectionHeight)).map((line) => fitAnsiColumn(line, width));
+	}
+
+	const innerHeight = Math.max(1, sectionHeight - 2);
+	const content = renderDetailPaneContent(
+		engine,
+		palette,
+		config,
+		job,
+		scrollOffset,
+		width,
+		innerHeight,
+		animState,
+		activityRows,
+	);
+
+	return [
+		divider,
+		...content,
 		divider,
 	].map((line) => fitAnsiColumn(line, width));
 };
