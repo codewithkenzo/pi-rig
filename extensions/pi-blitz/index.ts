@@ -1,5 +1,6 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { dirname, join } from "node:path";
+import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { loadConfig } from "./src/config.js";
 import {
@@ -39,7 +40,9 @@ export default async function piBlitz(pi: ExtensionAPI): Promise<void> {
 	pi.registerTool(doctorToolDef(binary, cwd));
 
 	if (!state.skillsAnnounced) {
-		const skillDir = join(baseDir, "skills", "pi-blitz");
+		const sourceSkillDir = join(baseDir, "skills", "pi-blitz");
+		const bundledSkillDir = join(dirname(baseDir), "skills", "pi-blitz");
+		const skillDir = existsSync(sourceSkillDir) ? sourceSkillDir : bundledSkillDir;
 		pi.on("resources_discover", () => ({ skillPaths: [skillDir] }));
 		state.skillsAnnounced = true;
 	}
