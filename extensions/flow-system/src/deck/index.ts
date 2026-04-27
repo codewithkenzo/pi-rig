@@ -25,6 +25,7 @@ import { renderHeader } from "./header.js";
 import { renderColumns } from "./columns.js";
 import { renderSummary } from "./summary.js";
 import { renderFooter } from "./footer.js";
+import { computeDeckFrameLayout, padDeckFrame } from "./frame.js";
 import { suspendFlowHud } from "../ui.js";
 
 type CustomFn = NonNullable<ExtensionCommandContext["ui"]["custom"]>;
@@ -35,8 +36,6 @@ const SHIFT_UP = "\x1b[1;2A";
 const SHIFT_DN = "\x1b[1;2B";
 
 const SCROLL_STEP = 5;
-const SUMMARY_LINES_WIDE = 8;
-const SUMMARY_LINES_COMPACT = 5;
 const STREAM_LINES_WIDE = 8;
 const STREAM_LINES_COMPACT = 5;
 
@@ -200,22 +199,25 @@ export const showFlowDeck = async (
 
 						const { engine, palette, config } = theme();
 						const animState = ticker.current;
+						const layout = computeDeckFrameLayout(tui.terminal.rows, compact);
 
 						if (state.snapshot.jobs.length === 0) {
-							const divider = engine.fg("border", "─".repeat(width));
-							return [
-								divider,
-								`  ${engine.fg("label", `${DECK_ICONS.agent} FLOW DECK`)}`,
-								divider,
-								engine.fg("muted", "  No flow jobs yet."),
-								divider,
-								engine.fg("dim", "  [esc] close"),
-								divider,
-							];
+							return padDeckFrame(
+								[
+									engine.fg("border", "─".repeat(width)),
+									`  ${engine.fg("label", `${DECK_ICONS.agent} FLOW DECK`)}`,
+									engine.fg("border", "─".repeat(width)),
+									engine.fg("muted", "  No flow jobs yet."),
+									engine.fg("border", "─".repeat(width)),
+									engine.fg("dim", "  [esc] close"),
+									engine.fg("border", "─".repeat(width)),
+								],
+								layout.frameHeight,
+								width,
+							);
 						}
 
 						const job = selectedJob(state);
-						const summaryLines = compact ? SUMMARY_LINES_COMPACT : SUMMARY_LINES_WIDE;
 						const streamRows = selectVisibleStreamRows(
 							selectStreamRows(journal, job),
 							compact ? STREAM_LINES_COMPACT : STREAM_LINES_WIDE,
@@ -223,15 +225,19 @@ export const showFlowDeck = async (
 							state.followMode,
 						);
 
-						return [
-							...renderHeader(engine, palette, config, state.snapshot, animState, width, compact),
-							...renderColumns(engine, palette, config, job, streamRows, animState, width, compact),
-							...renderSummary(engine, palette, config, job, state.summaryScroll, width, summaryLines, animState),
-							...renderFooter(engine, {
-								active_key: state.keyFlash.activeKey,
-								flash_timeout: state.keyFlash.flashTimeout,
-							}, width, compact, veryNarrow),
-						];
+						return padDeckFrame(
+							[
+								...renderHeader(engine, palette, config, state.snapshot, animState, width, compact),
+								...renderColumns(engine, palette, config, job, streamRows, animState, width, compact, layout.columnsHeight),
+								...renderSummary(engine, palette, config, job, state.summaryScroll, width, layout.summaryHeight, animState),
+								...renderFooter(engine, {
+									active_key: state.keyFlash.activeKey,
+									flash_timeout: state.keyFlash.flashTimeout,
+								}, width, compact, veryNarrow),
+							],
+							layout.frameHeight,
+							width,
+						);
 					},
 				};
 			},
@@ -239,11 +245,11 @@ export const showFlowDeck = async (
 				overlay: true,
 				overlayOptions: {
 					anchor: "bottom-center",
-					offsetY: -2,
-					width: "82%",
+					offsetY: -1,
+					width: "100%",
 					minWidth: 72,
 					maxHeight: "88%",
-					margin: 1,
+					margin: 0,
 				},
 			},
 		);

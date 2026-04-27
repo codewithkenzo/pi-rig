@@ -1,5 +1,6 @@
 import { describe, it, expect } from "bun:test";
 import { visibleWidth, truncateToWidth, zipColumns } from "../src/deck/layout.js";
+import { computeDeckFrameLayout, padDeckFrame } from "../src/deck/frame.js";
 
 describe("visibleWidth", () => {
 	it("measures plain ASCII", () => {
@@ -55,6 +56,32 @@ describe("truncateToWidth", () => {
 		const result = truncateToWidth("", 5);
 		expect(result).toBe("     ");
 		expect(result.length).toBe(5);
+	});
+});
+
+describe("padDeckFrame", () => {
+	it("pads blank rows with spaces, not empty strings", () => {
+		const rows = padDeckFrame(["one"], 4, 5);
+		expect(rows).toHaveLength(4);
+		expect(rows.slice(0, 3)).toEqual(["     ", "     ", "     "]);
+		expect(rows[3]).toBe("one  ");
+		expect(rows.every((row) => visibleWidth(row) === 5)).toBe(true);
+	});
+
+	it("fits every row to requested visible width", () => {
+		const rows = padDeckFrame(["\x1b[32mabc\x1b[0m"], 1, 5);
+		expect(rows).toHaveLength(1);
+		expect(visibleWidth(rows[0] ?? "")).toBe(5);
+	});
+});
+
+describe("computeDeckFrameLayout", () => {
+	it("keeps stable section heights across compact and wide modes", () => {
+		const wide = computeDeckFrameLayout(40, false);
+		const compact = computeDeckFrameLayout(40, true);
+		expect(wide.frameHeight).toBeGreaterThan(compact.frameHeight);
+		expect(wide.columnsHeight + wide.summaryHeight + 6).toBe(wide.frameHeight);
+		expect(compact.columnsHeight + compact.summaryHeight + 6).toBe(compact.frameHeight);
 	});
 });
 

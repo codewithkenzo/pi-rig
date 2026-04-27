@@ -3,7 +3,7 @@ import type { ThemeEngine } from "../../../../shared/theme/engine.js";
 import type { Palette, ThemeConfig } from "../../../../shared/theme/types.js";
 import { breathe, withMotion, type AnimationState } from "../../../../shared/theme/animation.js";
 import type { FlowJob } from "../types.js";
-import { truncateToWidth } from "./layout.js";
+import { fitAnsiColumn, truncateToWidth } from "./layout.js";
 import { sanitizeFlowText } from "../sanitize.js";
 import { selectSummaryText } from "./selectors.js";
 
@@ -31,49 +31,60 @@ export const renderSummary = (
 	job: FlowJob | undefined,
 	scrollOffset: number,
 	width: number,
-	maxLines: number,
+	sectionHeight: number,
 	animState: AnimationState,
 ): string[] => {
 	const reducedMotion = !config.animation.enabled || config.animation.reducedMotion;
 	const divider = engine.fg("border", "─".repeat(width));
 
-	if (job === undefined) {
-		return [
-			divider,
-			engine.fg("muted", "  No flow jobs yet."),
-			divider,
-		];
+	if (sectionHeight <= 2) {
+		return [divider, divider].slice(0, Math.max(1, sectionHeight)).map((line) => fitAnsiColumn(line, width));
 	}
 
+	const innerHeight = Math.max(1, sectionHeight - 2);
+	const contentLines = Math.max(1, innerHeight - 3);
 	const innerWidth = Math.max(20, width - 4);
+
+	if (job === undefined) {
+		const emptyBody = [
+			engine.fg("label", "  OUTPUT"),
+			engine.fg("muted", "  No flow jobs yet."),
+			...Array.from({ length: contentLines }, () => " ".repeat(width)),
+			" ".repeat(width),
+		].slice(0, innerHeight);
+		while (emptyBody.length < innerHeight) {
+			emptyBody.push(" ".repeat(width));
+		}
+		return [divider, ...emptyBody, divider].map((line) => fitAnsiColumn(line, width));
+	}
+
 	const content = pickContent(job);
 	const allLines = content.length > 0 ? wrapLines(content, innerWidth) : ["(no output)"];
-
 	const totalLines = allLines.length;
-	const maxScroll = Math.max(0, totalLines - maxLines);
+	const maxScroll = Math.max(0, totalLines - contentLines);
 	const clamped = Math.min(scrollOffset, maxScroll);
-	const visible = allLines.slice(clamped, clamped + maxLines);
+	const visible = allLines.slice(clamped, clamped + contentLines);
+	while (visible.length < contentLines) {
+		visible.push(" ".repeat(innerWidth));
+	}
 
-	const cwdStr =
-		job.cwd !== undefined
-			? engine.fg("dim", `  cwd: ${width > 120 ? job.cwd : basename(job.cwd)}`)
-			: undefined;
-
-	const hasMore = totalLines > maxLines;
-	const scrollHint = hasMore
+	const cwdLine = job.cwd !== undefined
+		? engine.fg("dim", `  cwd: ${width > 120 ? job.cwd : basename(job.cwd)}`)
+		: " ".repeat(width);
+	const hintLine = totalLines > contentLines
 		? withMotion(
 			() => breathe(`  PgUp/PgDn · line ${clamped + 1}/${totalLines}`, palette.semantic.dim, animState),
 			engine.fg("dim", `  PgUp/PgDn · line ${clamped + 1}/${totalLines}`),
 			reducedMotion,
 		)
-		: undefined;
+		: " ".repeat(width);
 
 	return [
 		divider,
 		engine.fg("label", "  OUTPUT"),
-		...(cwdStr !== undefined ? [cwdStr] : []),
+		truncateToWidth(cwdLine, width),
 		...visible.map((line) => engine.fg("text", `  ${truncateToWidth(line, innerWidth)}`)),
-		...(scrollHint !== undefined ? [scrollHint] : []),
+		truncateToWidth(hintLine, width),
 		divider,
-	];
+	].map((line) => fitAnsiColumn(line, width));
 };

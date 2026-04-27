@@ -5,7 +5,7 @@ import { ellipsize } from "../../../../shared/ui/hud.js";
 import type { FlowJob } from "../types.js";
 import type { FlowActivityRow } from "./journal.js";
 import { STATUS_ICONS } from "./icons.js";
-import { truncateToWidth } from "./layout.js";
+import { fitAnsiColumn, truncateToWidth } from "./layout.js";
 
 const DEFAULT_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const;
 
@@ -144,16 +144,14 @@ const toneText = (
 	return engine.fg("value", value);
 };
 
-const renderHierarchy = (
+const buildTopCandidates = (
 	engine: ThemeEngine,
 	palette: Palette,
 	config: ThemeConfig,
 	job: FlowJob | undefined,
-	activityRows: readonly FlowActivityRow[],
 	animState: AnimationState,
-	width: number,
-	compact: boolean,
 	reducedMotion: boolean,
+	width: number,
 ): string[] => {
 	if (job === undefined) {
 		return [engine.fg("muted", truncateToWidth("  No selection", width))];
@@ -193,26 +191,32 @@ const renderHierarchy = (
 		lines.push(engine.fg("accent", truncateToWidth(`  TOOLS      ${tools}`, width)));
 	}
 
-	lines.push(engine.fg("header", truncateToWidth("  LIVE ACTIVITY", width)));
-	const visible = activityRows.slice(-(compact ? 5 : 8));
-	for (const entry of visible) {
-		const ts = engine.fg("dim", relTs(entry.ts, job.startedAt).padStart(5));
-		const text = engine.fg(rowTone(entry.tone), truncateToWidth(rowText(entry), Math.max(10, width - 9)));
-		lines.push(`${ts}  ${text}`);
-	}
-	if (visible.length === 0) {
-		lines.push(engine.fg("muted", truncateToWidth("  (waiting…)", width)));
-	}
-	if (activityRows.length > 0) {
-		const trailer = withMotion(
-			() => breathe("  auto-refresh", palette.semantic.muted, animState),
-			engine.fg("dim", "  auto-refresh"),
-			reducedMotion,
-		);
-		lines.push(truncateToWidth(trailer, width));
-	}
-
 	return lines;
+};
+
+const buildFeedViewport = (
+	engine: ThemeEngine,
+	rows: readonly FlowActivityRow[],
+	job: FlowJob | undefined,
+	width: number,
+	feedLines: number,
+): string[] => {
+	if (feedLines <= 0) {
+		return [];
+	}
+	const visible = rows.slice(-feedLines);
+	const rendered = visible.map((entry) => {
+		const ts = engine.fg("dim", relTs(entry.ts, job?.startedAt).padStart(5));
+		const text = engine.fg(rowTone(entry.tone), truncateToWidth(rowText(entry), Math.max(10, width - 9)));
+		return `${ts}  ${text}`;
+	});
+	if (rendered.length === 0) {
+		rendered.push(engine.fg("muted", truncateToWidth("  (waiting…)", width)));
+	}
+	while (rendered.length < feedLines) {
+		rendered.push(" ".repeat(width));
+	}
+	return rendered.slice(0, feedLines).map((line) => fitAnsiColumn(line, width));
 };
 
 export const renderColumns = (
@@ -224,10 +228,34 @@ export const renderColumns = (
 	animState: AnimationState,
 	width: number,
 	compact: boolean,
+	sectionHeight: number,
 ): string[] => {
 	const reducedMotion = !config.animation.enabled || config.animation.reducedMotion;
 	const divider = engine.fg("border", "─".repeat(width));
-	const contentWidth = compact ? width - 2 : width;
-	const lines = renderHierarchy(engine, palette, config, job, activityRows, animState, contentWidth, compact, reducedMotion);
-	return [divider, ...lines, divider];
+	if (sectionHeight <= 2) {
+		return [divider, divider].slice(0, Math.max(1, sectionHeight)).map((line) => fitAnsiColumn(line, width));
+	}
+
+	const innerHeight = Math.max(1, sectionHeight - 2);
+	const maxFeedLines = compact ? 4 : 6;
+	const feedLines = Math.max(1, Math.min(maxFeedLines, Math.max(1, Math.floor((innerHeight - 2) / 3))));
+	const topBudget = Math.max(0, innerHeight - feedLines - 2);
+	const topCandidates = buildTopCandidates(engine, palette, config, job, animState, reducedMotion, width);
+	const topLines = topCandidates.slice(0, topBudget);
+	while (topLines.length < topBudget) {
+		topLines.push(" ".repeat(width));
+	}
+
+	const activityHeader = engine.fg("header", truncateToWidth("  LIVE ACTIVITY", width));
+	const feedViewport = buildFeedViewport(engine, activityRows, job, width, feedLines);
+	const trailer = activityRows.length > 0
+		? withMotion(
+			() => breathe("  auto-refresh", palette.semantic.muted, animState),
+			engine.fg("dim", "  auto-refresh"),
+			reducedMotion,
+		)
+		: " ".repeat(width);
+
+	return [divider, ...topLines, activityHeader, ...feedViewport, truncateToWidth(trailer, width), divider]
+		.map((line) => fitAnsiColumn(line, width));
 };

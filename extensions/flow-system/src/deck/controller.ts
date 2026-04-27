@@ -16,8 +16,13 @@ export interface FlowDeckControllerState {
 	snapshot: FlowQueue;
 }
 
+const preferredJobId = (snapshot: FlowQueue): string | undefined => {
+	const activeJob = snapshot.jobs.find((job) => job.status === "running" || job.status === "pending");
+	return activeJob?.id ?? snapshot.jobs.at(-1)?.id;
+};
+
 export const makeInitialDeckControllerState = (snapshot: FlowQueue): FlowDeckControllerState => ({
-	selectedId: snapshot.jobs[0]?.id,
+	selectedId: preferredJobId(snapshot),
 	panelFocus: "queue",
 	streamScroll: 0,
 	summaryScroll: 0,
@@ -27,7 +32,7 @@ export const makeInitialDeckControllerState = (snapshot: FlowQueue): FlowDeckCon
 	snapshot,
 });
 
-const firstJobId = (snapshot: FlowQueue): string | undefined => snapshot.jobs[0]?.id;
+const firstJobId = (snapshot: FlowQueue): string | undefined => preferredJobId(snapshot);
 
 export const clampSelection = (state: FlowDeckControllerState): FlowDeckControllerState =>
 	state.snapshot.jobs.some((job) => job.id === state.selectedId)

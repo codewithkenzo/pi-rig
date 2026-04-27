@@ -5,6 +5,7 @@ import { sanitizeFlowText } from "./sanitize.js";
 
 import type { FlowQueueService } from "./queue.js";
 import type { FlowJob, FlowQueue } from "./types.js";
+import { selectCompactFlowStatusLine, selectFlowStatusState } from "./deck/selectors.js";
 
 const FLOW_STATUS_KEY = "flow-system";
 const FLOW_WIDGET_KEY = "flow-system";
@@ -57,7 +58,7 @@ interface WidgetTui {
 
 const runningJobs = (queue: FlowQueue): FlowJob[] => queue.jobs.filter((job) => job.status === "running");
 const activeJobs = (queue: FlowQueue): FlowJob[] => queue.jobs.filter((job) => job.status === "running" || job.status === "pending");
-const hasActiveJobs = (queue: FlowQueue): boolean => activeJobs(queue).length > 0;
+const hasActiveJobs = (queue: FlowQueue): boolean => selectFlowStatusState(queue).counts.active > 0;
 const hasRunningJobs = (queue: FlowQueue): boolean => runningJobs(queue).length > 0;
 const isWritingSummary = (job: FlowJob | undefined): boolean => job?.status === "running" && job.writingSummary === true;
 
@@ -118,24 +119,14 @@ export const flowStatusText = (
 	cwd?: string,
 	animationState = { frame: 0, startedAt: Date.now() },
 ): string | undefined => {
-	const active = activeJobs(queue);
-	if (active.length === 0) {
+	const status = selectFlowStatusState(queue);
+	const primary = status.primaryJob;
+	if (status.mode === "idle" || primary === undefined) {
 		return undefined;
 	}
-
-	const primary = active.find((job) => job.status === "running") ?? active[0];
-	if (primary === undefined) {
-		return undefined;
-	}
-	const summaryCount = active.filter((job) => isWritingSummary(job)).length;
 
 	if (cwd === undefined) {
-		const extra = active.length > 1 ? ` +${active.length - 1}` : "";
-		const summary = summaryCount > 0 ? ` · writing-summary${summaryCount > 1 ? `:${summaryCount}` : ""}` : "";
-		const model = ellipsize(modelStatusValue(primary), 20);
-		const reasoning = reasoningStatusValue(primary);
-		const effort = effortStatusValue(primary);
-		return `${staticIconForJob(primary)} ${primary.profile}${extra} · ${ellipsize(primary.lastProgress ?? primary.task, 40)} · m:${model} r:${reasoning} e:${effort}${summary}`;
+		return selectCompactFlowStatusLine(status);
 	}
 
 	const { config, palette } = loadTheme(cwd);
@@ -149,32 +140,34 @@ export const flowStatusText = (
 				reducedMotion,
 			)
 		: staticIconForJob(primary);
-	const more = active.length > 1 ? engine.fg("muted", `+${active.length - 1}`) : undefined;
-	const summary = summaryCount > 0
+	const more = status.counts.active > 1 ? engine.fg("muted", `+${status.counts.active - 1}`) : undefined;
+	const summary = status.counts.writingSummary > 0
 		? withMotion(
 				() =>
 					shimmer(
-						`writing-summary${summaryCount > 1 ? `:${summaryCount}` : ""}`,
+						`writing-summary${status.counts.writingSummary > 1 ? `:${status.counts.writingSummary}` : ""}`,
 						palette.semantic.warning,
 						palette.semantic.success,
 						animationState,
 						2,
 					),
-				engine.fg("success", `writing-summary${summaryCount > 1 ? `:${summaryCount}` : ""}`),
+				engine.fg("success", `writing-summary${status.counts.writingSummary > 1 ? `:${status.counts.writingSummary}` : ""}`),
 				reducedMotion,
 			)
 		: undefined;
+	const budget = status.budgetState !== "none" ? engine.fg(status.budgetState === "tracked" ? "muted" : "warning", `budget:${status.budgetState}`) : undefined;
 	const model = engine.fg("muted", `m:${ellipsize(modelStatusValue(primary), 24)}`);
 	const reasoning = engine.fg("muted", `r:${reasoningStatusValue(primary)}`);
 	const effort = engine.fg("muted", `e:${effortStatusValue(primary)}`);
 	return joinCompact(engine, [
 		engine.fg(toneForStatus(primary.status), icon),
-		tag(engine, toneForStatus(primary.status), primary.profile),
-		engine.fg("value", ellipsize(primary.lastProgress ?? primary.task, 56)),
+		tag(engine, toneForStatus(primary.status), status.label),
+		engine.fg("value", ellipsize(status.activity, 56)),
 		model,
 		reasoning,
 		effort,
 		summary,
+		budget,
 		more,
 	]);
 };
