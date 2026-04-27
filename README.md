@@ -106,15 +106,15 @@ bun run setup
 ```
 
 <details>
-<summary>Source-only extensions (not yet published)</summary>
+<summary>Source-only extensions</summary>
 
 ```bash
 pi install ./extensions/gateway-messaging
 pi install ./extensions/notify-cron
-
-# pi-blitz requires the blitz CLI binary. See https://github.com/codewithkenzo/blitz
 pi install ./extensions/pi-blitz
 ```
+
+Published `pi-blitz` pulls the native `@codewithkenzo/blitz` CLI automatically. Source installs can still override the binary with `~/.pi/pi-blitz.json` when needed.
 
 </details>
 
@@ -125,19 +125,34 @@ Open a fresh Pi session and run:
 ```
 /flow profiles
 /theme list
+/help
 ```
+
+You should see `pi_blitz_*` tools if Pi Blitz is installed.
 
 ### Agent prompt (copy/paste)
 
 ````md
 Install Pi Rig extensions.
 
-- `pi install npm:@codewithkenzo/pi-dispatch`
-- `pi install npm:@codewithkenzo/pi-theme-switcher`
-- Restart Pi if needed.
-- Optional: `pi install npm:@codewithkenzo/pi-blitz` after configuring the `blitz` CLI binary
-- Verify: `/flow profiles`, `/theme list`, and `/help` for `pi_blitz_*` tools if installed
-- Report what was installed.
+Run:
+
+```bash
+pi install npm:@codewithkenzo/pi-dispatch
+pi install npm:@codewithkenzo/pi-theme-switcher
+pi install npm:@codewithkenzo/pi-blitz
+```
+
+Then restart/open Pi if needed.
+
+Verify:
+
+- `/flow profiles`
+- `/theme list`
+- `/help` includes `pi_blitz_*` tools
+- run `pi_blitz_doctor` if available
+
+Report what installed and any errors.
 ````
 
 ## Development
