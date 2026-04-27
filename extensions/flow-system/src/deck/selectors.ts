@@ -58,6 +58,7 @@ export const selectQueueCounts = (snapshot: FlowQueue): DeckCountSummary => ({
 });
 
 export type FlowQueueRailTone = "inactive" | "active" | "warning" | "success" | "error";
+export type FlowActivityDisplayTone = FlowActivityRow["tone"];
 
 export interface FlowQueueRailRow {
 	ordinal: string;
@@ -71,6 +72,16 @@ export interface FlowQueueRailRow {
 	freshnessLabel: string;
 	budgetLabel?: string;
 	phaseToken?: string;
+}
+
+export interface FlowActivityDisplayRow {
+	ts: number;
+	timestamp: string;
+	marker: string;
+	chip: string;
+	label: string;
+	detail: string;
+	tone?: FlowActivityDisplayTone;
 }
 
 const normalizeCell = (value: string | undefined): string | undefined => {
@@ -420,6 +431,135 @@ export const selectStreamRows = (
 ): FlowActivityRow[] => {
 	const rows = journal.rows(job?.id);
 	return rows.length > 0 ? rows : fallbackStreamRows(job);
+};
+
+const activityTimestamp = (ts: number, startedAt: number | undefined): string => {
+	if (startedAt === undefined) {
+		return "+?s";
+	}
+	const seconds = Math.max(0, Math.round((ts - startedAt) / 1000));
+	return `+${seconds}s`;
+};
+
+const activityMarker = (tone: FlowActivityDisplayTone): string => {
+	switch (tone) {
+		case "active":
+			return ">";
+		case "success":
+			return "+";
+		case "warning":
+			return "!";
+		case "error":
+			return "x";
+		case "muted":
+			return ".";
+		default:
+			return "-";
+	}
+};
+
+const isBudgetWarningRow = (row: FlowActivityRow): boolean =>
+	row.kind === "system" && normalizeCell(row.label)?.toLowerCase() === "budget";
+
+const statusChip = (row: FlowActivityRow): string => {
+	if (isBudgetWarningRow(row)) {
+		return "WARNING";
+	}
+	switch (row.tone) {
+		case "warning":
+		case "error":
+			return "WARNING";
+		case "muted":
+		case "default":
+		case undefined:
+			return "INFO";
+		case "active":
+		case "success":
+			return "STATUS";
+	}
+	return "INFO";
+};
+
+const activityChip = (row: FlowActivityRow): string => {
+	switch (row.kind) {
+		case "tool_start":
+			return "TOOL CALL";
+		case "tool_end":
+			return "TOOL RESULT";
+		case "assistant":
+			return "MESSAGE";
+		case "summary":
+			return "SUMMARY";
+		case "progress":
+		case "status":
+		case "system":
+			return statusChip(row);
+	}
+};
+
+const activityLabel = (row: FlowActivityRow, job: FlowJob | undefined): string => {
+	const label = normalizeCell(row.label);
+	if (label !== undefined) {
+		return label;
+	}
+	switch (row.kind) {
+		case "tool_start":
+		case "tool_end":
+			return "tool";
+		case "assistant":
+			return normalizeCell(job?.agent) ?? normalizeCell(job?.profile) ?? "agent";
+		case "summary":
+			return "summary";
+		case "progress":
+			return "progress";
+		case "status":
+			return "status";
+		case "system":
+			return "system";
+	}
+};
+
+const normalizeActivityDetail = (text: string): string => text.trim().replace(/\s+/g, " ");
+
+const displayTone = (row: FlowActivityRow): FlowActivityDisplayTone =>
+	isBudgetWarningRow(row) ? "warning" : (row.tone ?? "default");
+
+export const selectActivityDisplayRows = (
+	rows: readonly FlowActivityRow[],
+	job: FlowJob | undefined,
+): FlowActivityDisplayRow[] => {
+	const displayRows: FlowActivityDisplayRow[] = [];
+	if (job?.startedAt !== undefined && job.status !== "pending") {
+		const tone: FlowActivityDisplayTone = job.status === "failed"
+			? "error"
+			: job.status === "done"
+				? "success"
+				: job.status === "cancelled"
+					? "muted"
+					: "active";
+		displayRows.push({
+			ts: job.startedAt,
+			timestamp: activityTimestamp(job.startedAt, job.startedAt),
+			marker: activityMarker(tone),
+			chip: "AGENT STARTED",
+			label: normalizeCell(job.agent) ?? normalizeCell(job.profile) ?? "agent",
+			detail: normalizeActivityDetail(job.task),
+			tone,
+		});
+	}
+	for (const row of rows) {
+		const tone = displayTone(row);
+		displayRows.push({
+			ts: row.ts,
+			timestamp: activityTimestamp(row.ts, job?.startedAt),
+			marker: activityMarker(tone),
+			chip: activityChip(row),
+			label: activityLabel(row, job),
+			detail: normalizeActivityDetail(row.text),
+			tone,
+		});
+	}
+	return displayRows;
 };
 
 export const selectVisibleStreamRows = (

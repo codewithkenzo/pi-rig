@@ -406,8 +406,18 @@ Writing summary state must show dedicated phase row.
 - newest rows visible at bottom when `followMode=true`
 - row format:
   - timestamp
-  - small kind marker / label
-  - text
+  - small tone marker
+  - uppercase taxonomy chip
+  - source/job label
+  - detail text
+- taxonomy maps only current data sources:
+  - `tool_start` → `TOOL CALL`
+  - `tool_end` → `TOOL RESULT`
+  - `assistant` → `MESSAGE`
+  - `summary` → `SUMMARY`
+  - `progress` / `status` / `system` → `STATUS`, `WARNING`, or `INFO` from row tone
+  - `system` rows labeled `budget` → `WARNING`
+- optional `AGENT STARTED` row may render only from selected `FlowJob.startedAt` and real job status
 - prefer stable single-line rows over wrapped paragraphs
 - if text must truncate, truncate tail, not head
 - empty stream message: muted `Waiting for activity…`

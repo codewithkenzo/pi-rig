@@ -417,6 +417,47 @@ describe("renderColumns — compact mode (width < 96)", () => {
 		expect(all).not.toContain("undefined");
 		expect(lines).toHaveLength(12);
 	});
+
+	it("renders center activity taxonomy at exact widths", () => {
+		const j = makeJob({ startedAt: 1_000, profile: "coder" });
+		const activity: FlowActivityRow[] = [
+			{ kind: "tool_start", label: "read", text: "inspect file", ts: 2_000, tone: "active" },
+		];
+		for (const width of [62, 80, 120]) {
+			const railRows = selectQueueRailRows(makeQueue([j]), j.id, 3_000);
+			const lines = renderColumns(mockEngine(), mockPalette(), mockConfig(), railRows, j, activity, mockAnimState(), width, width < 96, 12);
+			const all = lines.join("\n");
+			expect(all).toContain("LIVE ACTIVITY");
+			expect(all).toContain("AGENT START");
+			expect(all).toContain("TOOL CALL");
+			expect(all).toContain("read");
+			expect(lines).toHaveLength(12);
+			for (const line of lines) {
+				expect(visibleWidth(line)).toBe(width);
+			}
+		}
+	});
+
+	it("renders old journal progress rows through taxonomy without row-count change", () => {
+		const j = makeJob({ startedAt: 1_000 });
+		const railRows = selectQueueRailRows(makeQueue([j]), j.id, 3_000);
+		const lines = renderColumns(
+			mockEngine(),
+			mockPalette(),
+			mockConfig(),
+			railRows,
+			j,
+			[{ kind: "progress", text: "legacy progress row", ts: 2_000, tone: "active" }],
+			mockAnimState(),
+			80,
+			true,
+			12,
+		);
+		const all = lines.join("\n");
+		expect(all).toContain("STATUS");
+		expect(all).toContain("legacy progress row");
+		expect(lines).toHaveLength(12);
+	});
 });
 
 // ─── regression — full frame width/height safety ─────────────────────────────

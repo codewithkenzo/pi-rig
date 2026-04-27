@@ -3,7 +3,7 @@ import type { Palette, ThemeConfig } from "../../../../shared/theme/types.js";
 import { spin, breathe, withMotion, type AnimationState } from "../../../../shared/theme/animation.js";
 import type { FlowJob } from "../types.js";
 import type { FlowActivityRow } from "./journal.js";
-import type { FlowQueueRailRow } from "./selectors.js";
+import { selectActivityDisplayRows, type FlowActivityDisplayRow, type FlowQueueRailRow } from "./selectors.js";
 import { STATUS_ICONS } from "./icons.js";
 import { fitAnsiColumn, truncateToWidth, visibleWidth } from "./layout.js";
 
@@ -21,13 +21,7 @@ const fmtDuration = (ms: number): string => {
 	return rem === 0 ? `${mn}m` : `${mn}m${String(rem).padStart(2, "0")}s`;
 };
 
-const relTs = (ts: number, startedAt: number | undefined): string => {
-	if (startedAt === undefined) return "+?s";
-	const diff = Math.max(0, Math.round((ts - startedAt) / 1000));
-	return `+${diff}s`;
-};
-
-const rowTone = (tone: FlowActivityRow["tone"]): "text" | "dim" | "success" | "warning" | "error" | "accent" => {
+const rowTone = (tone: FlowActivityDisplayRow["tone"]): "text" | "dim" | "success" | "warning" | "error" | "accent" => {
 	switch (tone) {
 		case "muted":
 			return "dim";
@@ -44,8 +38,20 @@ const rowTone = (tone: FlowActivityRow["tone"]): "text" | "dim" | "success" | "w
 	}
 };
 
-const rowText = (row: FlowActivityRow): string =>
-	row.label !== undefined ? `${row.label} ${row.text}` : row.text;
+const buildActivityLine = (engine: ThemeEngine, row: FlowActivityDisplayRow, width: number): string => {
+	const tone = rowTone(row.tone);
+	const timestamp = engine.fg("dim", truncateToWidth(row.timestamp.padStart(5), 5));
+	const marker = engine.fg(tone, truncateToWidth(row.marker, 1));
+	const chipWidth = 13;
+	const chip = engine.fg(tone, truncateToWidth(row.chip.toUpperCase(), chipWidth));
+	const fixedWidth = 5 + 2 + 1 + 1 + chipWidth + 1;
+	const remaining = Math.max(0, width - fixedWidth);
+	const labelWidth = remaining >= 18 ? Math.min(14, Math.max(7, Math.floor(remaining * 0.34))) : 0;
+	const detailWidth = Math.max(0, remaining - labelWidth);
+	const label = labelWidth > 0 ? engine.fg("label", truncateToWidth(row.label, labelWidth)) : "";
+	const detail = engine.fg("text", truncateToWidth(row.detail, detailWidth));
+	return fitAnsiColumn(`${timestamp}  ${marker} ${chip} ${label}${detail}`, width);
+};
 
 const spinnerIcon = (
 	job: FlowJob,
@@ -155,12 +161,8 @@ const buildFeedViewport = (
 	if (feedLines <= 0) {
 		return [];
 	}
-	const visible = rows.slice(-feedLines);
-	const rendered = visible.map((entry) => {
-		const ts = engine.fg("dim", relTs(entry.ts, job?.startedAt).padStart(5));
-		const text = engine.fg(rowTone(entry.tone), truncateToWidth(rowText(entry), Math.max(10, width - 9)));
-		return `${ts}  ${text}`;
-	});
+	const visible = selectActivityDisplayRows(rows, job).slice(-feedLines);
+	const rendered = visible.map((entry) => buildActivityLine(engine, entry, width));
 	if (rendered.length === 0) {
 		rendered.push(engine.fg("muted", truncateToWidth("  (waiting…)", width)));
 	}

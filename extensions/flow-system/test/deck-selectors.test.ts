@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
-import { selectQueueRailRows } from "../src/deck/selectors.js";
+import { selectActivityDisplayRows, selectQueueRailRows } from "../src/deck/selectors.js";
+import type { FlowActivityRow } from "../src/deck/journal.js";
 import type { FlowJob, FlowQueue } from "../src/types.js";
 
 const job = (id: string, overrides: Partial<FlowJob> = {}): FlowJob => ({
@@ -12,6 +13,78 @@ const job = (id: string, overrides: Partial<FlowJob> = {}): FlowJob => ({
 });
 
 const queue = (jobs: FlowJob[]): FlowQueue => ({ jobs, mode: "sequential" });
+
+describe("selectActivityDisplayRows", () => {
+	const mapOne = (row: FlowActivityRow, overrides: Partial<FlowJob> = {}) =>
+		selectActivityDisplayRows([row], job("selected", overrides))[0];
+
+	it("maps tool and assistant rows into deck taxonomy", () => {
+		expect(mapOne({ ts: 1_000, kind: "tool_start", label: "grep", text: "scan repo", tone: "active" })).toMatchObject({
+			marker: ">",
+			chip: "TOOL CALL",
+			label: "grep",
+			detail: "scan repo",
+			tone: "active",
+		});
+		expect(mapOne({ ts: 1_000, kind: "tool_end", label: "grep", text: "3 matches", tone: "success" })).toMatchObject({
+			marker: "+",
+			chip: "TOOL RESULT",
+			label: "grep",
+			detail: "3 matches",
+			tone: "success",
+		});
+		expect(mapOne({ ts: 1_000, kind: "assistant", text: "implemented selector", tone: "default" }, { profile: "coder" })).toMatchObject({
+			marker: "-",
+			chip: "MESSAGE",
+			label: "coder",
+			detail: "implemented selector",
+			tone: "default",
+		});
+	});
+
+	it("maps progress/status/system rows by tone", () => {
+		expect(mapOne({ ts: 1_000, kind: "progress", text: "running tools", tone: "active" })).toMatchObject({
+			chip: "STATUS",
+			label: "progress",
+			tone: "active",
+		});
+		expect(mapOne({ ts: 1_000, kind: "status", label: "pending", text: "queued", tone: "muted" })).toMatchObject({
+			chip: "INFO",
+			label: "pending",
+			marker: ".",
+		});
+		expect(mapOne({ ts: 1_000, kind: "system", text: "runtime checkpoint", tone: "warning" })).toMatchObject({
+			chip: "WARNING",
+			label: "system",
+			marker: "!",
+		});
+	});
+
+	it("maps summary and budget warnings explicitly", () => {
+		expect(mapOne({ ts: 1_000, kind: "summary", text: "Writing summary…", tone: "warning" })).toMatchObject({
+			chip: "SUMMARY",
+			label: "summary",
+			marker: "!",
+		});
+		expect(mapOne({ ts: 1_000, kind: "system", label: "budget", text: "8/10 tools", tone: "active" })).toMatchObject({
+			chip: "WARNING",
+			label: "budget",
+			marker: "!",
+			tone: "warning",
+		});
+	});
+
+	it("adds agent started row only from real started job", () => {
+		expect(selectActivityDisplayRows([], job("pending", { status: "pending" }))).toHaveLength(0);
+		expect(selectActivityDisplayRows([], job("running", { status: "running", startedAt: 2_000 }))[0]).toMatchObject({
+			timestamp: "+0s",
+			chip: "AGENT STARTED",
+			label: "explore",
+			detail: "task-running",
+			marker: ">",
+		});
+	});
+});
 
 describe("selectQueueRailRows", () => {
 	it("derives rail row tokens from current FlowJob fields", () => {
