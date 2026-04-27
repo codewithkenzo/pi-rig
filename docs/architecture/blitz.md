@@ -2,7 +2,7 @@
 
 Single source of truth. Supersedes and absorbs `blitz-design.md`, `blitz-gap-closure.md`, `blitz-perf-patterns.md`, `pi-edit-positioning.md`, `pi-edit-ecosystem-compare.md`, `pi-edit-local-overlap.md`, `zig-0.16-verification.md` (all archived).
 
-Status: **implementation alpha, local CLI review-passed.** The standalone `codewithkenzo/blitz` CLI exists and is pushed private. As of 2026-04-27, `gpt-5.5` xhigh review passed the previously failing gates for `edit --after`, declaration targeting, marker splice correctness, batch marker parity, real tests, and golden-output benchmark assertions. It is now safe to wire `@codewithkenzo/pi-blitz` for controlled local testing; public/prebuilt release still waits on the 10-case benchmark and npm binary matrix.
+Status: **v0.2 structured-edit redesign in progress; do not publish token-savings claims yet.** The standalone `codewithkenzo/blitz` CLI exists and is pushed private. v0.1 symbol edits work for controlled local testing, but authentic Pi/model benches showed freeform `snippet` ergonomics are not reliable enough for drastic token savings. Public/prebuilt release waits on the v0.2 structured apply IR and benchmark gates below.
 
 ## 1. North star
 
@@ -15,6 +15,184 @@ Ship an AST-aware edit CLI that preserves fastedit's **output-token savings** an
 - **MIT**, Kenzo-owned, ships via npm prebuilts per platform (esbuild/biome pattern).
 
 The extension (`@codewithkenzo/pi-blitz`) is a thin Effect v4 wrapper around the binary.
+
+
+## 1.1 v0.2 pivot: structured apply IR before release
+
+### Problem
+
+The v0.1 LLM-facing API is too freeform:
+
+```ts
+pi_blitz_edit({ file, replace: "symbolName", snippet: "..." })
+```
+
+Models must infer whether `snippet` means a whole declaration, body-only replacement, marker splice, one-line span replacement, body wrap, or preserved islands. Real Pi benches with `gpt-5.4-mini` showed:
+
+- small symbol rewrite can win (observed: 50.6% fewer tool-call arg tokens and 38.7% fewer output tokens vs core edit on one fixture),
+- unique one-line edits are already near-optimal in core `edit`,
+- medium/huge freeform snippets often repeat too much unchanged code unless heavily guided.
+
+Therefore blitz must not release as a token-savings package until v0.2 replaces freeform marker prompting with structured deterministic edit operations.
+
+### Design rule
+
+v0.2 moves from “model writes replacement snippet” to “model selects a compact operation enum + changed text/anchors; blitz owns AST scope, body extraction, indentation, validation, backup, and write.”
+
+### New canonical command
+
+```bash
+blitz apply --edit - --json [--dry-run] [--diff]
+```
+
+Request shape:
+
+```ts
+type BlitzApplyRequest = {
+  version: 1;
+  file: string;
+  operation:
+    | "replace_body_span"
+    | "insert_body_span"
+    | "wrap_body"
+    | "compose_body"
+    | "insert_after_symbol"
+    | "set_body";
+  target: {
+    symbol: string;
+    kind?: "function" | "method" | "class" | "variable" | "type";
+    range?: "body" | "node";
+  };
+  edit: object;
+  options?: {
+    dryRun?: boolean;
+    requireParseClean?: boolean;
+    requireSingleMatch?: boolean;
+    diffContext?: number;
+  };
+};
+```
+
+Initial operation payloads:
+
+```ts
+type ReplaceBodySpan = {
+  find: string;
+  replace: string;
+  occurrence: "only" | "first" | "last" | number;
+};
+
+type InsertBodySpan = {
+  anchor: string;
+  position: "before" | "after";
+  text: string;
+  occurrence: "only" | "first" | "last" | number;
+};
+
+type WrapBody = {
+  before: string;
+  keep: "body";
+  after: string;
+  indentKeptBodyBy?: number;
+};
+
+type ComposeBody = {
+  segments: Array<
+    | { text: string }
+    | { keep: "body" }
+    | { keep: { beforeKeep?: string; afterKeep?: string; includeBefore?: boolean; includeAfter?: boolean; occurrence?: "only" | "first" | "last" | number } }
+  >;
+};
+
+type InsertAfterSymbol = { code: string };
+type SetBody = { body: string; indentation?: "preserve" | "normalize" };
+```
+
+Examples that must stay tiny:
+
+```json
+{
+  "version": 1,
+  "file": "huge.ts",
+  "operation": "replace_body_span",
+  "target": { "symbol": "hugeCompute" },
+  "edit": { "find": "return total;", "replace": "return total + 1;", "occurrence": "last" }
+}
+```
+
+```json
+{
+  "version": 1,
+  "file": "medium.ts",
+  "operation": "wrap_body",
+  "target": { "symbol": "mediumCompute" },
+  "edit": {
+    "before": "try {\n",
+    "keep": "body",
+    "after": "\n} catch (error) {\n  console.error(error);\n  throw error;\n}",
+    "indentKeptBodyBy": 2
+  }
+}
+```
+
+### Pi extension v0.2 surface
+
+Prefer one schema first:
+
+```ts
+pi_blitz_apply({ file, operation, target, edit, dryRun?, includeDiff? })
+```
+
+If authentic Pi benches show model confusion with the union-shaped `edit` field, split into narrow tools:
+
+- `pi_blitz_replace_body_span`
+- `pi_blitz_insert_body_span`
+- `pi_blitz_wrap_body`
+- `pi_blitz_compose_body`
+
+Reliability beats API elegance.
+
+### Failure and validation policy
+
+- Exact matching only by default.
+- `requireSingleMatch` defaults true unless `occurrence` is specified.
+- Missing/ambiguous anchors reject with no mutation.
+- Current file parse-clean + candidate parse-error => reject with no mutation.
+- `dryRun` and apply use the same engine.
+- Result JSON must include `status`, `operation`, `validation`, `ranges`, compact `diffSummary`, and metrics. Full diff is opt-in.
+
+### Benchmark gates before release
+
+No public “drastic savings” claim until all included rows meet correctness thresholds. Failed blitz runs count as zero savings.
+
+Required lanes:
+
+1. deterministic CLI golden bench,
+2. tokenizer payload bench,
+3. authentic Pi-driven model bench (`pi --print` with isolated tools).
+
+Required minimum cases:
+
+1. small body change,
+2. medium 10KB tail change (`replace_body_span`),
+3. huge 100KB tail change (`replace_body_span`),
+4. medium body wrap (`wrap_body`),
+5. insert after exact body anchor (`insert_body_span`),
+6. preserve islands (`compose_body`),
+7. multi-hunk same symbol (`compose_body`),
+8. insert after symbol,
+9. ambiguous anchor fail-closed,
+10. legacy marker regression.
+
+Public docs must separate:
+
+- provider `usage.output`,
+- tool-call argument tokens,
+- tokenizer used,
+- correctness rate,
+- malformed call/retry rate,
+- wall time,
+- cost.
 
 ## 2. Ecosystem slot (why this is not a duplicate)
 
