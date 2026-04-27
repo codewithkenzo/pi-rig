@@ -256,7 +256,7 @@ export const editToolDef = (binary: string, cwd: string) =>
 		name: "pi_blitz_edit",
 		label: "blitz edit",
 		description:
-			"Symbol-anchored AST edit. `replace` (symbol name) replaces the body of the named function/class/method. `after` (symbol name) inserts code after that symbol. Exactly one of those two must be set, and the value must be the SYMBOL NAME, never source code. `snippet` is the new body — may include `// ... existing code ...` markers to preserve unchanged regions.",
+			"Symbol-anchored AST edit. `replace` (symbol name) replaces only the body of the named function/class/method and preserves its signature automatically. `after` (symbol name) inserts code after that symbol. Exactly one of those two must be set, and the value must be the SYMBOL NAME, never source code. `snippet` is the new body; it may include `// ... existing code ...` markers to preserve unchanged regions.",
 		parameters: Type.Object({
 			file: pathSchema,
 			snippet: snippetSchema,

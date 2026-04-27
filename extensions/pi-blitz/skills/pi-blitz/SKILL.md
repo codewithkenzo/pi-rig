@@ -53,16 +53,16 @@ If you do not use a marker, the snippet is treated as a **full replacement** of 
 pi_blitz_edit({
   file: "src/app.ts",
   replace: "handleRequest",
-  snippet: `function handleRequest(req) {
-  try {
+  snippet: `  try {
     // @keep
   } catch (e) {
     logger.error(e);
     throw e;
-  }
-}`,
+  }`,
 });
 ```
+
+For `replace`, pass only the symbol name in `replace`; the `snippet` is the replacement body. Do not repeat the function signature unless you already have it handy — blitz preserves it automatically.
 
 ### Insert a helper after a symbol
 
