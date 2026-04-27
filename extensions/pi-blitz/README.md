@@ -1,53 +1,117 @@
 # @codewithkenzo/pi-blitz
 
-Pi extension that wraps the [`blitz`](https://github.com/codewithkenzo/blitz) AST-aware fast-edit CLI.
+Pi extension that wraps the [`blitz`](https://github.com/codewithkenzo/blitz) AST-aware symbol-scoped edit CLI.
 
-> **Status: pre-alpha scaffold, local CLI review-passed.** Thirteen tool slots are registered, including narrow structured apply tools. Standalone `blitz` passed local `gpt-5.5` xhigh review for controlled testing, but this extension is not ready for public install/prebuilt release yet.
+## Status
 
-## What you get
+Private release candidate. Local CLI passed `gpt-5.5` xhigh review. Authenticated Pi/model benchmarks show substantial reductions in provider output tokens, tool-call argument tokens, wall time, and cost on handled symbol edits. Extension is wired to the live binary for local testing with undo/review discipline. Public install awaits cross-platform prebuilt binary matrix.
 
-- 13 tools: `pi_blitz_read`, `pi_blitz_edit`, `pi_blitz_batch`, `pi_blitz_apply`, `pi_blitz_replace_body_span`, `pi_blitz_insert_body_span`, `pi_blitz_wrap_body`, `pi_blitz_compose_body`, `pi_blitz_multi_body`, `pi_blitz_patch`, `pi_blitz_rename`, `pi_blitz_undo`, `pi_blitz_doctor`.
-- Effect v4 internals (typed error union, per-path mutex via `acquireUseRelease`, `Cause.findErrorOption` boundary).
-- Token-savings path has local microbench evidence only: direct lane ~41%, marker fixture ~83% by bytes/4 estimate; public claims wait for the 10-case benchmark.
-- Single prebuilt binary per platform (no Python, no local model).
+## Tools
+
+13 tools registered:
+
+| Tool | Purpose |
+|---|---|
+| `pi_blitz_read` | AST structure summary (imports + declaration ranges). |
+| `pi_blitz_edit` | Single symbol-anchored edit. Exactly one of `after`/`replace` required. |
+| `pi_blitz_batch` | Multiple symbol-anchored edits in one file. |
+| `pi_blitz_apply` | Structured edit via JSON IR — operation + target + edit payload. |
+| `pi_blitz_replace_body_span` | Replace an exact span inside a symbol body. |
+| `pi_blitz_insert_body_span` | Insert text before or after an anchor inside a symbol body. |
+| `pi_blitz_wrap_body` | Wrap a symbol body without repeating it. |
+| `pi_blitz_compose_body` | Preserve multiple body islands while rewriting the rest. |
+| `pi_blitz_multi_body` | Multiple body-scoped edits in one atomic apply. |
+| `pi_blitz_patch` | Compact tuple patch ops: `replace`, `insert_after`, `wrap`, `replace_return`, `try_catch`. |
+| `pi_blitz_rename` | AST-verified rename in one file (skips strings/comments). |
+| `pi_blitz_undo` | Revert last blitz edit. Requires `confirm: true`. |
+| `pi_blitz_doctor` | Version, supported grammars, cache health. |
+
+## Benchmark evidence
+
+Two authenticated Pi/model benchmark runs (N=5, `gpt-5.4-mini`):
+
+**Benchmark 1 — medium-10k / wrap_body, both lanes 100% correct:**
+
+| Metric | pi core `edit` | `pi_blitz_wrap_body` | Reduction |
+|---|---|---|---|
+| Provider output tokens (median) | 9,639 | 85 | 99.1% |
+| Tool-call arg tokens (median) | 9,624 | 65 | 99.3% |
+| Wall time (median) | 61,699 ms | 3,919 ms | 93.6% |
+| Cost (sum, N=5) | $0.2453 | $0.0321 | 86.9% |
+
+**Benchmark 2 — multi / large-structural:**
+
+Core attempt: 0% correct. `pi_blitz_patch`: 100% correct.
+
+| Metric | Core attempt | `pi_blitz_patch` | Reduction |
+|---|---|---|---|
+| Provider output tokens (median) | 9,739 | 108 | 98.9% |
+| Tool-call arg tokens (median) | 9,689 | 89 | 99.1% |
+| Wall time (median) | 86,839 ms | 3,211 ms | 96.3% |
+| Cost (sum, N=5) | $0.2972 | $0.0310 | 89.6% |
+
+Benchmark 2 compares correctness and efficiency vs a failed core attempt, not two correct results. Tiny or one-line edits often favor core `edit`. Blitz is most effective for large preserved bodies and structural symbolic edits.
 
 ## Install
 
-Requires a review-approved `blitz` binary on `PATH`. For controlled local testing, either:
+Requires a `blitz` binary on `PATH`. For local testing, build from source or point config at your binary:
 
-- `npm install -g @codewithkenzo/blitz` (once published; pulls the prebuilt binary for your platform).
-- or point `~/.pi/pi-blitz.json` at your built binary:
-  ```json
-  { "binary": "/abs/path/to/blitz" }
-  ```
-
-Then install the Pi extension:
-
-```bash
-pi install npm:@codewithkenzo/pi-blitz
-# or from source:
-pi install /abs/path/to/pi-plugins-repo-kenzo/extensions/pi-blitz
+```json
+// ~/.pi/pi-blitz.json
+{ "binary": "/abs/path/to/blitz" }
 ```
 
-Verify: `/help` should list the thirteen `pi_blitz_*` tools. Use locally with review/undo discipline until telemetry is collected.
+Install the extension:
+
+```bash
+# from source
+pi install /abs/path/to/pi-plugins-repo-kenzo/extensions/pi-blitz
+
+# npm (once published)
+pi install npm:@codewithkenzo/pi-blitz
+```
+
+Verify: `/help` should list all 13 `pi_blitz_*` tools.
 
 ## Config
 
-`~/.pi/pi-blitz.json` (user-level) + `.pi/pi-blitz.json` (project-level). User-only keys are `binary` and `trustedExternalPaths` — project config cannot override them.
+`~/.pi/pi-blitz.json` (user-level) merged with `.pi/pi-blitz.json` (project-level). `binary` and `trustedExternalPaths` are user-only and cannot be set in project config.
 
 ```ts
 type PiBlitzConfig = {
-  binary?: string;                 // user-only; absolute path to blitz
+  binary?: string;                 // user-only; absolute path to blitz binary
   trustedExternalPaths?: boolean;  // user-only; allow paths outside cwd
-  defaultTimeoutMs?: number;       // default 60_000 for edit, 30_000 otherwise
-  cacheDir?: string;               // overrides ~/.cache/blitz
+  defaultTimeoutMs?: number;       // default 60_000 for edits, 30_000 otherwise
+  cacheDir?: string;               // override default ~/.cache/blitz
   noUpdateCheck?: boolean;
 };
 ```
 
-## Design
+## Architecture
 
-See `codewithkenzo/pi-rig/docs/architecture/blitz.md` for the full spec, active blockers, and the pre-extension review gate.
+Effect v4 internals (typed error union via `Data.TaggedError`, per-path mutex via `Effect.acquireUseRelease`, `Cause.findErrorOption` boundary). Effect stays internal; Pi tool `execute` is the Promise/`AgentToolResult` boundary.
+
+File layout:
+
+```
+extensions/pi-blitz/
+  index.ts            # register tools, Effect boundary
+  src/
+    errors.ts         # Data.TaggedError union
+    tool-runtime.ts   # Effect.runPromiseExit + Cause discrimination
+    tools.ts          # tools → spawnCollect(blitz …)
+    doctor.ts         # Effect.cached binary/version probe
+    paths.ts          # canonical realpath + symlink escape guard
+    mutex.ts          # per-path acquireUseRelease
+    config.ts         # user/project config loader
+  skills/pi-blitz/SKILL.md
+  package.json
+  README.md
+```
+
+## Design reference
+
+Full spec, CLI surface, edit algorithm, layer pipeline, Zig 0.16 alignment, and full benchmark data: `codewithkenzo/blitz/docs/blitz.md`.
 
 ## License
 

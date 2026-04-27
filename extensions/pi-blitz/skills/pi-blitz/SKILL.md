@@ -1,13 +1,13 @@
 ---
 name: pi-blitz
-description: Pre-alpha skill for symbol-anchored edits through the blitz Zig CLI. Use only in controlled local testing until pi-blitz telemetry and 10-case benchmark are complete.
+description: Symbol-anchored AST edits through the blitz Zig CLI. Effective for large preserved bodies and structural symbolic edits; tiny or one-line edits often favor core edit. Use with undo discipline; public prebuilt release pending cross-platform binary matrix.
 ---
 
 # pi-blitz
 
 ## Current status
 
-Pre-alpha / local CLI review-passed. As of 2026-04-27, standalone `blitz` passed `gpt-5.5` xhigh review for controlled local testing. Use with undo/review discipline; public/release usage waits for Pi-stream telemetry and the 10-case benchmark.
+Private release candidate. Standalone `blitz` passed `gpt-5.5` xhigh review. Authenticated Pi/model benchmarks show large reductions in provider output tokens, tool-call argument tokens, wall time, and cost on handled symbol edits. Use with undo/review discipline. Public prebuilt release is pending the cross-platform binary matrix.
 
 ## When to use
 
