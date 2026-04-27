@@ -47,12 +47,13 @@ const applyOperationSchema = Type.Union(
 		Type.Literal("insert_body_span"),
 		Type.Literal("wrap_body"),
 		Type.Literal("compose_body"),
+		Type.Literal("multi_body"),
 		Type.Literal("insert_after_symbol"),
 		Type.Literal("set_body"),
 	],
 	{
 		description:
-			"Structured edit operation. Prefer one of: replace_body_span, insert_body_span, wrap_body, compose_body, insert_after_symbol, set_body.",
+			"Structured edit operation. Prefer one of: replace_body_span, insert_body_span, wrap_body, compose_body, multi_body, insert_after_symbol, set_body.",
 	},
 );
 
@@ -132,13 +133,30 @@ type BlitzApplyOperation =
 	| "insert_body_span"
 	| "wrap_body"
 	| "compose_body"
+	| "multi_body"
 	| "insert_after_symbol"
 	| "set_body";
+
+const multiBodyEditItemSchema = Type.Object(
+	{
+		symbol: Type.String({ minLength: 1, maxLength: 512, description: "Target declaration symbol name only." }),
+		op: Type.Union(
+			[
+				Type.Literal("replace_body_span"),
+				Type.Literal("insert_body_span"),
+				Type.Literal("wrap_body"),
+				Type.Literal("compose_body"),
+			],
+			{ description: "Structured body operation for one edit entry." },
+		),
+	},
+	{ additionalProperties: true },
+);
 
 type BlitzApplyParams = {
 	file: string;
 	operation: BlitzApplyOperation;
-	target: {
+	target?: {
 		symbol: string;
 		kind?: "function" | "method" | "class" | "variable" | "type";
 		range?: "body" | "node";
@@ -156,7 +174,7 @@ type BlitzApplyPayload = {
 	version: 1;
 	file: string;
 	operation: BlitzApplyOperation;
-	target: BlitzApplyParams["target"];
+	target?: BlitzApplyParams["target"];
 	edit: Record<string, unknown>;
 	options?: {
 		dryRun?: boolean;
@@ -302,7 +320,18 @@ const isOccurrence = (value: unknown): value is "only" | "first" | "last" | numb
 	return typeof value === "number" && Number.isInteger(value) && value >= 0;
 };
 
-const assertApplyPayload = (params: BlitzApplyParams) => {
+const isStructuredOp = (
+	value: unknown,
+): value is "replace_body_span" | "insert_body_span" | "wrap_body" | "compose_body" => {
+	return (
+		value === "replace_body_span" ||
+		value === "insert_body_span" ||
+		value === "wrap_body" ||
+		value === "compose_body"
+	);
+};
+
+const assertApplyPayload = (params: BlitzApplyParams): InvalidParamsError | null => {
 	switch (params.operation) {
 		case "replace_body_span": {
 			if (!isNonEmptyString(params.edit.find) || !isNonEmptyString(params.edit.replace)) {
@@ -430,6 +459,35 @@ const assertApplyPayload = (params: BlitzApplyParams) => {
 			}
 			break;
 		}
+		case "multi_body": {
+			if (!Array.isArray(params.edit.edits) || params.edit.edits.length < 1) {
+				return new InvalidParamsError({ reason: "multi_body requires edit.edits array" });
+			}
+			for (let i = 0; i < params.edit.edits.length; i++) {
+				const item = params.edit.edits[i];
+				if (item === null || typeof item !== "object") {
+					return new InvalidParamsError({ reason: `multi_body.edits[${i}] must be object` });
+				}
+				const editItem = item as MultiBodyEditItem;
+				if (!isStructuredOp(editItem.op)) {
+					return new InvalidParamsError({
+						reason: `multi_body.edits[${i}].op must be one of: replace_body_span, insert_body_span, wrap_body, compose_body`,
+					});
+				}
+				if (!isNonEmptyString(editItem.symbol)) {
+					return new InvalidParamsError({ reason: `multi_body.edits[${i}].symbol must be a non-empty string` });
+				}
+				const { symbol: _symbol, op: _op, ...edit } = editItem;
+				const nested = assertApplyPayload({
+					operation: editItem.op,
+					target: { symbol: editItem.symbol, range: "body" },
+					edit,
+					file: params.file,
+				} as BlitzApplyParams);
+				if (nested !== null) return nested;
+			}
+			break;
+		}
 		default:
 			return new InvalidParamsError({
 				reason: `unsupported operation: ${params.operation as string}`,
@@ -442,7 +500,7 @@ const buildApplyRequest = (abs: string, params: BlitzApplyParams): BlitzApplyPay
 	version: 1,
 	file: abs,
 	operation: params.operation,
-	target: params.target,
+	...(params.target !== undefined ? { target: params.target } : {}),
 	edit: params.edit,
 	options: {
 		requireParseClean: true,
@@ -625,7 +683,7 @@ const executeApplyParams = (
 	params: BlitzApplyParams,
 ): Promise<BlitzToolResult> => {
 	const eff = Effect.gen(function* () {
-		if (!isNonEmptyString(params.target?.symbol)) {
+		if (params.operation !== "multi_body" && !isNonEmptyString(params.target?.symbol)) {
 			return yield* Effect.fail(
 				new InvalidParamsError({ reason: "target.symbol must be a non-empty string" }),
 			);
@@ -715,6 +773,15 @@ type WrapBodyParams = NarrowCommonParams & {
 
 type ComposeBodyParams = NarrowCommonParams & {
 	segments: Array<Record<string, unknown>>;
+};
+
+type MultiBodyEditItem = Record<string, unknown> & {
+	symbol: string;
+	op: "replace_body_span" | "insert_body_span" | "wrap_body" | "compose_body";
+};
+
+type MultiBodyParams = Omit<NarrowCommonParams, "symbol"> & {
+	edits: Array<MultiBodyEditItem>;
 };
 
 const toCommonApplyParams = (
@@ -825,6 +892,33 @@ export const composeBodyToolDef = (binary: string, cwd: string) =>
 				cwd,
 				toCommonApplyParams(params, "compose_body", { segments: params.segments }),
 			),
+	}) as const;
+
+export const multiBodyToolDef = (binary: string, cwd: string) =>
+	({
+		name: "pi_blitz_multi_body",
+		label: "blitz multi body",
+		description:
+			"Compact structured edit: apply multiple body-scoped edits in one apply request. Use when several symbol-body transforms should stay in one CLI call.",
+		parameters: Type.Object({
+			file: pathSchema,
+			dry_run: Type.Optional(Type.Boolean({ description: "No-write preview request." })),
+			include_diff: Type.Optional(Type.Boolean({ description: "Request diff summary from blitz." })),
+			edits: Type.Array(multiBodyEditItemSchema, {
+				minItems: 1,
+				maxItems: BATCH_MAX_ITEMS,
+				description:
+					"Edit entries. replace_body_span uses {symbol,op,find,replace,occurrence?}; insert_body_span uses {symbol,op,anchor,position,text,occurrence?}; wrap_body uses {symbol,op,before,after,indentKeptBodyBy?}.",
+			}),
+		}),
+		execute: async (_tcid: string, params: MultiBodyParams): Promise<BlitzToolResult> =>
+			executeApplyParams(binary, cwd, {
+				file: params.file,
+				operation: "multi_body",
+				edit: { edits: params.edits },
+				...(params.dry_run !== undefined ? { dry_run: params.dry_run } : {}),
+				...(params.include_diff !== undefined ? { include_diff: params.include_diff } : {}),
+			}),
 	}) as const;
 
 export const readToolDef = (binary: string, cwd: string) =>

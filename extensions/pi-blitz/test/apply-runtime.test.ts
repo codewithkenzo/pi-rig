@@ -88,6 +88,27 @@ describe("pi_blitz_apply runtime path", () => {
 		});
 	});
 
+	test("narrow multi_body invokes blitz apply with compact edit list", async () => {
+		const tool = tools.multiBodyToolDef("blitz", tmpDir);
+		await tool.execute("1", {
+			file: "app.ts",
+			edits: [
+				{ symbol: "foo", op: "replace_body_span", find: "return 1;", replace: "return 2;", occurrence: "only" },
+				{ symbol: "bar", op: "wrap_body", before: "\n  try {", keep: "body", after: "  } finally {}\n", indentKeptBodyBy: 2 },
+			],
+		});
+
+		expect(spawnCollectMock).toHaveBeenCalledTimes(1);
+		const firstCall = spawnCollectMock.mock.calls[0] as unknown as [string[], { stdin: string }];
+		const payload = JSON.parse(firstCall[1].stdin);
+		expect(payload.operation).toBe("multi_body");
+		expect(payload.target).toBeUndefined();
+		expect(payload.edit.edits).toEqual([
+			{ symbol: "foo", op: "replace_body_span", find: "return 1;", replace: "return 2;", occurrence: "only" },
+			{ symbol: "bar", op: "wrap_body", before: "\n  try {", keep: "body", after: "  } finally {}\n", indentKeptBodyBy: 2 },
+		]);
+	});
+
 	test("invokes blitz apply --edit - --json with JSON IR", async () => {
 		const tool = tools.piBlitzApplyToolDef("blitz", tmpDir);
 		const result = await tool.execute("1", {

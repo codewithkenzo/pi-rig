@@ -35,6 +35,7 @@ Use when:
 | `pi_blitz_insert_body_span` | Narrow low-token wrapper for body-anchor insertion. |
 | `pi_blitz_wrap_body` | Narrow low-token wrapper for wrapping a large body without repeating it. |
 | `pi_blitz_compose_body` | Narrow low-token wrapper for preserve-island / multi-hunk body composition. |
+| `pi_blitz_multi_body` | Narrow low-token wrapper for multiple body-scoped edits in one atomic apply. |
 | `pi_blitz_batch` | Multiple symbol-anchored edits in one file. |
 | `pi_blitz_rename` | AST-verified rename in one file (skips strings/comments). |
 | `pi_blitz_undo` | Revert the last blitz edit on a file. Requires `confirm: true`. |
@@ -138,6 +139,19 @@ pi_blitz_compose_body({
     { keep: { afterKeep: "  let total = seed;", includeAfter: true, occurrence: "only" } },
     { text: "\n  if (!Number.isFinite(total)) throw new RangeError();\n" },
     { keep: { beforeKeep: "  return total;", includeBefore: true, occurrence: "last" } },
+  ],
+});
+```
+
+### Multi-body atomic edit
+
+```ts
+pi_blitz_multi_body({
+  file: "src/logic.ts",
+  edits: [
+    { symbol: "loadUser", op: "replace_body_span", find: "return null;", replace: "return user;", occurrence: "only" },
+    { symbol: "saveUser", op: "insert_body_span", anchor: "await db.save(user);", position: "after", text: "\n  await audit(user.id);", occurrence: "only" },
+    { symbol: "handleRequest", op: "wrap_body", before: "\n  try {", after: "  } catch (error) {\n    logger.error(error);\n    throw error;\n  }\n", indentKeptBodyBy: 2 },
   ],
 });
 ```
