@@ -227,13 +227,13 @@ export const showFlowDeck = async (
 
 						return padDeckFrame(
 							[
-								...renderHeader(engine, palette, config, state.snapshot, animState, width, compact),
+								...renderHeader(engine, palette, config, state.snapshot, ctx.cwd, animState, width, compact),
 								...renderColumns(engine, palette, config, job, streamRows, animState, width, compact, layout.columnsHeight),
 								...renderSummary(engine, palette, config, job, state.summaryScroll, width, layout.summaryHeight, animState),
 								...renderFooter(engine, {
 									active_key: state.keyFlash.activeKey,
 									flash_timeout: state.keyFlash.flashTimeout,
-								}, width, compact, veryNarrow),
+								}, state.snapshot, width, compact, veryNarrow),
 							],
 							layout.frameHeight,
 							width,

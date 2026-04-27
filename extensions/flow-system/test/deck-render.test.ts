@@ -110,10 +110,10 @@ const renderDeck = ({
 	const keyFlash = { active_key: null, flash_timeout: null };
 	return padDeckFrame(
 		[
-			...renderHeader(engine, palette, config, makeQueue(job === undefined ? [] : [job]), mockAnimState(), width, compact),
+			...renderHeader(engine, palette, config, makeQueue(job === undefined ? [] : [job]), "/home/kenzo/dev/pi-plugins-repo-kenzo-worktrees/flow-deck-v2", mockAnimState(), width, compact),
 			...renderColumns(engine, palette, config, job, activityRows, mockAnimState(), width, compact, layout.columnsHeight),
 			...renderSummary(engine, palette, config, job, summaryScroll, width, layout.summaryHeight, mockAnimState()),
-			...renderFooter(engine, keyFlash, width, compact, width < 60),
+			...renderFooter(engine, keyFlash, makeQueue(job === undefined ? [] : [job]), width, compact, width < 60),
 		],
 		layout.frameHeight,
 		width,
@@ -153,7 +153,7 @@ describe("renderHeader — reducedMotion: true", () => {
 		const palette = mockPalette();
 		const config = mockConfig(true);
 		const q = makeQueue([makeJob()]);
-		const lines = renderHeader(engine, palette, config, q, mockAnimState(), 80, false);
+		const lines = renderHeader(engine, palette, config, q, "/home/kenzo/dev/pi-plugins-repo-kenzo-worktrees/flow-deck-v2", mockAnimState(), 80, false);
 		expect(Array.isArray(lines)).toBe(true);
 		expect(lines.length).toBeGreaterThanOrEqual(3);
 	});
@@ -163,7 +163,7 @@ describe("renderHeader — reducedMotion: true", () => {
 		const palette = mockPalette();
 		const config = mockConfig(true);
 		const q = makeQueue([makeJob()]);
-		const lines = renderHeader(engine, palette, config, q, mockAnimState(), 80, false);
+		const lines = renderHeader(engine, palette, config, q, "/home/kenzo/dev/pi-plugins-repo-kenzo-worktrees/flow-deck-v2", mockAnimState(), 80, false);
 		const all = lines.join("");
 		expect(all).not.toMatch(/\x1b\[38;2/);
 	});
@@ -173,8 +173,53 @@ describe("renderHeader — reducedMotion: true", () => {
 		const palette = mockPalette();
 		const config = mockConfig(true);
 		const q = makeQueue([]);
-		const lines = renderHeader(engine, palette, config, q, mockAnimState(), 80, false);
+		const lines = renderHeader(engine, palette, config, q, "/home/kenzo/dev/pi-plugins-repo-kenzo-worktrees/flow-deck-v2", mockAnimState(), 80, false);
 		expect(lines.join("")).toContain("IDLE");
+	});
+
+	it("shows queue counts and workspace basename", () => {
+		const engine = mockEngine();
+		const palette = mockPalette();
+		const config = mockConfig(true);
+		const q = makeQueue([
+			makeJob({ status: "running" }),
+			makeJob({ status: "pending", id: "pending-1" }),
+		]);
+		const lines = renderHeader(engine, palette, config, q, "/home/kenzo/dev/pi-plugins-repo-kenzo-worktrees/flow-deck-v2", mockAnimState(), 120, false);
+		const all = lines.join("\n");
+		expect(all).toContain("flow-deck-v2");
+		expect(all).toContain("jobs 2");
+		expect(all).toContain("run 1");
+		expect(all).toContain("pend 1");
+	});
+});
+
+describe("renderFooter", () => {
+	it("appends queue health sentence", () => {
+		const engine = mockEngine();
+		const keyFlash = { active_key: null, flash_timeout: null };
+		const queue = makeQueue([
+			makeJob({ status: "running" }),
+			makeJob({ status: "pending", id: "pending-1" }),
+		]);
+		const lines = renderFooter(engine, keyFlash, queue, 120, false, false);
+		expect(lines.join("\n")).toContain("queue 2");
+		expect(lines.join("\n")).toContain("running");
+		expect(lines.join("\n")).toContain("pending");
+		expect(lines).toHaveLength(3);
+	});
+
+	it("keeps width exact in compact mode", () => {
+		const engine = mockEngine();
+		const keyFlash = { active_key: null, flash_timeout: null };
+		const queue = makeQueue([makeJob({ status: "done" })]);
+		const lines = renderFooter(engine, keyFlash, queue, 80, true, false);
+		expect(lines).toHaveLength(3);
+		const line = lines[1];
+		if (line === undefined) {
+			throw new Error("missing footer line");
+		}
+		expect(line.length).toBe(80);
 	});
 });
 

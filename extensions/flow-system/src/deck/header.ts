@@ -1,3 +1,4 @@
+import { basename } from "node:path";
 import type { ThemeEngine } from "../../../../shared/theme/engine.js";
 import type { Palette, ThemeConfig } from "../../../../shared/theme/types.js";
 import { shimmer, pulse, withMotion, type AnimationState } from "../../../../shared/theme/animation.js";
@@ -23,11 +24,31 @@ const overallStatus = (queue: FlowQueue): { label: string; tone: StatusTone } =>
 	return { label: "DONE", tone: "success" };
 };
 
+const queueCounts = (queue: FlowQueue): { total: number; running: number; pending: number; done: number; failed: number } => ({
+	total: queue.jobs.length,
+	running: queue.jobs.filter((job) => job.status === "running").length,
+	pending: queue.jobs.filter((job) => job.status === "pending").length,
+	done: queue.jobs.filter((job) => job.status === "done").length,
+	failed: queue.jobs.filter((job) => job.status === "failed").length,
+});
+
+const queueSummary = (queue: FlowQueue, compact: boolean): string => {
+	const counts = queueCounts(queue);
+	const parts = compact
+		? [`jobs ${counts.total}`, `run ${counts.running}`, `pend ${counts.pending}`]
+		: [`jobs ${counts.total}`, `run ${counts.running}`, `pend ${counts.pending}`, `done ${counts.done}`];
+	if (!compact && counts.failed > 0) {
+		parts.push(`fail ${counts.failed}`);
+	}
+	return parts.join(" · ");
+};
+
 export const renderHeader = (
 	engine: ThemeEngine,
 	palette: Palette,
 	config: ThemeConfig,
 	queue: FlowQueue,
+	cwd: string | undefined,
 	animState: AnimationState,
 	width: number,
 	compact: boolean,
@@ -35,6 +56,7 @@ export const renderHeader = (
 	const reducedMotion = !config.animation.enabled || config.animation.reducedMotion;
 	const hasRunning = queue.jobs.some((j) => j.status === "running");
 	const status = overallStatus(queue);
+	const workspace = cwd === undefined ? undefined : basename(cwd.replace(/\/+$/, "")) || cwd;
 
 	const titlePlain = `${DECK_ICONS.agent} FLOW DECK`;
 	const animatedTitle = withMotion(
@@ -52,14 +74,23 @@ export const renderHeader = (
 		)
 		: engine.fg(status.tone, badgePlain);
 
+	const queueText = queueSummary(queue, compact);
+	const animatedQueue = engine.fg(compact ? "text" : "value", queueText);
+	const workspaceText = workspace !== undefined ? workspace : "(cwd)";
+	const animatedWorkspace = engine.fg("muted", workspaceText);
+	const modeText = queue.mode === "parallel" ? "parallel" : "sequential";
+	const animatedMode = engine.fg("dim", modeText);
+
 	const timeStr = clock(compact);
 	const time = engine.fg("dim", timeStr);
 
-	// Right-align the clock: measure plain widths only
-	const plainMiddle = `  ${titlePlain}  ${badgePlain}`;
+	const parts = compact
+		? [animatedTitle, animatedQueue, animatedWorkspace]
+		: [animatedTitle, animatedBadge, animatedQueue, animatedWorkspace, animatedMode];
+	const plainMiddle = parts.map((part) => engine.strip(part)).join("  ");
 	const gap = Math.max(1, width - plainMiddle.length - timeStr.length - 2);
 
-	const line = `  ${animatedTitle}  ${animatedBadge}${" ".repeat(gap)}${time}`;
+	const line = `  ${parts.join("  ")}${" ".repeat(gap)}${time}`;
 	const divider = engine.fg("border", "─".repeat(width));
 
 	return [divider, line, divider];
