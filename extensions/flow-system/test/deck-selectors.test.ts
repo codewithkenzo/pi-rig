@@ -87,6 +87,9 @@ describe("selectActivityDisplayRows", () => {
 });
 
 describe("selectCoordinatorDetail", () => {
+	const sectionTitles = (detail: ReturnType<typeof selectCoordinatorDetail>): string[] =>
+		detail.sections.map((section) => section.title);
+
 	it("handles undefined selected job without future placeholders", () => {
 		const detail = selectCoordinatorDetail(undefined);
 		expect(detail.title).toBe("DETAIL / SELECTED FLOW");
@@ -107,6 +110,7 @@ describe("selectCoordinatorDetail", () => {
 		const detail = selectCoordinatorDetail(minimal, [], { now: 2_000 });
 		const allRows = detail.sections.flatMap((section) => section.rows);
 		expect(detail.selectedId).toBe("old-job");
+		expect(sectionTitles(detail)).toContain("BUDGET / VERIFICATION");
 		expect(allRows).toContainEqual({ label: "status", value: "done", tone: "success" });
 		expect(allRows).toContainEqual({ label: "profile", value: "explore" });
 		expect(allRows).toContainEqual({ label: "task", value: "map the repo" });
@@ -156,6 +160,66 @@ describe("selectCoordinatorDetail", () => {
 		expect(allRows).toContainEqual({ label: "TOOL CALL", value: "+1s > read: inspect selectors", tone: "active" });
 		expect(allRows).toContainEqual({ label: "TOOL RESULT", value: "+1s + read: done", tone: "success" });
 		expect(allRows).toContainEqual({ label: "recent tools", value: "read, edit" });
+	});
+
+	it("omits budget verification for running jobs without budget or terminal state", () => {
+		const detail = selectCoordinatorDetail(job("minimal-running", { lastProgress: "real progress" }), [], { now: 2_000 });
+		const toolCountOnly = selectCoordinatorDetail(job("tool-count-only", { toolCount: 2 }), [], { now: 2_000 });
+		const serialized = JSON.stringify(detail).toLowerCase();
+
+		expect(sectionTitles(detail)).not.toContain("BUDGET / VERIFICATION");
+		expect(sectionTitles(toolCountOnly)).not.toContain("BUDGET / VERIFICATION");
+		expect(serialized).not.toMatch(/context packets|artifacts|topology|orchestrator/);
+	});
+
+	it("renders budget verification for running jobs with real budget fields", () => {
+		const detail = selectCoordinatorDetail(
+			job("budgeted-running", {
+				toolCount: 3,
+				envelope: {
+					reasoning: "medium",
+					maxIterations: 35,
+					maxToolCalls: 8,
+				},
+			}),
+			[],
+			{ now: 2_000 },
+		);
+		const allRows = detail.sections.flatMap((section) => section.rows);
+
+		expect(sectionTitles(detail)).toContain("BUDGET / VERIFICATION");
+		expect(allRows).toContainEqual({ label: "tools", value: "3/8" });
+		expect(allRows).not.toContainEqual({ label: "terminal", value: "running", tone: "active" });
+	});
+
+	it("keeps terminal verification state for done and failed jobs", () => {
+		const doneDetail = selectCoordinatorDetail(job("done-terminal", { status: "done", output: "ok" }));
+		const failedDetail = selectCoordinatorDetail(job("failed-terminal", { status: "failed", error: "boom" }));
+
+		expect(sectionTitles(doneDetail)).toContain("BUDGET / VERIFICATION");
+		expect(doneDetail.sections.flatMap((section) => section.rows)).toContainEqual({ label: "terminal", value: "done", tone: "success" });
+		expect(sectionTitles(failedDetail)).toContain("BUDGET / VERIFICATION");
+		expect(failedDetail.sections.flatMap((section) => section.rows)).toContainEqual({ label: "terminal", value: "failed", tone: "error" });
+	});
+
+	it("dedupes fallback progress and assistant text already present in stream rows", () => {
+		const detail = selectCoordinatorDetail(
+			job("dedupe", {
+				lastProgress: "editing summary",
+				lastAssistantText: "selector ready",
+			}),
+			[
+				{ ts: 1_500, kind: "progress", text: "editing summary", tone: "active" },
+				{ ts: 1_600, kind: "assistant", text: "selector ready", tone: "default" },
+			],
+			{ now: 2_000 },
+		);
+		const signalRows = detail.sections.find((section) => section.title === "RECENT SIGNALS / NOTES")?.rows ?? [];
+
+		expect(signalRows.filter((row) => row.value.includes("editing summary"))).toHaveLength(1);
+		expect(signalRows.filter((row) => row.value.includes("selector ready"))).toHaveLength(1);
+		expect(signalRows.some((row) => row.label === "last progress")).toBe(false);
+		expect(signalRows.some((row) => row.label === "assistant")).toBe(false);
 	});
 
 	it("prioritizes error for failed jobs and output for done jobs", () => {

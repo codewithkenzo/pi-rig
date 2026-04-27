@@ -668,6 +668,18 @@ const modelDetailValue = (job: FlowJob): string | undefined => {
 	return provider !== undefined ? `${model}@${provider}` : model;
 };
 
+const isTerminalStatus = (status: FlowJob["status"]): boolean =>
+	status === "done" || status === "failed" || status === "cancelled";
+
+const hasBudgetFields = (job: FlowJob): boolean => {
+	const envelope = job.envelope;
+	return envelope?.maxToolCalls !== undefined
+		|| envelope?.requestedMaxIterations !== undefined
+		|| envelope?.maxIterations !== undefined
+		|| envelope?.runtimeWarningMs !== undefined
+		|| envelope?.maxRuntimeMs !== undefined;
+};
+
 const budgetRows = (job: FlowJob): FlowCoordinatorDetailRow[] => {
 	const rows: FlowCoordinatorDetailRow[] = [];
 	const envelope = job.envelope;
@@ -686,10 +698,8 @@ const budgetRows = (job: FlowJob): FlowCoordinatorDetailRow[] => {
 	if (envelope?.maxRuntimeMs !== undefined) {
 		appendDetailRow(rows, "max runtime", formatDurationLabel(envelope.maxRuntimeMs));
 	}
-	if (job.status === "done" || job.status === "failed" || job.status === "cancelled") {
+	if (isTerminalStatus(job.status)) {
 		appendDetailRow(rows, "terminal", job.status, job.status === "done" ? "success" : job.status === "failed" ? "error" : "muted");
-	} else {
-		appendDetailRow(rows, "status", job.status, job.status === "running" ? "active" : "muted");
 	}
 	return rows;
 };
@@ -762,10 +772,12 @@ export const selectCoordinatorDetail = (
 	sections.push({ title: "CURRENT STATE", rows: currentRows });
 
 	const signalRows: FlowCoordinatorDetailRow[] = [];
+	const signalTextKeys = new Set<string>();
 	for (const row of rows.slice(-maxSignals)) {
 		const tone = displayTone(row);
 		const label = activityLabel(row, job);
 		const detail = normalizeActivityDetail(row.text);
+		signalTextKeys.add(detail);
 		appendDetailRow(
 			signalRows,
 			activityChip(row),
@@ -773,8 +785,20 @@ export const selectCoordinatorDetail = (
 			tone,
 		);
 	}
-	appendDetailRow(signalRows, "last progress", job.lastProgress, "active");
-	appendDetailRow(signalRows, "assistant", job.lastAssistantText);
+	const appendUniqueSignalRow = (label: string, value: string | undefined, tone?: FlowActivityDisplayTone): void => {
+		const normalized = normalizeCell(value);
+		if (normalized === undefined) {
+			return;
+		}
+		const key = normalizeActivityDetail(normalized);
+		if (signalTextKeys.has(key)) {
+			return;
+		}
+		signalTextKeys.add(key);
+		appendDetailRow(signalRows, label, key, tone);
+	};
+	appendUniqueSignalRow("last progress", job.lastProgress, "active");
+	appendUniqueSignalRow("assistant", job.lastAssistantText);
 	if (job.recentTools !== undefined && job.recentTools.length > 0) {
 		appendDetailRow(signalRows, "recent tools", job.recentTools.join(", "));
 	}
@@ -787,8 +811,8 @@ export const selectCoordinatorDetail = (
 	appendDetailRow(outputRows, "text", capDetailText(selectSummaryText(job), maxOutputChars));
 	sections.push({ title: "OUTPUT / SUMMARY", rows: outputRows });
 
-	const verificationRows = budgetRows(job);
-	if (verificationRows.length > 0) {
+	if (hasBudgetFields(job) || isTerminalStatus(job.status)) {
+		const verificationRows = budgetRows(job);
 		sections.push({ title: "BUDGET / VERIFICATION", rows: verificationRows });
 	}
 
