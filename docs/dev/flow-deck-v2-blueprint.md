@@ -296,6 +296,7 @@ interface FlowDeckViewState {
 - `assistant_text` → `kind: "assistant"`, tone `default`
 - `summary_state active=true` → `kind: "summary"`, text `Writing summary…`, tone `warning`
 - `summary_state active=false` → no row unless needed to end stale summary phase
+- `writingSummary` / `summaryPhaseSource` are transient; clear `summaryPhaseSource` when summary clears and force `writingSummary: false` on terminal status
 - status transitions:
   - `pending` → muted status row
   - `running` → active status row

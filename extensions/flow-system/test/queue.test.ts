@@ -137,6 +137,36 @@ describe("FlowQueueService", () => {
 		expect(updated?.finishedAt).toBe(now);
 	});
 
+	it("setStatus clears transient summary phase state", async () => {
+		const queue = await Effect.runPromise(makeQueue());
+		const job = await Effect.runPromise(queue.enqueue("coder", "write summary"));
+
+		await Effect.runPromise(
+			queue.setStatus(job.id, "running", {
+				lastProgress: "writing summary…",
+				writingSummary: true,
+				summaryPhaseSource: "explicit",
+			}),
+		);
+		await Effect.runPromise(queue.setStatus(job.id, "running", { lastProgress: "summary cleared", writingSummary: false }));
+		let updated = (await Effect.runPromise(queue.getAll()))[0];
+		expect(updated?.writingSummary).toBe(false);
+		expect(updated?.summaryPhaseSource).toBeUndefined();
+
+		await Effect.runPromise(
+			queue.setStatus(job.id, "running", {
+				lastProgress: "writing summary…",
+				writingSummary: true,
+				summaryPhaseSource: "heuristic",
+			}),
+		);
+		await Effect.runPromise(queue.setStatus(job.id, "done", { finishedAt: Date.now(), output: "done" }));
+		updated = (await Effect.runPromise(queue.getAll()))[0];
+		expect(updated?.status).toBe("done");
+		expect(updated?.writingSummary).toBe(false);
+		expect(updated?.summaryPhaseSource).toBeUndefined();
+	});
+
 	it("setStatus can annotate an already-cancelled job", async () => {
 		const queue = await Effect.runPromise(makeQueue());
 		const job = await Effect.runPromise(queue.enqueue("debug", "interrupt me"));

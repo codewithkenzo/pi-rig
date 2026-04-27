@@ -147,11 +147,19 @@ const applyOutputCap = (extras: Partial<FlowJob> | undefined): Partial<FlowJob> 
 	};
 };
 
-const mergeStatusUpdate = (job: FlowJob, status: FlowJobStatus, extras: Partial<FlowJob>): FlowJob => ({
-	...job,
-	...extras,
-	status,
-});
+const mergeStatusUpdate = (job: FlowJob, status: FlowJobStatus, extras: Partial<FlowJob>): FlowJob => {
+	const merged: FlowJob = {
+		...job,
+		...extras,
+		...(isTerminalStatus(status) ? { writingSummary: false } : {}),
+		status,
+	};
+	if (merged.writingSummary === true) {
+		return merged;
+	}
+	const { summaryPhaseSource: _summaryPhaseSource, ...withoutSummarySource } = merged;
+	return withoutSummarySource;
+};
 
 const allowPendingToRunningTransition = (
 	state: FlowQueue,
