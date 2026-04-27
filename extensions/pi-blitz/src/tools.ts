@@ -1,6 +1,6 @@
 import { Type } from "@sinclair/typebox";
 import { Effect } from "effect";
-import { spawnCollect } from "../../../shared/subprocess.js";
+import { spawnCollectNode } from "./spawn.js";
 import { canonicalize } from "./paths.js";
 import { runTool, type BlitzToolResult } from "./tool-runtime.js";
 import { makePathLocks } from "./mutex.js";
@@ -93,7 +93,7 @@ const runBlitz = (
 		const cmd = [binary, ...argv];
 		const result = yield* Effect.tryPromise({
 			try: () => {
-				const spawnOpts: Parameters<typeof spawnCollect>[1] = {
+				const spawnOpts: Parameters<typeof spawnCollectNode>[1] = {
 					cwd: opts.cwd,
 					timeoutMs: opts.timeoutMs,
 					env: {
@@ -104,7 +104,7 @@ const runBlitz = (
 				};
 				if (opts.stdin !== undefined) spawnOpts.stdin = opts.stdin;
 				if (opts.signal !== undefined) spawnOpts.signal = opts.signal;
-				return spawnCollect(cmd, spawnOpts);
+				return spawnCollectNode(cmd, spawnOpts);
 			},
 			catch: (cause) => new SpawnException(cause),
 		}).pipe(
