@@ -20,9 +20,26 @@ const SNIPPET_MAX = 65_536;
 const BATCH_MAX_ITEMS = 64;
 const BATCH_MAX_AGGREGATE = 256 * 1024;
 
-const pathSchema = Type.String({ minLength: 1, maxLength: PATH_MAX });
-const snippetSchema = Type.String({ minLength: 1, maxLength: SNIPPET_MAX });
-const symbolSchema = Type.String({ minLength: 1, maxLength: 512 });
+const pathSchema = Type.String({ minLength: 1, maxLength: PATH_MAX, description: "Absolute or repo-relative path to the source file." });
+const snippetSchema = Type.String({
+	minLength: 1,
+	maxLength: SNIPPET_MAX,
+	description:
+		"Replacement code body. May include `// ... existing code ...` (or `# ...` for Python) to preserve unchanged regions. NOT a diff or oldText/newText pair — just the new body.",
+});
+const replaceSymbolSchema = Type.String({
+	minLength: 1,
+	maxLength: 512,
+	description:
+		"Name of the function/class/method/variable whose body to replace. Must be the SYMBOL NAME only (e.g. \"handleRequest\"), never source code or text.",
+});
+const afterSymbolSchema = Type.String({
+	minLength: 1,
+	maxLength: 512,
+	description:
+		"Name of the function/class/method/variable to insert AFTER. Must be the SYMBOL NAME only (e.g. \"handleRequest\"), never source code or text.",
+});
+const renameSymbolSchema = Type.String({ minLength: 1, maxLength: 512, description: "Identifier name (no surrounding code)." });
 
 // Soft-error classifier — matches the signal taxonomy in docs/architecture/blitz.md.
 const classifySoft = (stdout: string, stderr: string): BlitzSoftError | undefined => {
@@ -239,12 +256,12 @@ export const editToolDef = (binary: string, cwd: string) =>
 		name: "pi_blitz_edit",
 		label: "blitz edit",
 		description:
-			"Symbol-anchored edit. Exactly one of `after` or `replace` must be set. Snippet goes via stdin.",
+			"Symbol-anchored AST edit. `replace` (symbol name) replaces the body of the named function/class/method. `after` (symbol name) inserts code after that symbol. Exactly one of those two must be set, and the value must be the SYMBOL NAME, never source code. `snippet` is the new body — may include `// ... existing code ...` markers to preserve unchanged regions.",
 		parameters: Type.Object({
 			file: pathSchema,
 			snippet: snippetSchema,
-			after: Type.Optional(symbolSchema),
-			replace: Type.Optional(symbolSchema),
+			after: Type.Optional(afterSymbolSchema),
+			replace: Type.Optional(replaceSymbolSchema),
 		}),
 		execute: async (
 			_tcid: string,
@@ -301,8 +318,8 @@ export const batchToolDef = (binary: string, cwd: string) =>
 			edits: Type.Array(
 				Type.Object({
 					snippet: snippetSchema,
-					after: Type.Optional(symbolSchema),
-					replace: Type.Optional(symbolSchema),
+					after: Type.Optional(afterSymbolSchema),
+					replace: Type.Optional(replaceSymbolSchema),
 				}),
 				{ minItems: 1, maxItems: BATCH_MAX_ITEMS },
 			),
@@ -357,8 +374,8 @@ export const renameToolDef = (binary: string, cwd: string) =>
 		description: "AST-verified single-file rename. Skips strings/comments/docstrings.",
 		parameters: Type.Object({
 			file: pathSchema,
-			old_name: symbolSchema,
-			new_name: symbolSchema,
+			old_name: renameSymbolSchema,
+			new_name: renameSymbolSchema,
 			dry_run: Type.Optional(Type.Boolean()),
 		}),
 		execute: async (
