@@ -57,6 +57,139 @@ export const selectQueueCounts = (snapshot: FlowQueue): DeckCountSummary => ({
 	writingSummary: snapshot.jobs.filter((job) => job.status === "running" && job.writingSummary === true).length,
 });
 
+export type FlowQueueRailTone = "inactive" | "active" | "warning" | "success" | "error";
+
+export interface FlowQueueRailRow {
+	ordinal: string;
+	idHint: string;
+	selected: boolean;
+	title: string;
+	subtitle: string;
+	statusToken: string;
+	statusTone: FlowQueueRailTone;
+	proofToken: string;
+	freshnessLabel: string;
+	budgetLabel?: string;
+	phaseToken?: string;
+}
+
+const normalizeCell = (value: string | undefined): string | undefined => {
+	if (value === undefined) {
+		return undefined;
+	}
+	const trimmed = value.trim();
+	return trimmed.length > 0 ? trimmed : undefined;
+};
+
+const queueStatusTone = (status: FlowJob["status"]): FlowQueueRailTone => {
+	switch (status) {
+		case "running":
+			return "active";
+		case "pending":
+			return "warning";
+		case "done":
+			return "success";
+		case "failed":
+			return "error";
+		case "cancelled":
+			return "inactive";
+	}
+};
+
+const formatDurationLabel = (ms: number): string => {
+	if (ms < 1000) {
+		return `${ms}ms`;
+	}
+	const totalSeconds = Math.round(ms / 1000);
+	if (totalSeconds < 60) {
+		return `${totalSeconds}s`;
+	}
+	const minutes = Math.floor(totalSeconds / 60);
+	const seconds = totalSeconds % 60;
+	return seconds === 0 ? `${minutes}m` : `${minutes}m${String(seconds).padStart(2, "0")}s`;
+};
+
+const shortIdHint = (id: string): string => {
+	const trimmed = id.trim();
+	if (trimmed.length <= 8) {
+		return trimmed;
+	}
+	const segments = trimmed.split(/[^A-Za-z0-9]+/).filter((segment) => segment.length > 0);
+	const tail = segments.at(-1) ?? trimmed;
+	return tail.length <= 8 ? tail : tail.slice(-8);
+};
+
+const titleLabel = (job: FlowJob): string => normalizeCell(job.profile) ?? normalizeCell(job.agent) ?? "(job)";
+
+const subtitleLabel = (task: string): string => ellipsize(task.trim().replace(/\s+/g, " "), 72);
+
+const proofToken = (job: FlowJob): string => normalizeCell(job.envelope?.reasoning) ?? normalizeCell(job.agent) ?? normalizeCell(job.profile) ?? "job";
+
+const freshnessLabel = (job: FlowJob, now: number): string => {
+	if (job.finishedAt !== undefined) {
+		const start = job.startedAt ?? job.createdAt;
+		return formatDurationLabel(Math.max(0, job.finishedAt - start));
+	}
+	if (job.startedAt !== undefined) {
+		return formatDurationLabel(Math.max(0, now - job.startedAt));
+	}
+	return formatDurationLabel(Math.max(0, now - job.createdAt));
+};
+
+const budgetLabel = (job: FlowJob): string | undefined => {
+	const toolCount = job.toolCount;
+	const maxToolCalls = job.envelope?.maxToolCalls;
+	if (maxToolCalls !== undefined) {
+		return `${toolCount ?? 0}/${maxToolCalls}`;
+	}
+	if (toolCount !== undefined) {
+		return `${toolCount}`;
+	}
+	const runtimeWarningMs = job.envelope?.runtimeWarningMs;
+	if (runtimeWarningMs !== undefined) {
+		return `warn ${formatDurationLabel(runtimeWarningMs)}`;
+	}
+	const maxRuntimeMs = job.envelope?.maxRuntimeMs;
+	if (maxRuntimeMs !== undefined) {
+		return formatDurationLabel(maxRuntimeMs);
+	}
+	return undefined;
+};
+
+const writingSummaryToken = (job: FlowJob): string | undefined => {
+	if (job.writingSummary !== true) {
+		return undefined;
+	}
+	return job.summaryPhaseSource !== undefined ? `writing-summary:${job.summaryPhaseSource}` : "writing-summary";
+};
+
+export const selectQueueRailRows = (
+	snapshot: FlowQueue,
+	selectedId: string | undefined,
+	now = Date.now(),
+): FlowQueueRailRow[] => {
+	const ordinalWidth = Math.max(2, String(snapshot.jobs.length).length);
+	return snapshot.jobs.map((job, index) => ({
+		ordinal: String(index + 1).padStart(ordinalWidth, "0"),
+		idHint: shortIdHint(job.id),
+		selected: selectedId === job.id,
+		title: titleLabel(job),
+		subtitle: subtitleLabel(job.task),
+		statusToken: job.status,
+		statusTone: queueStatusTone(job.status),
+		proofToken: proofToken(job),
+		freshnessLabel: freshnessLabel(job, now),
+		...((): Pick<FlowQueueRailRow, "budgetLabel" | "phaseToken"> => {
+			const budget = budgetLabel(job);
+			const phase = writingSummaryToken(job);
+			return {
+				...(budget !== undefined ? { budgetLabel: budget } : {}),
+				...(phase !== undefined ? { phaseToken: phase } : {}),
+			};
+		})(),
+	}));
+};
+
 const activeJobs = (snapshot: FlowQueue): FlowJob[] =>
 	snapshot.jobs.filter((job) => job.status === "running" || job.status === "pending");
 

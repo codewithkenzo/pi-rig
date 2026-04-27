@@ -6,6 +6,7 @@ import { renderColumns } from "../src/deck/columns.js";
 import { renderFooter } from "../src/deck/footer.js";
 import { computeDeckFrameLayout, padDeckFrame } from "../src/deck/frame.js";
 import { visibleWidth } from "../src/deck/layout.js";
+import { selectQueueRailRows } from "../src/deck/selectors.js";
 import type { ThemeEngine } from "../../../shared/theme/engine.js";
 import type { Palette, ThemeConfig } from "../../../shared/theme/types.js";
 import type { AnimationState } from "../../../shared/theme/animation.js";
@@ -89,6 +90,8 @@ const makeActivityRows = (count: number, prefix: string): FlowActivityRow[] =>
 
 const renderDeck = ({
 	job,
+	queue,
+	selectedId,
 	activityRows,
 	width,
 	termRows,
@@ -96,6 +99,8 @@ const renderDeck = ({
 	compactOverride,
 }: {
 	job: FlowJob | undefined;
+	queue?: FlowQueue;
+	selectedId?: string;
 	activityRows: readonly FlowActivityRow[];
 	width: number;
 	termRows: number;
@@ -108,12 +113,14 @@ const renderDeck = ({
 	const compact = compactOverride ?? width < 96;
 	const layout = computeDeckFrameLayout(termRows, compact);
 	const keyFlash = { active_key: null, flash_timeout: null };
+	const snapshot = queue ?? makeQueue(job === undefined ? [] : [job]);
+	const railRows = selectQueueRailRows(snapshot, selectedId ?? job?.id);
 	return padDeckFrame(
 		[
-			...renderHeader(engine, palette, config, makeQueue(job === undefined ? [] : [job]), "/home/kenzo/dev/pi-plugins-repo-kenzo-worktrees/flow-deck-v2", mockAnimState(), width, compact),
-			...renderColumns(engine, palette, config, job, activityRows, mockAnimState(), width, compact, layout.columnsHeight),
+			...renderHeader(engine, palette, config, snapshot, "/home/kenzo/dev/pi-plugins-repo-kenzo-worktrees/flow-deck-v2", mockAnimState(), width, compact),
+			...renderColumns(engine, palette, config, railRows, job, activityRows, mockAnimState(), width, compact, layout.columnsHeight),
 			...renderSummary(engine, palette, config, job, summaryScroll, width, layout.summaryHeight, mockAnimState()),
-			...renderFooter(engine, keyFlash, makeQueue(job === undefined ? [] : [job]), width, compact, width < 60),
+			...renderFooter(engine, keyFlash, snapshot, width, compact, width < 60),
 		],
 		layout.frameHeight,
 		width,
@@ -298,46 +305,65 @@ describe("renderSummary", () => {
 
 describe("renderColumns — compact mode (width < 96)", () => {
 	it("returns string array without crashing", () => {
-		const engine = mockEngine();
-		const palette = mockPalette();
-		const config = mockConfig();
 		const j = makeJob();
 		const activity = emptyActivity();
-		const lines = renderColumns(engine, palette, config, j, activity, mockAnimState(), 80, true, 12);
+		const railRows = selectQueueRailRows(makeQueue([j]), j.id, 1_000);
+		const lines = renderColumns(mockEngine(), mockPalette(), mockConfig(), railRows, j, activity, mockAnimState(), 80, true, 12);
 		expect(Array.isArray(lines)).toBe(true);
 		expect(lines.length).toBe(12);
+		for (const line of lines) {
+			expect(visibleWidth(line)).toBe(80);
+		}
 	});
 
 	it("does not use zipColumns separator │ in compact mode", () => {
-		const engine = mockEngine();
-		const palette = mockPalette();
-		const config = mockConfig();
 		const j = makeJob();
 		const activity = emptyActivity();
-		const lines = renderColumns(engine, palette, config, j, activity, mockAnimState(), 80, true, 12);
+		const railRows = selectQueueRailRows(makeQueue([j]), j.id, 1_000);
+		const lines = renderColumns(mockEngine(), mockPalette(), mockConfig(), railRows, j, activity, mockAnimState(), 80, true, 12);
 		// In compact mode, no column separator
 		expect(lines.join("")).not.toContain("│");
+		expect(lines.join("\n")).toContain("FLOW JOBS / AGENTS");
+		expect(lines.join("\n")).toContain("[01]");
 	});
 
 	it("wide mode (width >= 96) keeps vertical hierarchy without column separator", () => {
-		const engine = mockEngine();
-		const palette = mockPalette();
-		const config = mockConfig();
-		const j = makeJob();
+		const jobs = Array.from({ length: 12 }, (_, index) =>
+			makeJob({
+				id: `job-${index + 1}`,
+				profile: `agent-${index + 1}`,
+				task: `task-${index + 1}`,
+				status: index % 3 === 0 ? "running" : index % 3 === 1 ? "pending" : "done",
+				createdAt: 1_000 + index * 1_000,
+				...(index === 6
+					? {
+						writingSummary: true,
+						summaryPhaseSource: "explicit" as const,
+						envelope: {
+							reasoning: "high",
+							maxIterations: 40,
+							maxToolCalls: 10,
+						},
+						toolCount: 6,
+					}
+					: {}),
+			}),
+		);
+		const queue = makeQueue(jobs);
+		const railRows = selectQueueRailRows(queue, "job-7", 20_000);
 		const activity: FlowActivityRow[] = [{ kind: "progress", text: "activity", ts: 2000 }];
-		const lines = renderColumns(engine, palette, config, j, activity, mockAnimState(), 100, false, 14);
+		const lines = renderColumns(mockEngine(), mockPalette(), mockConfig(), railRows, jobs[6], activity, mockAnimState(), 120, false, 14);
 		const all = lines.join("\n");
 		expect(all).not.toContain("│");
-		expect(all).toContain("WORK ITEM");
-		expect(all).toContain("AGENT");
+		expect(all).toContain("FLOW JOBS / AGENTS");
+		expect(all).toContain("[12]");
+		expect(all).toContain("▎");
+		expect(all).toContain("agent-7");
 		expect(all).toContain("LIVE ACTIVITY");
 		expect(lines).toHaveLength(14);
 	});
 
 	it("renders stale restored job without crash", () => {
-		const engine = mockEngine();
-		const palette = mockPalette();
-		const config = mockConfig();
 		const j: FlowJob = {
 			id: "stale",
 			profile: "explore",
@@ -346,40 +372,13 @@ describe("renderColumns — compact mode (width < 96)", () => {
 			createdAt: 1000,
 			error: "Restored active job has no live process; stale restore: previous process not live",
 		};
+		const railRows = selectQueueRailRows(makeQueue([j]), j.id, 1_000);
 		expect(() => {
-			renderColumns(engine, palette, config, j, emptyActivity(), mockAnimState(), 80, true, 12);
+			renderColumns(mockEngine(), mockPalette(), mockConfig(), railRows, j, emptyActivity(), mockAnimState(), 80, true, 12);
 		}).not.toThrow();
 	});
 
-	it("shows model, reasoning, and effort rows from envelope data", () => {
-		const engine = mockEngine();
-		const palette = mockPalette();
-		const config = mockConfig();
-		const j = makeJob({
-			envelope: {
-				reasoning: "high",
-				maxIterations: 84,
-				model: "gpt-5.4",
-				provider: "openai",
-				effort: "minimal",
-			},
-		});
-
-		const lines = renderColumns(engine, palette, config, j, emptyActivity(), mockAnimState(), 80, true, 12);
-		const all = lines.join("\n");
-		expect(all).toContain("Model");
-		expect(all).toContain("gpt-5.4@openai");
-		expect(all).toContain("Reasoning");
-		expect(all).toContain("high");
-		expect(all).toContain("Effort");
-		expect(all).toContain("minimal");
-		expect(lines).toHaveLength(12);
-	});
-
-	it("shows default fallback values when envelope data is missing", () => {
-		const engine = mockEngine();
-		const palette = mockPalette();
-		const config = mockConfig();
+	it("handles optional fields absent without overflowing", () => {
 		const j: FlowJob = {
 			id: "old-job",
 			profile: "explore",
@@ -387,15 +386,11 @@ describe("renderColumns — compact mode (width < 96)", () => {
 			status: "done",
 			createdAt: 1000,
 		};
-
-		const lines = renderColumns(engine, palette, config, j, emptyActivity(), mockAnimState(), 80, true, 12);
+		const railRows = selectQueueRailRows(makeQueue([j]), undefined, 10_000);
+		const lines = renderColumns(mockEngine(), mockPalette(), mockConfig(), railRows, j, emptyActivity(), mockAnimState(), 80, true, 12);
 		const all = lines.join("\n");
-		expect(all).toContain("Model");
-		expect(all).toContain("(default)");
-		expect(all).toContain("Reasoning");
-		expect(all).toContain("(profile default)");
-		expect(all).toContain("Effort");
-		expect(all).toContain("auto");
+		expect(all).toContain("map the repo");
+		expect(all).not.toContain("undefined");
 		expect(lines).toHaveLength(12);
 	});
 });
@@ -489,7 +484,8 @@ describe("deck frame regression", () => {
 				const engine = mockEngine();
 				const palette = mockPalette();
 				const config = mockConfig();
-				const columns = renderColumns(engine, palette, config, state.job, state.activityRows, mockAnimState(), width, compact, layout.columnsHeight);
+				const railRows = selectQueueRailRows(makeQueue([state.job]), state.job.id, 1_000);
+				const columns = renderColumns(engine, palette, config, railRows, state.job, state.activityRows, mockAnimState(), width, compact, layout.columnsHeight);
 				const summary = renderSummary(engine, palette, config, state.job, 0, width, layout.summaryHeight, mockAnimState());
 				const frame = renderDeck({
 					job: state.job,

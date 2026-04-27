@@ -1,56 +1,30 @@
 import type { ThemeEngine } from "../../../../shared/theme/engine.js";
 import type { Palette, ThemeConfig } from "../../../../shared/theme/types.js";
 import { spin, breathe, withMotion, type AnimationState } from "../../../../shared/theme/animation.js";
-import { ellipsize } from "../../../../shared/ui/hud.js";
 import type { FlowJob } from "../types.js";
 import type { FlowActivityRow } from "./journal.js";
+import type { FlowQueueRailRow } from "./selectors.js";
 import { STATUS_ICONS } from "./icons.js";
-import { fitAnsiColumn, truncateToWidth } from "./layout.js";
+import { fitAnsiColumn, truncateToWidth, visibleWidth } from "./layout.js";
 
 const DEFAULT_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const;
 
-const normalizeValue = (value: string | undefined): string | undefined => {
-	if (value === undefined) {
-		return undefined;
-	}
-	const trimmed = value.trim();
-	return trimmed.length > 0 ? trimmed : undefined;
-};
-
-const fmtTime = (ts: number): string => {
-	const d = new Date(ts);
-	return [d.getHours(), d.getMinutes(), d.getSeconds()]
-		.map((n) => String(n).padStart(2, "0"))
-		.join(":");
-};
+const clamp = (value: number, min: number, max: number): number =>
+	Math.max(min, Math.min(max, value));
 
 const fmtDuration = (ms: number): string => {
 	if (ms < 1000) return `${ms}ms`;
-	const s = Math.round(ms / 100) / 10;
+	const s = Math.round(ms / 1000);
 	if (s < 60) return `${s}s`;
 	const mn = Math.floor(s / 60);
-	return `${mn}m${Math.round(s % 60)}s`;
+	const rem = s % 60;
+	return rem === 0 ? `${mn}m` : `${mn}m${String(rem).padStart(2, "0")}s`;
 };
 
 const relTs = (ts: number, startedAt: number | undefined): string => {
 	if (startedAt === undefined) return "+?s";
 	const diff = Math.max(0, Math.round((ts - startedAt) / 1000));
 	return `+${diff}s`;
-};
-
-const statusTone = (status: FlowJob["status"]): "active" | "warning" | "success" | "error" | "inactive" => {
-	switch (status) {
-		case "running":
-			return "active";
-		case "pending":
-			return "warning";
-		case "done":
-			return "success";
-		case "failed":
-			return "error";
-		case "cancelled":
-			return "inactive";
-	}
 };
 
 const rowTone = (tone: FlowActivityRow["tone"]): "text" | "dim" | "success" | "warning" | "error" | "accent" => {
@@ -90,108 +64,85 @@ const spinnerIcon = (
 	);
 };
 
-const modelText = (job: FlowJob): string => {
-	const envelopeModel = normalizeValue(job.envelope?.model);
-	const envelopeProvider = normalizeValue(job.envelope?.provider);
-	if (envelopeModel !== undefined) {
-		return envelopeProvider !== undefined ? `${envelopeModel}@${envelopeProvider}` : envelopeModel;
-	}
-	const legacyModel = normalizeValue(job.model);
-	return legacyModel ?? "(default)";
+const buildRailHeader = (engine: ThemeEngine, width: number, rowsLength: number, compact: boolean): string => {
+	const label = engine.fg("header", "  FLOW JOBS / AGENTS");
+	const count = engine.fg("muted", `[${String(rowsLength).padStart(2, "0")}]`);
+	const gap = Math.max(1, width - visibleWidth(label) - visibleWidth(count));
+	return fitAnsiColumn(`${label}${" ".repeat(gap)}${count}`, width);
 };
 
-const reasoningText = (job: FlowJob): string => job.envelope?.reasoning ?? "(profile default)";
-const effortText = (job: FlowJob): string => job.envelope?.effort ?? "auto";
-
-const metaRows = (job: FlowJob): Array<[string, string, "value" | "dim" | "success"]> => {
-	const rows: Array<[string, string, "value" | "dim" | "success"]> = [];
-	rows.push(["Model", modelText(job), "value"]);
-	rows.push(["Reasoning", reasoningText(job), "value"]);
-	rows.push(["Effort", effortText(job), "value"]);
-
-	if (job.toolCount !== undefined) {
-		rows.push(["Tool calls", `${job.toolCount}`, "value"]);
-	}
-	if (job.status === "running" && job.writingSummary === true) {
-		rows.push([
-			"Phase",
-			`writing-summary${job.summaryPhaseSource !== undefined ? `:${job.summaryPhaseSource}` : ""}`,
-			"success",
-		]);
-	}
-	if (job.startedAt !== undefined) {
-		rows.push(["Started", fmtTime(job.startedAt), "dim"]);
-	}
-	if (job.finishedAt !== undefined && job.startedAt !== undefined) {
-		rows.push(["Duration", fmtDuration(job.finishedAt - job.startedAt), "dim"]);
-	} else if (job.startedAt !== undefined && (job.status === "running" || job.status === "pending")) {
-		rows.push(["Running", fmtDuration(Date.now() - job.startedAt), "dim"]);
-	}
-	return rows;
+const buildRailColumnsHeader = (engine: ThemeEngine, width: number, compact: boolean, hasPhase: boolean): string => {
+	const text = compact
+		? "  ID  JOB / AGENT  STATUS  AGE  BUDGET"
+		: hasPhase
+			? "  ID  AGENT / JOB  STATUS  PROF  FRESH  BUDGET  PHASE"
+			: "  ID  AGENT / JOB  STATUS  PROF  FRESH  BUDGET";
+	return engine.fg("muted", truncateToWidth(text, width));
 };
 
-const toneText = (
+const selectVisibleRailRows = (rows: readonly FlowQueueRailRow[], maxRows: number): FlowQueueRailRow[] => {
+	if (maxRows <= 0 || rows.length <= maxRows) {
+		return rows.slice(0, maxRows);
+	}
+	const selectedIndex = rows.findIndex((row) => row.selected);
+	const anchor = selectedIndex >= 0 ? selectedIndex : 0;
+	const start = clamp(anchor - Math.floor(maxRows / 2), 0, rows.length - maxRows);
+	return rows.slice(start, start + maxRows);
+};
+
+const buildRailRow = (engine: ThemeEngine, row: FlowQueueRailRow, width: number, compact: boolean): string => {
+	const marker = row.selected ? engine.fg("accent", "▎") : engine.fg("border", " ");
+	const ordinal = row.selected ? engine.bold(engine.fg("accent", row.ordinal)) : engine.fg("muted", row.ordinal);
+	const idHint = engine.fg("dim", row.idHint);
+	const title = row.selected ? engine.bold(engine.fg("text", row.title)) : engine.fg("text", row.title);
+	const subtitle = engine.fg("muted", row.subtitle);
+	const proof = engine.fg("label", row.proofToken);
+	const leftPlain = [engine.strip(ordinal), engine.strip(idHint), engine.strip(title), engine.strip(subtitle), engine.strip(proof)]
+		.filter((piece) => piece.length > 0)
+		.join(" · ");
+
+	const status = engine.fg(row.statusTone, row.statusToken.toUpperCase());
+	const freshness = engine.fg("dim", row.freshnessLabel);
+	const budget = row.budgetLabel !== undefined ? engine.fg("value", row.budgetLabel) : undefined;
+	const phase = row.phaseToken !== undefined ? engine.fg("accent", row.phaseToken) : undefined;
+	const rightParts = compact
+		? [status, freshness, budget]
+		: [status, freshness, budget, phase];
+	const rightPlain = rightParts.filter((piece): piece is string => piece !== undefined).join("  ");
+	const rightWidth = visibleWidth(rightPlain);
+	const prefix = `${marker} `;
+	const leftBudget = Math.max(0, width - visibleWidth(prefix) - rightWidth - 1);
+	const left = truncateToWidth(leftPlain, leftBudget);
+	const leftStyled = row.selected ? engine.bold(engine.fg("text", left)) : engine.fg("text", left);
+	const gap = Math.max(1, width - visibleWidth(prefix) - visibleWidth(leftStyled) - rightWidth);
+	return fitAnsiColumn(`${prefix}${leftStyled}${" ".repeat(gap)}${rightPlain}`, width);
+};
+
+const buildRailViewport = (
 	engine: ThemeEngine,
-	tone: "value" | "dim" | "success",
-	value: string,
-): string => {
-	if (tone === "dim") {
-		return engine.fg("dim", value);
-	}
-	if (tone === "success") {
-		return engine.fg("success", value);
-	}
-	return engine.fg("value", value);
-};
-
-const buildTopCandidates = (
-	engine: ThemeEngine,
-	palette: Palette,
-	config: ThemeConfig,
-	job: FlowJob | undefined,
-	animState: AnimationState,
-	reducedMotion: boolean,
+	rows: readonly FlowQueueRailRow[],
 	width: number,
+	compact: boolean,
+	linesBudget: number,
 ): string[] => {
-	if (job === undefined) {
-		return [engine.fg("muted", truncateToWidth("  No selection", width))];
+	if (linesBudget <= 0) {
+		return [];
 	}
-
-	const lines: string[] = [];
-	const isStale = job.error?.includes("stale restore") === true;
-	const valueTone: "value" | "inactive" = isStale ? "inactive" : "value";
-	const icon = spinnerIcon(job, palette, config, animState, reducedMotion);
-	const tone = statusTone(job.status);
-	const status = engine.fg(tone, `${icon} ${job.status}`);
-
-	lines.push(engine.fg("header", truncateToWidth("  WORK ITEM", width)));
-	lines.push(
-		engine.fg(
-			"text",
-			truncateToWidth(`  TASK       ${ellipsize(job.task, Math.max(20, width - 13))}`, width),
-		),
-	);
-	lines.push(
-		truncateToWidth(
-			`  AGENT      ${engine.strip(status)} ${job.profile}`,
-			width,
-		),
-	);
-
-	const rows = metaRows(job);
-	for (const [label, value, metaTone] of rows) {
-		const labelCell = truncateToWidth(label, 10);
-		const valueCell = toneText(engine, metaTone, value);
-		const content = `    ${labelCell} ${engine.strip(engine.fg(valueTone, engine.strip(valueCell)))}`;
-		lines.push(truncateToWidth(content, width));
+	const hasPhase = rows.some((row) => row.phaseToken !== undefined);
+	const headerLines = linesBudget >= 2 ? 2 : 1;
+	const visibleRowBudget = Math.max(0, linesBudget - headerLines);
+	const visibleRows = selectVisibleRailRows(rows, visibleRowBudget);
+	const lines: string[] = [buildRailHeader(engine, width, rows.length, compact)];
+	if (headerLines >= 2) {
+		lines.push(buildRailColumnsHeader(engine, width, compact, hasPhase));
 	}
-
-	if (Array.isArray(job.recentTools) && job.recentTools.length > 0) {
-		const tools = job.recentTools.slice(-4).join(" · ");
-		lines.push(engine.fg("accent", truncateToWidth(`  TOOLS      ${tools}`, width)));
+	for (const row of visibleRows) {
+		lines.push(buildRailRow(engine, row, width, compact));
 	}
-
-	return lines;
+	while (lines.length < linesBudget) {
+		lines.push(" ".repeat(width));
+	}
+	return lines.slice(0, linesBudget).map((line) => fitAnsiColumn(line, width));
 };
 
 const buildFeedViewport = (
@@ -223,6 +174,7 @@ export const renderColumns = (
 	engine: ThemeEngine,
 	palette: Palette,
 	config: ThemeConfig,
+	railRows: readonly FlowQueueRailRow[],
 	job: FlowJob | undefined,
 	activityRows: readonly FlowActivityRow[],
 	animState: AnimationState,
@@ -240,11 +192,7 @@ export const renderColumns = (
 	const maxFeedLines = compact ? 4 : 6;
 	const feedLines = Math.max(1, Math.min(maxFeedLines, Math.max(1, Math.floor((innerHeight - 2) / 3))));
 	const topBudget = Math.max(0, innerHeight - feedLines - 2);
-	const topCandidates = buildTopCandidates(engine, palette, config, job, animState, reducedMotion, width);
-	const topLines = topCandidates.slice(0, topBudget);
-	while (topLines.length < topBudget) {
-		topLines.push(" ".repeat(width));
-	}
+	const railLines = buildRailViewport(engine, railRows, width, compact, topBudget);
 
 	const activityHeader = engine.fg("header", truncateToWidth("  LIVE ACTIVITY", width));
 	const feedViewport = buildFeedViewport(engine, activityRows, job, width, feedLines);
@@ -256,6 +204,6 @@ export const renderColumns = (
 		)
 		: " ".repeat(width);
 
-	return [divider, ...topLines, activityHeader, ...feedViewport, truncateToWidth(trailer, width), divider]
+	return [divider, ...railLines, activityHeader, ...feedViewport, truncateToWidth(trailer, width), divider]
 		.map((line) => fitAnsiColumn(line, width));
 };

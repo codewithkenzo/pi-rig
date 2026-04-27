@@ -19,7 +19,7 @@ import {
 	toggleFollowMode,
 	type FlowDeckControllerState,
 } from "./controller.js";
-import { selectStreamRows, selectVisibleStreamRows } from "./selectors.js";
+import { selectQueueRailRows, selectStreamRows, selectVisibleStreamRows } from "./selectors.js";
 import { DECK_ICONS } from "./icons.js";
 import { renderHeader } from "./header.js";
 import { renderColumns } from "./columns.js";
@@ -224,11 +224,12 @@ export const showFlowDeck = async (
 							state.streamScroll,
 							state.followMode,
 						);
+						const railRows = selectQueueRailRows(state.snapshot, state.selectedId);
 
 						return padDeckFrame(
 							[
 								...renderHeader(engine, palette, config, state.snapshot, ctx.cwd, animState, width, compact),
-								...renderColumns(engine, palette, config, job, streamRows, animState, width, compact, layout.columnsHeight),
+								...renderColumns(engine, palette, config, railRows, job, streamRows, animState, width, compact, layout.columnsHeight),
 								...renderSummary(engine, palette, config, job, state.summaryScroll, width, layout.summaryHeight, animState),
 								...renderFooter(engine, {
 									active_key: state.keyFlash.activeKey,
