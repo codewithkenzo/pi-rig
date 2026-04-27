@@ -62,9 +62,13 @@ export const BUILT_IN_PROFILES: readonly FlowProfile[] = [
 	},
 ] as const;
 
-export function loadProfiles(cwd: string): FlowProfile[] {
+export type ProfileLoadOptions = {
+	readonly homeDir?: string;
+};
+
+export function loadProfiles(cwd: string, options: ProfileLoadOptions = {}): FlowProfile[] {
 	const sources = [
-		path.join(os.homedir(), ".pi", "agent", "flow-profiles.json"),
+		path.join(options.homeDir ?? os.homedir(), ".pi", "agent", "flow-profiles.json"),
 		path.join(cwd, ".pi", "flow-profiles.json"),
 	];
 
@@ -97,9 +101,10 @@ export function loadProfiles(cwd: string): FlowProfile[] {
 export function getProfile(
 	name: string,
 	cwd: string,
+	options: ProfileLoadOptions = {},
 ): Effect.Effect<FlowProfile, ProfileNotFoundError> {
 	return Effect.suspend(() => {
-		const found = loadProfiles(cwd).find((profile) => profile.name === name);
+		const found = loadProfiles(cwd, options).find((profile) => profile.name === name);
 		return found !== undefined
 			? Effect.succeed(found)
 			: Effect.fail(new ProfileNotFoundError({ name }));

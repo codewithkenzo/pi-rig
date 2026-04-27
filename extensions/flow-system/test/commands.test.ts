@@ -125,21 +125,41 @@ describe("/flow command", () => {
 	});
 
 	it("passes resolved envelope system prompt into /flow run execution", async () => {
-		let observed: ExecuteOptions | undefined;
-		const { flowHandler, ctx } = await makeHarness({
-			runFlow: (options: ExecuteOptions) => {
-				observed = options;
-				return Effect.succeed("ok");
-			},
-		});
-		expect(flowHandler).toBeDefined();
-		await flowHandler?.("run explore -- inspect project", ctx);
-		expect(observed).toBeDefined();
-		expect(observed?.model).toBe("gpt-5.4-mini");
-		expect(observed?.reasoning).toBe("low");
-		expect(observed?.systemPrompt).toContain("[flow execution envelope]");
-		expect(observed?.systemPrompt).toContain("maxIterations:");
-		expect(observed?.systemPrompt).toContain("model: gpt-5.4-mini");
+		const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "flow-cmd-envelope-"));
+		try {
+			await fs.mkdir(path.join(tempDir, ".pi"), { recursive: true });
+			await fs.writeFile(
+				path.join(tempDir, ".pi", "flow-profiles.json"),
+				JSON.stringify([
+					{
+						name: "explore",
+						reasoning_level: "low",
+						model: "gpt-5.4-mini",
+						toolsets: ["terminal", "file"],
+						skills: [],
+					},
+				]),
+				"utf8",
+			);
+			let observed: ExecuteOptions | undefined;
+			const { flowHandler, ctx } = await makeHarness({
+				cwd: tempDir,
+				runFlow: (options: ExecuteOptions) => {
+					observed = options;
+					return Effect.succeed("ok");
+				},
+			});
+			expect(flowHandler).toBeDefined();
+			await flowHandler?.("run explore -- inspect project", ctx);
+			expect(observed).toBeDefined();
+			expect(observed?.model).toBe("gpt-5.4-mini");
+			expect(observed?.reasoning).toBe("low");
+			expect(observed?.systemPrompt).toContain("[flow execution envelope]");
+			expect(observed?.systemPrompt).toContain("maxIterations:");
+			expect(observed?.systemPrompt).toContain("model: gpt-5.4-mini");
+		} finally {
+			await fs.rm(tempDir, { recursive: true, force: true });
+		}
 	});
 
 	it("can filter status by id prefix", async () => {

@@ -5,6 +5,11 @@ import { loadProfiles, getProfile, BUILT_IN_PROFILES } from "../src/profiles.js"
 import { ProfileNotFoundError } from "../src/types.js";
 
 const NO_CONFIG_DIR = `/tmp/pi-flow-profiles-test-${crypto.randomUUID()}`;
+const NO_CONFIG_OPTIONS = {
+	homeDir: `/tmp/pi-flow-profiles-home-${crypto.randomUUID()}`,
+} as const;
+const loadTestProfiles = (cwd: string) => loadProfiles(cwd, NO_CONFIG_OPTIONS);
+const getTestProfile = (name: string, cwd: string) => getProfile(name, cwd, NO_CONFIG_OPTIONS);
 
 describe("BUILT_IN_PROFILES", () => {
 	it("contains exactly 6 profiles", () => {
@@ -19,12 +24,12 @@ describe("BUILT_IN_PROFILES", () => {
 
 describe("loadProfiles", () => {
 	it("returns 6 profiles when no config files exist", () => {
-		const profiles = loadProfiles(NO_CONFIG_DIR);
+		const profiles = loadTestProfiles(NO_CONFIG_DIR);
 		expect(profiles).toHaveLength(6);
 	});
 
 	it("returns profiles with the expected built-in names", () => {
-		const profiles = loadProfiles(NO_CONFIG_DIR);
+		const profiles = loadTestProfiles(NO_CONFIG_DIR);
 		const names = profiles.map((p) => p.name);
 		expect(names).toContain("explore");
 		expect(names).toContain("research");
@@ -35,7 +40,7 @@ describe("loadProfiles", () => {
 	});
 
 	it("explore profile has reasoning_level low and sane default model lanes", () => {
-		const profiles = loadProfiles(NO_CONFIG_DIR);
+		const profiles = loadTestProfiles(NO_CONFIG_DIR);
 		const explore = profiles.find((p) => p.name === "explore");
 		expect(explore).toBeDefined();
 		expect(explore?.reasoning_level).toBe("low");
@@ -45,7 +50,7 @@ describe("loadProfiles", () => {
 	});
 
 	it("coder profile uses high reasoning and coding-focused model defaults", () => {
-		const profiles = loadProfiles(NO_CONFIG_DIR);
+		const profiles = loadTestProfiles(NO_CONFIG_DIR);
 		const coder = profiles.find((p) => p.name === "coder");
 		expect(coder?.reasoning_level).toBe("high");
 		expect(coder?.model).toBe("gpt-5.4-mini");
@@ -54,7 +59,7 @@ describe("loadProfiles", () => {
 	});
 
 	it("debug profile has reasoning_level xhigh and reviewer model defaults", () => {
-		const profiles = loadProfiles(NO_CONFIG_DIR);
+		const profiles = loadTestProfiles(NO_CONFIG_DIR);
 		const debug = profiles.find((p) => p.name === "debug");
 		expect(debug?.reasoning_level).toBe("xhigh");
 		expect(debug?.model).toBe("gpt-5.4");
@@ -63,7 +68,7 @@ describe("loadProfiles", () => {
 	});
 
 	it("all built-in profiles have empty skills arrays", () => {
-		const profiles = loadProfiles(NO_CONFIG_DIR);
+		const profiles = loadTestProfiles(NO_CONFIG_DIR);
 		for (const profile of profiles) {
 			expect(profile.skills).toEqual([]);
 		}
@@ -82,7 +87,7 @@ describe("loadProfiles", () => {
 				skills: [],
 			},
 		], null, 2));
-		const profiles = loadProfiles(cwd);
+		const profiles = loadTestProfiles(cwd);
 		const custom = profiles.find((profile) => profile.name === "legacy-custom");
 		expect(custom).toBeDefined();
 		expect(custom?.reasoning_level).toBe("medium");
@@ -102,33 +107,33 @@ describe("loadProfiles", () => {
 				skills: [],
 			},
 		], null, 2));
-		const profiles = loadProfiles(cwd);
+		const profiles = loadTestProfiles(cwd);
 		const explore = profiles.find((profile) => profile.name === "explore");
 		expect(explore?.model).toBeUndefined();
 	});
 
 	it("silently skips a cwd with no .pi directory", () => {
 		// Should not throw; returns built-ins unchanged
-		const profiles = loadProfiles("/tmp/nonexistent-dir-that-does-not-exist-xyz");
+		const profiles = loadTestProfiles("/tmp/nonexistent-dir-that-does-not-exist-xyz");
 		expect(profiles).toHaveLength(6);
 	});
 });
 
 describe("getProfile", () => {
 	it("resolves explore with reasoning_level low", async () => {
-		const profile = await Effect.runPromise(getProfile("explore", NO_CONFIG_DIR));
+		const profile = await Effect.runPromise(getTestProfile("explore", NO_CONFIG_DIR));
 		expect(profile.name).toBe("explore");
 		expect(profile.reasoning_level).toBe("low");
 	});
 
 	it("resolves research with toolsets terminal, file, web", async () => {
-		const profile = await Effect.runPromise(getProfile("research", NO_CONFIG_DIR));
+		const profile = await Effect.runPromise(getTestProfile("research", NO_CONFIG_DIR));
 		expect(profile.toolsets).toEqual(["terminal", "file", "web"]);
 	});
 
 	it("fails with ProfileNotFoundError for unknown profile name", async () => {
 		const result = await Effect.runPromise(
-			getProfile("nonexistent", NO_CONFIG_DIR).pipe(Effect.result),
+			getTestProfile("nonexistent", NO_CONFIG_DIR).pipe(Effect.result),
 		);
 		expect(result._tag).toBe("Failure");
 		if (result._tag === "Failure") {
@@ -138,13 +143,13 @@ describe("getProfile", () => {
 	});
 
 	it("resolves coder profile correctly", async () => {
-		const profile = await Effect.runPromise(getProfile("coder", NO_CONFIG_DIR));
+		const profile = await Effect.runPromise(getTestProfile("coder", NO_CONFIG_DIR));
 		expect(profile.reasoning_level).toBe("high");
 		expect(profile.model).toBe("gpt-5.4-mini");
 	});
 
 	it("resolves ambivalent with empty toolsets", async () => {
-		const profile = await Effect.runPromise(getProfile("ambivalent", NO_CONFIG_DIR));
+		const profile = await Effect.runPromise(getTestProfile("ambivalent", NO_CONFIG_DIR));
 		expect(profile.toolsets).toEqual([]);
 		expect(profile.reasoning_level).toBe("medium");
 	});
