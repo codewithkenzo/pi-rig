@@ -30,10 +30,42 @@ Use when:
 |---|---|
 | `pi_blitz_read` | AST structure summary of a file (imports + L-range definitions). |
 | `pi_blitz_edit` | Single symbol-anchored edit. Exactly one of `after`/`replace`. |
+| `pi_blitz_apply` | Structured v0.2 edit using JSON IR. Choose operation + target + edit object. |
 | `pi_blitz_batch` | Multiple symbol-anchored edits in one file. |
 | `pi_blitz_rename` | AST-verified rename in one file (skips strings/comments). |
 | `pi_blitz_undo` | Revert the last blitz edit on a file. Requires `confirm: true`. |
 | `pi_blitz_doctor` | Report version, grammars, cache health. |
+
+## pi_blitz_apply operation selection
+
+Use `pi_blitz_apply` when edit shape is structured and deterministic:
+
+- `replace_body_span`:
+  - Exact anchor edit inside a symbol body.
+  - Provide `edit.find`, `edit.replace`, optional `edit.occurrence`.
+- `insert_body_span`:
+  - Add snippet before/after a body anchor inside symbol.
+  - Provide `edit.anchor`, `edit.position`, `edit.text`.
+- `wrap_body`:
+  - Add pre/post wrapper around existing body.
+  - `edit.before`, `edit.keep: "body"`, `edit.after` required.
+- `compose_body`:
+  - Keep multiple chunks while preserving inner sections.
+  - `edit.segments` must be ordered array of `{text}`, `{keep:"body"}`, or `{keep:{...}}`.
+- `insert_after_symbol`:
+  - Append code directly after target declaration.
+  - Provide `edit.code`.
+- `set_body`:
+  - Replace complete symbol body at once.
+  - Provide `edit.body`, optional `edit.indentation`.
+
+Target object:
+
+- `target.symbol` required symbol name only.
+- `target.kind` optional (`function`, `method`, `class`, `variable`, `type`).
+- `target.range` optional (`body` default, or `node`).
+
+Avoid free-form snippets for these operations; keep operation payload minimal and explicit.
 
 ## Snippet grammar
 
@@ -63,6 +95,52 @@ pi_blitz_edit({
 ```
 
 For `replace`, pass only the symbol name in `replace`; the `snippet` is the replacement body. Do not repeat the function signature unless you already have it handy — blitz preserves it automatically. For large unchanged bodies, use `// ... existing code ...` or `// @keep`; never repeat unchanged code.
+
+### Apply JSON examples
+
+### Replace one tail span
+
+```ts
+pi_blitz_apply({
+	file: "src/logic.ts",
+	operation: "replace_body_span",
+	target: { symbol: "computeTotal" },
+	edit: {
+		find: "return subtotal;",
+		replace: "return subtotal + fee;",
+		occurrence: "last",
+	},
+});
+```
+
+### Wrap with retry block
+
+```ts
+pi_blitz_apply({
+	file: "src/logic.ts",
+	target: { symbol: "handleRequest", kind: "function" },
+	operation: "wrap_body",
+	edit: {
+		before: "try {\n",
+		keep: "body",
+		after: "} catch (error) {\n  logger.error(error);\n  throw error;\n}",
+		indentKeptBodyBy: 2,
+	},
+});
+```
+
+### Insert helper after symbol
+
+```ts
+pi_blitz_apply({
+	file: "src/logic.ts",
+	target: { symbol: "handleRequest", kind: "function" },
+	operation: "insert_after_symbol",
+	edit: {
+		code: "function logRequest(req: unknown) { console.log(req); }",
+	},
+});
+```
 
 ### Insert a helper after a symbol
 

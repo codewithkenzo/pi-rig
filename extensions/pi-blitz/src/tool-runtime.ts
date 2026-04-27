@@ -12,6 +12,7 @@ export interface PiBlitzDetails {
 	lane?: string;
 	mode?: string;
 	language?: string;
+	file?: string;
 	fileBytesBefore?: number;
 	fileBytesAfter?: number;
 	symbolBytesBefore?: number;
@@ -32,6 +33,11 @@ export interface PiBlitzDetails {
 	realisticContextLines?: number;
 	usedMarkers?: boolean;
 	wallMs?: number;
+	ranges?: unknown;
+	diffSummary?: unknown;
+	validation?: unknown;
+	metrics?: unknown;
+	operation?: string;
 }
 
 export interface BlitzToolResult {

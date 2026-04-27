@@ -19,6 +19,7 @@ const PATH_MAX = 4096;
 const SNIPPET_MAX = 65_536;
 const BATCH_MAX_ITEMS = 64;
 const BATCH_MAX_AGGREGATE = 256 * 1024;
+const APPLY_MAX_PAYLOAD = 512 * 1024;
 
 const pathSchema = Type.String({ minLength: 1, maxLength: PATH_MAX, description: "Absolute or repo-relative path to the source file." });
 const snippetSchema = Type.String({
@@ -40,6 +41,130 @@ const afterSymbolSchema = Type.String({
 		"Name of the function/class/method/variable to insert AFTER. Must be the SYMBOL NAME only (e.g. \"handleRequest\"), never source code or text.",
 });
 const renameSymbolSchema = Type.String({ minLength: 1, maxLength: 512, description: "Identifier name (no surrounding code)." });
+const applyOperationSchema = Type.Union(
+	[
+		Type.Literal("replace_body_span"),
+		Type.Literal("insert_body_span"),
+		Type.Literal("wrap_body"),
+		Type.Literal("compose_body"),
+		Type.Literal("insert_after_symbol"),
+		Type.Literal("set_body"),
+	],
+	{
+		description:
+			"Structured edit operation. Prefer one of: replace_body_span, insert_body_span, wrap_body, compose_body, insert_after_symbol, set_body.",
+	},
+);
+
+const applyTargetSchema = Type.Object(
+	{
+		symbol: Type.String({
+			minLength: 1,
+			maxLength: 512,
+			description:
+				"Target symbol name (declaration, not call-site). No surrounding text or code.",
+		}),
+		kind: Type.Optional(
+			Type.Union(
+				[
+					Type.Literal("function"),
+					Type.Literal("method"),
+					Type.Literal("class"),
+					Type.Literal("variable"),
+					Type.Literal("type"),
+				],
+				{ description: "Expected AST kind hint; narrows candidate selection." },
+			),
+		),
+		range: Type.Optional(
+			Type.Union(
+				[
+					Type.Literal("body"),
+					Type.Literal("node"),
+				],
+				{ description: "Mutate body (default) or full declaration node range." },
+			),
+		),
+	},
+	{ description: "Symbol target object for apply command." },
+);
+
+const applyEditSchema = Type.Record(
+	Type.String({ minLength: 1, maxLength: 64 }),
+	Type.Unknown(),
+	{
+		description:
+			"Operation-specific payload. Use only keys defined per operation docs. Unknown keys rejected by runtime checks during execution.",
+	},
+);
+
+const applyOptionsSchema = Type.Object(
+	{
+		dryRun: Type.Optional(
+			Type.Boolean({
+				description:
+					"Set true for no-write dry run. If true, tool still performs target matching and edit validation.",
+			}),
+		),
+		includeDiff: Type.Optional(
+			Type.Boolean({
+				description: "Set true to request compact diff summary from CLI output.",
+			}),
+		),
+	},
+	{ additionalProperties: false },
+);
+
+export const applyToolParamsSchema = Type.Object({
+	file: pathSchema,
+	operation: applyOperationSchema,
+	target: applyTargetSchema,
+	edit: applyEditSchema,
+	dry_run: Type.Optional(Type.Boolean({ description: "No-write preview request for apply." })),
+	include_diff: Type.Optional(
+		Type.Boolean({ description: "Request compact diff summary in CLI output." }),
+	),
+	options: Type.Optional(applyOptionsSchema),
+});
+
+type BlitzApplyOperation =
+	| "replace_body_span"
+	| "insert_body_span"
+	| "wrap_body"
+	| "compose_body"
+	| "insert_after_symbol"
+	| "set_body";
+
+type BlitzApplyParams = {
+	file: string;
+	operation: BlitzApplyOperation;
+	target: {
+		symbol: string;
+		kind?: "function" | "method" | "class" | "variable" | "type";
+		range?: "body" | "node";
+	};
+	edit: Record<string, unknown>;
+	dry_run?: boolean;
+	include_diff?: boolean;
+	options?: {
+		dryRun?: boolean;
+		includeDiff?: boolean;
+	};
+};
+
+type BlitzApplyPayload = {
+	version: 1;
+	file: string;
+	operation: BlitzApplyOperation;
+	target: BlitzApplyParams["target"];
+	edit: Record<string, unknown>;
+	options?: {
+		dryRun?: boolean;
+		requireParseClean?: boolean;
+		requireSingleMatch?: boolean;
+		diffContext?: number;
+	};
+};
 
 // Soft-error classifier — matches the signal taxonomy in docs/architecture/blitz.md.
 const classifySoft = (stdout: string, stderr: string): BlitzSoftError | undefined => {
@@ -168,6 +293,274 @@ const assertByteCap = (payload: string, maxBytes: number, label: string) => {
 	return null;
 };
 
+const isNonEmptyString = (value: unknown): value is string => {
+	return typeof value === "string" && value.trim().length > 0;
+};
+
+const isOccurrence = (value: unknown): value is "only" | "first" | "last" | number => {
+	if (value === "only" || value === "first" || value === "last") return true;
+	return typeof value === "number" && Number.isInteger(value) && value >= 0;
+};
+
+const assertApplyPayload = (params: BlitzApplyParams) => {
+	switch (params.operation) {
+		case "replace_body_span": {
+			if (!isNonEmptyString(params.edit.find) || !isNonEmptyString(params.edit.replace)) {
+				return new InvalidParamsError({ reason: "replace_body_span requires edit.find and edit.replace strings" });
+			}
+			if (params.edit.occurrence !== undefined && !isOccurrence(params.edit.occurrence)) {
+				return new InvalidParamsError({
+					reason: "replace_body_span occurrence must be one of: 'only', 'first', 'last', or non-negative integer",
+				});
+			}
+			break;
+		}
+		case "insert_body_span": {
+			if (!isNonEmptyString(params.edit.anchor) || !isNonEmptyString(params.edit.text)) {
+				return new InvalidParamsError({ reason: "insert_body_span requires edit.anchor and edit.text strings" });
+			}
+			if (params.edit.position !== "before" && params.edit.position !== "after") {
+				return new InvalidParamsError({
+					reason: "insert_body_span position must be 'before' or 'after'",
+				});
+			}
+			if (params.edit.occurrence !== undefined && !isOccurrence(params.edit.occurrence)) {
+				return new InvalidParamsError({
+					reason: "insert_body_span occurrence must be one of: 'only', 'first', 'last', or non-negative integer",
+				});
+			}
+			break;
+		}
+		case "wrap_body": {
+			if (!isNonEmptyString(params.edit.before) || !isNonEmptyString(params.edit.after)) {
+				return new InvalidParamsError({
+					reason: "wrap_body requires edit.before, edit.after, and edit.keep='body'",
+				});
+			}
+			if (params.edit.keep !== "body") {
+				return new InvalidParamsError({
+					reason: "wrap_body keep must be 'body'",
+				});
+			}
+			if (
+				params.edit.indentKeptBodyBy !== undefined &&
+				(typeof params.edit.indentKeptBodyBy !== "number" || params.edit.indentKeptBodyBy < 0)
+			) {
+				return new InvalidParamsError({
+					reason: "wrap_body indentKeptBodyBy must be a non-negative number when provided",
+				});
+			}
+			break;
+		}
+		case "compose_body": {
+			if (!Array.isArray(params.edit.segments) || params.edit.segments.length < 1) {
+				return new InvalidParamsError({ reason: "compose_body requires at least one segment" });
+			}
+			for (let i = 0; i < params.edit.segments.length; i++) {
+				const segment = params.edit.segments[i];
+				if (segment === null || typeof segment !== "object") {
+					return new InvalidParamsError({ reason: `compose_body.segments[${i}] must be object` });
+				}
+				const seg = segment as Record<string, unknown>;
+				const hasText = isNonEmptyString(seg.text);
+				const hasKeep = seg.keep === "body";
+				const hasKeepObject = seg.keep instanceof Object;
+				if (!hasText && !hasKeep && !hasKeepObject) {
+					return new InvalidParamsError({
+						reason: `compose_body.segments[${i}] must contain text or keep payload`,
+					});
+				}
+				if (hasText && (hasKeep || hasKeepObject)) {
+					return new InvalidParamsError({
+						reason: `compose_body.segments[${i}] must not mix text with keep`,
+					});
+				}
+				if (hasKeepObject) {
+					const keep = seg.keep as Record<string, unknown>;
+					if (keep.beforeKeep !== undefined && !isNonEmptyString(keep.beforeKeep)) {
+						return new InvalidParamsError({
+							reason: `compose_body.segments[${i}].keep.beforeKeep must be string if provided`,
+						});
+					}
+					if (keep.afterKeep !== undefined && !isNonEmptyString(keep.afterKeep)) {
+						return new InvalidParamsError({
+							reason: `compose_body.segments[${i}].keep.afterKeep must be string if provided`,
+						});
+					}
+					if (
+						keep.includeBefore !== undefined &&
+						typeof keep.includeBefore !== "boolean"
+					) {
+						return new InvalidParamsError({
+							reason: `compose_body.segments[${i}].keep.includeBefore must be boolean`,
+						});
+					}
+					if (keep.includeAfter !== undefined && typeof keep.includeAfter !== "boolean") {
+						return new InvalidParamsError({
+							reason: `compose_body.segments[${i}].keep.includeAfter must be boolean`,
+						});
+					}
+					if (keep.occurrence !== undefined && !isOccurrence(keep.occurrence)) {
+						return new InvalidParamsError({
+							reason: `compose_body.segments[${i}].keep.occurrence must be one of: 'only','first','last', or non-negative integer`,
+						});
+					}
+				}
+			}
+			break;
+		}
+		case "insert_after_symbol": {
+			if (!isNonEmptyString(params.edit.code)) {
+				return new InvalidParamsError({ reason: "insert_after_symbol requires edit.code string" });
+			}
+			break;
+		}
+		case "set_body": {
+			if (!isNonEmptyString(params.edit.body)) {
+				return new InvalidParamsError({ reason: "set_body requires edit.body string" });
+			}
+			if (
+				params.edit.indentation !== undefined &&
+				params.edit.indentation !== "preserve" &&
+				params.edit.indentation !== "normalize"
+			) {
+				return new InvalidParamsError({
+					reason: "set_body indentation must be 'preserve' or 'normalize'",
+				});
+			}
+			break;
+		}
+		default:
+			return new InvalidParamsError({
+				reason: `unsupported operation: ${params.operation as string}`,
+			});
+	}
+	return null;
+};
+
+const buildApplyRequest = (abs: string, params: BlitzApplyParams): BlitzApplyPayload => ({
+	version: 1,
+	file: abs,
+	operation: params.operation,
+	target: params.target,
+	edit: params.edit,
+	options: {
+		requireParseClean: true,
+		requireSingleMatch: true,
+		...(params.dry_run === true ? { dryRun: true } : {}),
+		...(params.options?.dryRun === true ? { dryRun: true } : {}),
+		...(params.options?.includeDiff === true ? { diffContext: 12 } : {}),
+		...(params.include_diff === true ? { diffContext: 12 } : {}),
+	},
+});
+
+const parseApplyResponsePayload = (stdout: string) => {
+	const trimmed = stdout.trim();
+	if (trimmed.length === 0) return undefined;
+
+	const start = trimmed.indexOf("{");
+	const end = trimmed.lastIndexOf("}");
+	if (start === -1 || end === -1 || end < start) return undefined;
+
+	try {
+		const parsed = JSON.parse(trimmed.slice(start, end + 1)) as Record<string, unknown>;
+		if (typeof parsed !== "object" || parsed === null) return undefined;
+		return parsed;
+	} catch {
+		return undefined;
+	}
+};
+
+type ApplyResponseMetrics = {
+	estimatedPayloadSavedPctVsRealisticAnchor?: number;
+	estimatedPayloadSavedBytesVsRealisticAnchor?: number;
+	estimatedTokensSavedBytesDiv4VsRealisticAnchor?: number;
+	wallMs?: number;
+};
+
+type ApplyResponseValidation = {
+	parseClean?: boolean;
+	parseErrorCount?: number;
+};
+
+type ApplyResponsePayload = {
+	status?: string;
+	operation?: string;
+	file?: string;
+	validation?: ApplyResponseValidation;
+	ranges?: unknown;
+	diffSummary?: unknown;
+	metrics?: ApplyResponseMetrics;
+};
+
+const isSavingsCandidate = (status: string | undefined, validation: ApplyResponseValidation | undefined) =>
+	(status === "applied" || status === "preview") && validation?.parseClean !== false;
+
+const formatDiffSummary = (diffSummary: unknown): string | undefined => {
+	if (typeof diffSummary === "string") return diffSummary;
+	if (diffSummary === null || typeof diffSummary !== "object") return undefined;
+	const summary = diffSummary as { added?: number; removed?: number; changed?: number; lines?: number; context?: number };
+	const parts: string[] = [];
+	if (typeof summary.added === "number") parts.push(`+${summary.added}`);
+	if (typeof summary.removed === "number") parts.push(`-${summary.removed}`);
+	if (typeof summary.changed === "number") parts.push(`~${summary.changed}`);
+	if (typeof summary.lines === "number") parts.push(`${summary.lines} lines`);
+	if (typeof summary.context === "number") parts.push(`context:${summary.context}`);
+	return parts.length > 0 ? parts.join("/") : undefined;
+};
+
+const applyResultToText = (payload: ApplyResponsePayload): BlitzToolResult => {
+	const status = payload.status ?? "unknown";
+	const operation = payload.operation ?? "unknown";
+	const file = payload.file ?? "(unknown)";
+	const metric = payload.metrics ?? {};
+	const parse = payload.validation;
+	const chunks: string[] = [];
+	chunks.push(`blitz apply: status=${status} operation=${operation} file=${file}`);
+	if (parse?.parseClean !== undefined) chunks.push(`parse=${parse.parseClean ? "clean" : "dirty"}`);
+	if (typeof parse?.parseErrorCount === "number") {
+		chunks.push(`parseErrors=${parse.parseErrorCount}`);
+	}
+	if (typeof metric.wallMs === "number") chunks.push(`wall=${metric.wallMs}ms`);
+	if (payload.ranges !== undefined) chunks.push("ranges=present");
+	const diffSummary = formatDiffSummary(payload.diffSummary);
+	if (diffSummary !== undefined) chunks.push(`diff=${diffSummary}`);
+
+	if (
+		typeof metric.estimatedPayloadSavedPctVsRealisticAnchor === "number" &&
+		typeof metric.estimatedTokensSavedBytesDiv4VsRealisticAnchor === "number" &&
+		isSavingsCandidate(status, parse)
+	) {
+		chunks.push(
+			`estimated savings ${metric.estimatedPayloadSavedPctVsRealisticAnchor.toFixed(1)}% (${Math.round(
+				metric.estimatedTokensSavedBytesDiv4VsRealisticAnchor,
+			)} bytes/4)`,
+		);
+	}
+
+	if (!isSavingsCandidate(status, parse) && typeof metric.estimatedPayloadSavedPctVsRealisticAnchor === "number") {
+		chunks.push("savings not claimed (preview/uncertain correctness)");
+	}
+
+	return okResult(
+		chunks.join(". ") + ".",
+		{
+			status,
+			operation,
+			file,
+			ranges: payload.ranges,
+			diffSummary: payload.diffSummary,
+			validation: parse,
+			metrics: metric,
+		},
+	);
+};
+
+export const parseApplyResultPayload = (stdout: string): ApplyResponsePayload | undefined => {
+	const parsed = parseApplyResponsePayload(stdout);
+	return typeof parsed === "undefined" ? undefined : (parsed as ApplyResponsePayload);
+};
+
 class SpawnException {
 	constructor(public readonly cause: unknown) {}
 }
@@ -225,6 +618,54 @@ const runBlitz = (
 const bindPath = (rawFile: string, cwd: string) => canonicalize(rawFile, cwd);
 
 // ---------------- Tools ----------------
+
+export const piBlitzApplyToolDef = (binary: string, cwd: string) =>
+	({
+		name: "pi_blitz_apply",
+		label: "blitz apply",
+		description:
+			"Structured v0.2 apply via JSON IR. Use operation enum + target + edit payload. Prefer this for deterministic symbol edits and scoped wraps/insertions.",
+		parameters: applyToolParamsSchema,
+		execute: async (_tcid: string, params: BlitzApplyParams): Promise<BlitzToolResult> => {
+			const eff = Effect.gen(function* () {
+				if (!isNonEmptyString(params.target?.symbol)) {
+					return yield* Effect.fail(
+						new InvalidParamsError({ reason: "target.symbol must be a non-empty string" }),
+					);
+				}
+				const validate = assertApplyPayload(params);
+				if (validate !== null) return yield* Effect.fail(validate);
+				const abs = yield* bindPath(params.file, cwd);
+				const requestPayload = buildApplyRequest(abs, params);
+				const request = JSON.stringify(requestPayload);
+				const tooBig = assertByteCap(request, APPLY_MAX_PAYLOAD, "apply request");
+				if (tooBig !== null) return yield* Effect.fail(tooBig);
+				const argv = ["apply", "--edit", "-", "--json"];
+				if (params.dry_run === true || params.options?.dryRun === true) argv.push("--dry-run");
+				if (params.include_diff === true || params.options?.includeDiff === true) argv.push("--diff");
+				const res = yield* locks.withLock(
+					abs,
+					runBlitz(binary, argv, {
+						stdin: request,
+						cwd,
+						timeoutMs: 60_000,
+					}),
+				);
+				if (res.exitCode === 0) {
+					const parsed = parseApplyResponsePayload(res.stdout);
+					if (parsed !== undefined) {
+						return applyResultToText(parsed as ApplyResponsePayload);
+					}
+					return okResult(res.stdout.trimEnd(), classifySuccessStdout(res.stdout));
+				}
+				const soft = classifySoft(res.stdout, res.stderr);
+				return yield* Effect.fail(
+					soft ?? new BlitzSoftError({ reason: "blitz-error", stderr: res.stderr }),
+				);
+			});
+			return runTool(eff, (v) => v);
+		},
+	}) as const;
 
 export const readToolDef = (binary: string, cwd: string) =>
 	({

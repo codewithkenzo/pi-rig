@@ -7,6 +7,7 @@ import {
 	batchToolDef,
 	doctorToolDef,
 	editToolDef,
+	piBlitzApplyToolDef,
 	readToolDef,
 	renameToolDef,
 	undoToolDef,
@@ -35,6 +36,7 @@ export default async function piBlitz(pi: ExtensionAPI): Promise<void> {
 	pi.registerTool(readToolDef(binary, cwd));
 	pi.registerTool(editToolDef(binary, cwd));
 	pi.registerTool(batchToolDef(binary, cwd));
+	pi.registerTool(piBlitzApplyToolDef(binary, cwd));
 	pi.registerTool(renameToolDef(binary, cwd));
 	pi.registerTool(undoToolDef(binary, cwd));
 	pi.registerTool(doctorToolDef(binary, cwd));

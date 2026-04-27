@@ -1,6 +1,7 @@
 /// <reference types="bun-types" />
 import { describe, expect, test } from "bun:test";
 import { Effect } from "effect";
+import { Value } from "@sinclair/typebox/value";
 import {
 	BlitzMissingError,
 	BlitzSoftError,
@@ -10,6 +11,7 @@ import {
 } from "../src/errors.js";
 import { makePathLocks } from "../src/mutex.js";
 import { runTool } from "../src/tool-runtime.js";
+import { applyToolParamsSchema, parseApplyResultPayload } from "../src/tools.js";
 
 const wait = (ms: number): Promise<void> =>
 	new Promise((r) => {
@@ -17,6 +19,45 @@ const wait = (ms: number): Promise<void> =>
 	});
 
 describe("@codewithkenzo/pi-blitz smoke", () => {
+	test("pi_blitz_apply schema accepts expected operation payloads", () => {
+		const valid = {
+			file: "src/app.ts",
+			operation: "replace_body_span" as const,
+			target: { symbol: "handleRequest" },
+			edit: { find: "return 1;", replace: "return 2;" },
+		};
+		expect(Value.Check(applyToolParamsSchema, valid)).toBe(true);
+	});
+
+	test("pi_blitz_apply schema rejects unknown operation", () => {
+		const invalid = {
+			file: "src/app.ts",
+			operation: "bad_op",
+			target: { symbol: "handleRequest" },
+			edit: { find: "return 1;", replace: "return 2;" },
+		};
+		expect(Value.Check(applyToolParamsSchema, invalid as unknown)).toBe(false);
+	});
+
+	test("pi_blitz_apply parser keeps status/operation/metrics compact text", () => {
+		const payload = parseApplyResultPayload(
+			JSON.stringify({
+				status: "applied",
+				operation: "replace_body_span",
+				file: "src/app.ts",
+				validation: { parseClean: true },
+				metrics: { wallMs: 12, estimatedPayloadSavedPctVsRealisticAnchor: 42 },
+				diffSummary: { added: 2, removed: 1 },
+				ranges: { start: 10, end: 32 },
+			}),
+		);
+		expect(payload?.status).toBe("applied");
+		expect(payload?.operation).toBe("replace_body_span");
+		expect(payload?.file).toBe("src/app.ts");
+		expect(payload?.metrics?.estimatedPayloadSavedPctVsRealisticAnchor).toBe(42);
+		expect(payload?.diffSummary).toEqual({ added: 2, removed: 1 });
+	});
+
 	test("errors are Data.TaggedError instances with correct _tag", () => {
 		expect(new BlitzSoftError({ reason: "no-backup", stderr: "" })._tag).toBe("BlitzSoftError");
 		expect(new BlitzMissingError({ binary: "blitz" })._tag).toBe("BlitzMissingError");
