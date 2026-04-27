@@ -48,7 +48,7 @@ The installer path for getting the published extensions onto a fresh Pi setup.
 | `pi-memory` | Planned | Short/long/last-active memory lanes | selective injection, markdown-first storage |
 | `pi-board` | Planned | Mission/task coordination surface | planned to absorb interactive plan-mode workflow |
 | `pi-voice` | Planned | Voice ingress + transcript workflows | pairs with gateway/remote flows |
-| `pi-blitz` | Pre-alpha / review-blocked | AST-aware fast edits via `blitz` (Zig 0.16 native binary) | No public savings claim yet; CLI exists but marker splice/bench/test correctness must pass review before extension wiring |
+| `pi-blitz` | Pre-alpha / local CLI review-passed | AST-aware fast edits via `blitz` (Zig 0.16 native binary) | Safe for controlled local wiring; no public savings claim until 10-case benchmark + prebuilts |
 | `pi-rollback` | Deferred | See `pi-rewind` ecosystem plugin + Pi core rollback | revisit only if fastedit-undo integration needs its own plugin |
 
 ### Phase map

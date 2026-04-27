@@ -1,21 +1,21 @@
 ---
 name: pi-blitz
-description: Pre-alpha skill for symbol-anchored edits through the blitz Zig CLI. Do not use for live writes until the standalone CLI passes the pre-extension review gate.
+description: Pre-alpha skill for symbol-anchored edits through the blitz Zig CLI. Use only in controlled local testing until pi-blitz telemetry and 10-case benchmark are complete.
 ---
 
 # pi-blitz
 
 ## Current status
 
-Pre-alpha / review-blocked. As of 2026-04-27, do **not** use `pi_blitz_edit` or `pi_blitz_batch` for live writes until the standalone CLI passes the `docs/architecture/blitz.md` §10.3 review gate. Known blockers include `edit --after`, declaration targeting, marker splice correctness, batch marker parity, and golden-output benchmarks.
+Pre-alpha / local CLI review-passed. As of 2026-04-27, standalone `blitz` passed `gpt-5.5` xhigh review for controlled local testing. Use with undo/review discipline; public/release usage waits for Pi-stream telemetry and the 10-case benchmark.
 
 ## When to use
 
-Use only after the review gate passes:
+Use when:
 
 - Target edit is AST-scoped: a function, method, class, variable.
 - You can describe the edit as "replace the body of `X`" or "insert this right after `X`".
-- You want a smaller output token footprint, and the relevant benchmark case has golden-output coverage.
+- You want a smaller output token footprint and can review/undo the result.
 
 ## When NOT to use
 
@@ -43,7 +43,7 @@ Three ways to preserve unchanged body when you don't want to rewrite the whole s
 2. **`// @keep`** — strict marker, recommended for unambiguous edits.
 3. **`// @keep lines=N`** — numeric anchor, least ambiguous.
 
-If you do not use a marker, the snippet is treated as a **full replacement** of the target symbol body. Marker behavior is not considered safe until the review gate passes.
+If you do not use a marker, the snippet is treated as a **full replacement** of the target symbol body. Marker behavior has local golden-output coverage but still needs broader benchmark coverage.
 
 ## Examples
 

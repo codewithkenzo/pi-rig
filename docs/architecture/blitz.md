@@ -2,7 +2,7 @@
 
 Single source of truth. Supersedes and absorbs `blitz-design.md`, `blitz-gap-closure.md`, `blitz-perf-patterns.md`, `pi-edit-positioning.md`, `pi-edit-ecosystem-compare.md`, `pi-edit-local-overlap.md`, `zig-0.16-verification.md` (all archived).
 
-Status: **implementation alpha, review-blocked before Pi extension wiring.** The standalone `codewithkenzo/blitz` CLI exists and is pushed private; `@codewithkenzo/pi-blitz` scaffold exists in this repo. As of 2026-04-27, xhigh read-only review found correctness blockers in `edit --after`, symbol targeting, marker splice, batch marker parity, and test/benchmark wiring. Do **not** wire or promote the Pi extension until the review gates in §10.3 pass.
+Status: **implementation alpha, local CLI review-passed.** The standalone `codewithkenzo/blitz` CLI exists and is pushed private. As of 2026-04-27, `gpt-5.5` xhigh review passed the previously failing gates for `edit --after`, declaration targeting, marker splice correctness, batch marker parity, real tests, and golden-output benchmark assertions. It is now safe to wire `@codewithkenzo/pi-blitz` for controlled local testing; public/prebuilt release still waits on the 10-case benchmark and npm binary matrix.
 
 ## 1. North star
 
@@ -42,7 +42,7 @@ codewithkenzo/blitz                              # Zig 0.16 CLI (MIT, standalone
   src/cli.zig                                      # arg parsing, JSON stdin helpers
   src/ast.zig                                      # tree-sitter integration (see §4.3)
   src/symbols.zig                                  # symbol resolve, scope extraction
-  src/splice.zig                                   # deterministic marker splice (Layer A; correctness hardening in progress)
+  src/splice.zig                                   # deterministic marker splice (Layer A; 5.5-reviewed local pass)
   src/fuzzy.zig                                    # whitespace-insensitive + relative-indent recovery (v0.2, Layer B)
   src/queries.zig                                  # structural tree-sitter query rewrites (v0.2, Layer C)
   src/backup.zig                                   # SHA-keyed backup store + atomic write
@@ -366,16 +366,17 @@ type PiBlitzConfig = {
 
 ## 10. Numbers — current evidence, not public claims
 
-Internal `bench/run.ts` exists in `codewithkenzo/blitz`, but the current benchmark must be treated as a **debug signal only** until it asserts golden output bytes for every case and the fix flow closes review blockers. Do not quote current marker savings publicly.
+Internal `bench/run.ts` exists in `codewithkenzo/blitz` and now asserts golden output bytes before reporting performance. Treat the numbers as **local microbench evidence**, not broad public claims, until the 10-case benchmark lands.
 
-Read-only xhigh audit on 2026-04-27 observed:
+`gpt-5.5` xhigh focused review on 2026-04-27 observed after commits `2962aa0` + `b55d35d`:
 
-- Build/test commands passed, but `zig build test --summary all` initially ran only one test, so CI coverage was not real enough.
-- Direct-swap cases were stable around **18.4-18.9% estimated output-token savings**.
-- Adding one marker case raised aggregate to **36.7%**, but that marker output was semantically wrong, so the marker win is **untrusted**.
-- Wall time on debug/musl runs was roughly **12.3-13.4 ms median**. Earlier ~8.6 ms numbers were noisy/not reproducible under the audited command.
+- `zig build test -Dtarget=x86_64-linux-musl --summary all`: **54/54 tests passed**.
+- Direct lane: **~41.2% estimated output-token reduction**, **~12.5 ms median/case**.
+- Marker lane: **~83.2% estimated output-token reduction** on one correctness-gated marker fixture, **~15.3 ms median/case**.
+- Overall 4-case fixture mix: **~56.1% estimated output-token reduction**, **~13.2 ms median/case**.
+- The prior marker-corruption issue, `edit --after` replace bug, call-site targeting bug, and failed-batch undo-history clobber are fixed in the reviewed CLI.
 
-Public data on AST-rewrite tools (ast-grep: 43ms-1s, srgn: ~1s for 450k lines, Comby: 187ms for 2591 LOC Go file) still suggests the target is reachable, but blitz must pass correctness gates before any claim.
+Caveats: token counts are `bytes/4` estimates, not provider tokenizer counts; wall time is local binary spawn + parse + write, not LLM round trip; marker evidence currently covers one fixture. Public data on AST-rewrite tools (ast-grep: 43ms-1s, srgn: ~1s for 450k lines, Comby: 187ms for 2591 LOC Go file) still suggests the target is reachable, but public claims wait for the 10-case suite.
 
 | Metric | Pi core `edit` | fastedit (with model) | blitz v0.1 target | blitz v0.2 target (A+B+C) |
 |---|---|---|---|---|
@@ -409,9 +410,9 @@ Per case: `tokens_out`, `wall_ms`, `success`, `files_touched`, `model_calls`. Me
 - **No-go** if any marker case exits 0 but produces non-golden output.
 - **No-go** if `edit --after` replaces instead of inserts, or if symbol resolution edits a call-site/reference before the declaration.
 
-### 10.3 Pre-extension review gate (active)
+### 10.3 Pre-extension review gate (passed for local Linux musl)
 
-`@codewithkenzo/pi-blitz` must not be wired to the live binary until all pass:
+`@codewithkenzo/pi-blitz` may now be wired to the live binary for controlled local testing because all gate items passed in `gpt-5.5` xhigh review:
 
 1. `edit --after` inserts at `target.endByte()` and preserves original symbol.
 2. `edit --replace` and `batch-edit` resolve declaration nodes before/without arbitrary identifiers.
@@ -420,7 +421,7 @@ Per case: `tokens_out`, `wall_ms`, `success`, `files_touched`, `model_calls`. Me
 5. Batch replace has marker parity or explicit marker rejection.
 6. `zig build test -Dtarget=x86_64-linux-musl --summary all` runs module tests, not just a single root test.
 7. `bench/run.ts` asserts exact expected output bytes, splits direct-swap vs marker aggregates, and removes stale direct-swap-only caveats.
-8. A fresh `gpt-5.5` xhigh read-only review returns PASS or PASS WITH FIXES.
+8. A fresh `gpt-5.5` xhigh read-only review returns PASS or PASS WITH FIXES. **Passed:** focused review returned PASS after `b55d35d`.
 
 ## 11. Risks
 
@@ -448,9 +449,9 @@ Per case: `tokens_out`, `wall_ms`, `success`, `files_touched`, `model_calls`. Me
 
 | Sprint | Goal |
 |---|---|
-| Sprint 1 (done, review-blocked) | Zig skeleton, tree-sitter static link, `blitz read`, `blitz edit --replace` direct-swap, initial CI/bench. `edit --after` behavior is under fix due review failure. |
-| Sprint 2 (in progress, review-blocked) | Backup store, `blitz undo`, `blitz rename`, `blitz doctor`, and first Layer A marker splice landed. Marker splice is under correctness hardening; do not claim token wins yet. |
-| Sprint 3 (blocked) | `@codewithkenzo/pi-blitz` TS scaffold exists, but live binary wiring waits for §10.3 review gate. npm prebuilts and public benchmark still pending. |
+| Sprint 1 (done) | Zig skeleton, tree-sitter static link, `blitz read`, `blitz edit --replace`, `blitz edit --after`, initial CI/bench. |
+| Sprint 2 (done for v0.1 local) | Backup store, `blitz undo`, `blitz rename`, `blitz doctor`, and Layer A marker splice passed local 5.5 review. |
+| Sprint 3 (next) | Wire `@codewithkenzo/pi-blitz` to the local reviewed binary, collect Pi-stream telemetry, then npm prebuilts + 10-case benchmark. |
 | v0.2 (weeks 4-6) | Layer B (fuzzy recovery) + Layer C (structural tree-sitter queries) + `multi-edit` + `rename-all` + `query`. |
 | v1.1 (later) | LSP refactor bridge, benchmark-proven latency targets, public release. |
 

@@ -14,7 +14,7 @@ This note summarizes near-term architecture direction for Pi Rig extensions.
 | pi-memory | `extensions/pi-memory` | Planned | Filesystem-first memory direction |
 | pi-board | `extensions/pi-board` | Planned | Task/mission-control layer |
 | pi-voice | `extensions/pi-voice` | Planned | Voice pipeline remains research-stage |
-| pi-blitz | `extensions/pi-blitz` | Pre-alpha / review-blocked | AST-aware fast edits backed by standalone `blitz` Zig 0.16 CLI. Do not wire live binary until `docs/architecture/blitz.md#103-pre-extension-review-gate-active` passes; current marker benchmark is untrusted. |
+| pi-blitz | `extensions/pi-blitz` | Pre-alpha / local CLI review-passed | AST-aware fast edits backed by standalone `blitz` Zig 0.16 CLI. Local binary may now be wired for controlled Pi testing; public release waits on 10-case benchmark + npm prebuilts. |
 | pi-rollback | `extensions/pi-rollback` | **Deferred** | Pi core + `pi-rewind` / `pi-rewind-hook` already cover rollback; revisit only if blitz undo coordination needs a dedicated plugin |
 
 ## Strategic synthesis
@@ -47,7 +47,7 @@ This note summarizes near-term architecture direction for Pi Rig extensions.
 
 1. Start fs-sandbox scaffold from existing coordination design.
 2. Add adapter lifecycle tests in Pi Dispatch before plugging real sandbox execution.
-3. Harden `blitz` v0.1 before extension wiring: fix `edit --after`, declaration targeting, marker splice correctness, real tests, and golden-output benchmark gate — see `blitz.md` §10.3.
+3. Wire the reviewed local `blitz` binary into `@codewithkenzo/pi-blitz`, then collect Pi-stream telemetry before public release — see `blitz.md` §10.3.
 4. Track rollback coordination only via the `pi-rewind` adapter path; no dedicated `pi-rollback` plugin in this wave (superseded fastedit / rollback drafts live in `archive/`).
 5. Defer deep plan-mode UX expansion until execution boundaries are stable.
 

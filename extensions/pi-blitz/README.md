@@ -2,18 +2,18 @@
 
 Pi extension that wraps the [`blitz`](https://github.com/codewithkenzo/blitz) AST-aware fast-edit CLI.
 
-> **Status: pre-alpha scaffold, review-blocked.** Six tool slots are registered, but live binary wiring is blocked until standalone `blitz` passes the pre-extension review gate in `docs/architecture/blitz.md` §10.3. Do not install this as an active edit lane yet.
+> **Status: pre-alpha scaffold, local CLI review-passed.** Six tool slots are registered. Standalone `blitz` passed local `gpt-5.5` xhigh review for controlled testing, but this extension is not ready for public install/prebuilt release yet.
 
 ## What you get
 
 - 6 tools: `pi_blitz_read`, `pi_blitz_edit`, `pi_blitz_batch`, `pi_blitz_rename`, `pi_blitz_undo`, `pi_blitz_doctor`.
 - Effect v4 internals (typed error union, per-path mutex via `acquireUseRelease`, `Cause.findErrorOption` boundary).
-- Token-savings path is under active validation. Direct-swap internal runs are ~18-19%; marker savings are not trusted until golden-output benchmarks pass.
+- Token-savings path has local microbench evidence only: direct lane ~41%, marker fixture ~83% by bytes/4 estimate; public claims wait for the 10-case benchmark.
 - Single prebuilt binary per platform (no Python, no local model).
 
 ## Install
 
-Requires a review-approved `blitz` binary on `PATH` (not true yet for active Pi editing). Once approved, either:
+Requires a review-approved `blitz` binary on `PATH`. For controlled local testing, either:
 
 - `npm install -g @codewithkenzo/blitz` (once published; pulls the prebuilt binary for your platform).
 - or point `~/.pi/pi-blitz.json` at your built binary:
@@ -29,7 +29,7 @@ pi install npm:@codewithkenzo/pi-blitz
 pi install /abs/path/to/pi-plugins-repo-kenzo/extensions/pi-blitz
 ```
 
-Verify: `/help` should list the six `pi_blitz_*` tools. Do not use them for writes until the CLI review gate passes.
+Verify: `/help` should list the six `pi_blitz_*` tools. Use locally with review/undo discipline until telemetry is collected.
 
 ## Config
 
