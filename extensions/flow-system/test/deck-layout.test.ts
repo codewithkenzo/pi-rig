@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { visibleWidth, truncateToWidth, zipColumns } from "../src/deck/layout.js";
+import { visibleWidth, truncateToWidth, fitAnsiColumn, zipColumns } from "../src/deck/layout.js";
 import { computeDeckFrameLayout, padDeckFrame } from "../src/deck/frame.js";
 
 describe("visibleWidth", () => {
@@ -19,6 +19,15 @@ describe("visibleWidth", () => {
 		// 日 is U+65E5, in CJK Unified (0x4e00–0x9fff)
 		expect(visibleWidth("日")).toBe(2);
 		expect(visibleWidth("日本")).toBe(4);
+	});
+
+	it("counts emoji graphemes as terminal cells", () => {
+		expect(visibleWidth("🚀")).toBe(2);
+		expect(visibleWidth("👨‍💻")).toBe(2);
+		expect(visibleWidth("⚙️")).toBe(2);
+		expect(visibleWidth("🇮🇹")).toBe(2);
+		expect(visibleWidth("✓")).toBe(1);
+		expect(visibleWidth("é")).toBe(1);
 	});
 
 	it("counts ASCII chars as 1", () => {
@@ -56,6 +65,34 @@ describe("truncateToWidth", () => {
 		const result = truncateToWidth("", 5);
 		expect(result).toBe("     ");
 		expect(result.length).toBe(5);
+	});
+
+	it("fits wide emoji to exact visible width", () => {
+		const result = truncateToWidth("status 🚀 👨‍💻 ⚙️ done", 16);
+		expect(visibleWidth(result)).toBe(16);
+		expect(result).toContain("…");
+	});
+});
+
+describe("fitAnsiColumn", () => {
+	it("fits ANSI and emoji without visible overflow", () => {
+		const result = fitAnsiColumn("\x1b[32mtool 🚀 👨‍💻 ⚙️ complete\x1b[0m", 18);
+		expect(visibleWidth(result)).toBe(18);
+		expect(result).toContain("…");
+	});
+
+	it("normalizes tabs and newlines into printable row cells", () => {
+		const result = fitAnsiColumn("one\ttwo\nthree", 20);
+		expect(result).not.toContain("\t");
+		expect(result).not.toContain("\n");
+		expect(visibleWidth(result)).toBe(20);
+	});
+
+	it("strips OSC sequences while fitting", () => {
+		const result = fitAnsiColumn("before\x1b]0;title\x07after", 20);
+		expect(result).toContain("beforeafter");
+		expect(result).not.toContain("\x1b]");
+		expect(visibleWidth(result)).toBe(20);
 	});
 });
 

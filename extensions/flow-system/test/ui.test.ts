@@ -2,7 +2,8 @@ import { describe, expect, it } from "bun:test";
 import { Effect } from "effect";
 import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { stripAnsi } from "../../../shared/ui/hud.js";
-import { renderFlowWidgetLines, flowStatusText, attachFlowUi, suspendFlowHud } from "../src/ui.js";
+import { visibleWidth } from "../src/deck/layout.js";
+import { renderFlowWidgetLines, flowStatusText, attachFlowUi, suspendFlowHud, createFlowWidgetFactory } from "../src/ui.js";
 import { makeQueue } from "../src/queue.js";
 
 describe("flow UI helpers", () => {
@@ -111,6 +112,22 @@ describe("flow UI helpers", () => {
 		});
 
 		expect(status).toContain("writing-summary");
+	});
+
+	it("fits widget rows with emoji to exact terminal width", async () => {
+		const queue = await Effect.runPromise(makeQueue());
+		const job = await Effect.runPromise(queue.enqueue("coder🚀", "stream emoji progress 👨‍💻 ⚙️"));
+		await Effect.runPromise(queue.setStatus(job.id, "running", { lastProgress: "wide emoji update 🚀\nno row split" }));
+		const component = createFlowWidgetFactory(queue, process.cwd())({ requestRender: () => {} });
+		const lines = component.render(42);
+		component.dispose?.();
+
+		expect(lines.length).toBeGreaterThan(0);
+		for (const line of lines) {
+			expect(line).not.toContain("\n");
+			expect(line).not.toContain("\t");
+			expect(visibleWidth(line)).toBe(42);
+		}
 	});
 
 	it("attachFlowUi updates status surface for active jobs and clears on completion", async () => {

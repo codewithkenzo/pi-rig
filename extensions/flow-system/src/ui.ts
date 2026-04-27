@@ -1,6 +1,7 @@
 import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { AnimationTicker, createEngine, loadTheme, shimmer, spin, withMotion } from "../../../shared/theme/index.js";
-import { ellipsize, fitAnsiLine, joinCompact, metric, tag } from "../../../shared/ui/hud.js";
+import { ellipsize, joinCompact, metric, tag } from "../../../shared/ui/hud.js";
+import { fitAnsiColumn } from "./deck/layout.js";
 import { sanitizeFlowText } from "./sanitize.js";
 
 import type { FlowQueueService } from "./queue.js";
@@ -239,7 +240,7 @@ export const renderFlowWidgetLines = (
 const makeLinesComponent = (getLines: () => string[]): LinesComponent => {
 	let cached = getLines();
 	return {
-		render: (width: number) => cached.map((line) => fitAnsiLine(line, width)),
+		render: (width: number) => cached.map((line) => fitAnsiColumn(line, width)),
 		invalidate: () => {
 			cached = getLines();
 		},

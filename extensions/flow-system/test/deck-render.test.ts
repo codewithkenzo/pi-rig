@@ -100,7 +100,7 @@ const renderDeck = ({
 }: {
 	job: FlowJob | undefined;
 	queue?: FlowQueue;
-	selectedId?: string;
+	selectedId?: string | undefined;
 	activityRows: readonly FlowActivityRow[];
 	width: number;
 	termRows: number;
@@ -126,6 +126,30 @@ const renderDeck = ({
 		width,
 	);
 };
+
+const expectExactFrame = (frame: readonly string[], width: number, termRows: number): void => {
+	expect(frame.length).toBe(computeDeckFrameLayout(termRows, width < 96).frameHeight);
+	for (const line of frame) {
+		expect(line).not.toContain("\n");
+		expect(line).not.toContain("\t");
+		expect(visibleWidth(line)).toBe(width);
+	}
+};
+
+const makeQueueJobs = (count: number): FlowJob[] =>
+	Array.from({ length: count }, (_, index) =>
+		makeJob({
+			id: `queue-job-${index + 1}`,
+			profile: index % 2 === 0 ? `agent-${index + 1}` : `builder🚀-${index + 1}`,
+			task: `queue task ${index + 1} with long rendering-safe label 👨‍💻 ⚙️`,
+			status: index % 4 === 0 ? "running" : index % 4 === 1 ? "pending" : index % 4 === 2 ? "done" : "failed",
+			createdAt: 1_000 + index * 1_000,
+			startedAt: 2_000 + index * 1_000,
+			lastProgress: `progress ${index + 1} 🚀`,
+			lastAssistantText: `assistant ${index + 1} 👨‍💻`,
+			...(index % 4 === 3 ? { error: `failed ${index + 1} ⚙️` } : {}),
+		}),
+	);
 
 // ─── sanitize() ───────────────────────────────────────────────────────────────
 
@@ -436,7 +460,7 @@ describe("deck frame regression", () => {
 			},
 		] as const;
 
-		for (const width of [80, 120]) {
+		for (const width of [62, 80, 120]) {
 			for (const state of states) {
 				const frame = renderDeck({
 					job: state.job,
@@ -444,11 +468,76 @@ describe("deck frame regression", () => {
 					width,
 					termRows: 40,
 				});
-				expect(frame.length).toBe(computeDeckFrameLayout(40, width < 96).frameHeight);
-				for (const line of frame) {
-					expect(visibleWidth(line)).toBe(width);
-				}
+				expectExactFrame(frame, width, 40);
 			}
+		}
+	});
+
+	it("keeps exact width and stable frame height across queue sizes", () => {
+		for (const width of [62, 80, 120]) {
+			const lengths: number[] = [];
+			for (const size of [0, 1, 12, 30]) {
+				const jobs = makeQueueJobs(size);
+				const selectedIndex = jobs.length >= 30 ? jobs.length - 1 : Math.min(6, Math.max(0, jobs.length - 1));
+				const selected = jobs[selectedIndex];
+				const frame = renderDeck({
+					job: selected,
+					queue: makeQueue(jobs),
+					selectedId: selected?.id,
+					activityRows: makeActivityRows(size === 0 ? 0 : 18, `queue-${size}`),
+					width,
+					termRows: 40,
+				});
+				expectExactFrame(frame, width, 40);
+				lengths.push(frame.length);
+			}
+			expect(new Set(lengths).size).toBe(1);
+		}
+	});
+
+	it("keeps progress/tool rows with wide emoji inside frame width", () => {
+		const job = makeJob({
+			id: "emoji-job",
+			profile: "builder🚀",
+			task: "ship emoji-safe progress 👨‍💻 ⚙️ 🇮🇹",
+			status: "running",
+			lastProgress: "editing layout 🚀\nnext line must not split row",
+			recentTools: ["grep🚀", "read👨‍💻", "edit⚙️"],
+		});
+		const activityRows: FlowActivityRow[] = [
+			{ kind: "tool_start", label: "grep🚀", text: "scan emoji rows 👨‍💻\twide", ts: 2_000, tone: "active" },
+			{ kind: "tool_end", label: "edit⚙️", text: "patched 🇮🇹 without overflow", ts: 3_000, tone: "success" },
+			{ kind: "assistant", text: "summary line 🚀 👨‍💻 ⚙️ repeats ".repeat(6), ts: 4_000 },
+		];
+
+		for (const width of [62, 80, 120]) {
+			const frame = renderDeck({ job, activityRows, width, termRows: 40 });
+			expectExactFrame(frame, width, 40);
+		}
+	});
+
+	it("keeps compact boundary widths stable across stream updates and long running summary", () => {
+		const job = makeJob({
+			id: "boundary-job",
+			profile: "research",
+			task: "boundary render safety",
+			status: "running",
+			lastAssistantText: "running summary 🚀 ".repeat(80),
+			lastProgress: "streaming 👨‍💻",
+		});
+		for (const width of [60, 61, 62, 95, 96]) {
+			const lengths: number[] = [];
+			for (const count of [0, 1, 12, 30]) {
+				const frame = renderDeck({
+					job,
+					activityRows: makeActivityRows(count, `boundary-${count}-🚀`),
+					width,
+					termRows: 40,
+				});
+				expectExactFrame(frame, width, 40);
+				lengths.push(frame.length);
+			}
+			expect(new Set(lengths).size).toBe(1);
 		}
 	});
 
@@ -477,7 +566,7 @@ describe("deck frame regression", () => {
 			},
 		];
 
-		for (const width of [80, 120]) {
+		for (const width of [62, 80, 120]) {
 			const compact = width < 96;
 			const layout = computeDeckFrameLayout(40, compact);
 			for (const state of states) {
