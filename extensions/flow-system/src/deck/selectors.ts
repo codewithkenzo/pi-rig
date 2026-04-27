@@ -1,4 +1,5 @@
 import { ellipsize } from "../../../../shared/ui/hud.js";
+import { truncateToWidth, visibleWidth } from "./layout.js";
 import type { FlowJob, FlowQueue } from "../types.js";
 import type { FlowActivityJournalService, FlowActivityRow } from "./journal.js";
 
@@ -279,24 +280,6 @@ const budgetState = (job: FlowJob | undefined): FlowStatusBudgetState => {
 		: "none";
 };
 
-const statusIcon = (phase: FlowStatusPhase): string => {
-	switch (phase) {
-		case "queued":
-			return "○";
-		case "running":
-		case "summary":
-			return "▶";
-		case "done":
-			return "✓";
-		case "failed":
-			return "✗";
-		case "blocked":
-			return "!";
-		case "cancelled":
-			return "⊘";
-	}
-};
-
 const modelStatusValue = (job: FlowJob): string => {
 	const model = job.envelope?.model ?? job.model;
 	const provider = job.envelope?.provider;
@@ -320,26 +303,78 @@ const formatStatusMeta = (status: FlowStatusSelectorState): string[] => {
 	if (primary === undefined) {
 		return [];
 	}
-	return [
-		`m:${ellipsize(modelStatusValue(primary), 20)}`,
-		`r:${reasoningStatusValue(primary)}`,
-		`e:${effortStatusValue(primary)}`,
-	];
-};
-
-const formatCheckpointState = (checkpointState: FlowStatusSelectorState["checkpointState"]): string | undefined => {
-	switch (checkpointState) {
-		case "summary":
-			return "writing-summary";
-		case "blocked":
-			return "blocked";
-		case "none":
-			return undefined;
+	if (primary.envelope === undefined && primary.model === undefined) {
+		return [];
 	}
+	const meta: string[] = [];
+	if (primary.envelope?.model !== undefined || primary.model !== undefined) {
+		meta.push(`m:${ellipsize(modelStatusValue(primary), 20)}`);
+	}
+	if (primary.envelope?.reasoning !== undefined) {
+		meta.push(`r:${reasoningStatusValue(primary)}`);
+	}
+	if (primary.envelope?.effort !== undefined || meta.length > 0) {
+		meta.push(`e:${effortStatusValue(primary)}`);
+	}
+	return meta;
 };
 
 const formatBudgetState = (budgetStateValue: FlowStatusBudgetState): string | undefined =>
 	budgetStateValue === "none" ? undefined : `budget:${budgetStateValue}`;
+
+const phaseLabel = (phase: FlowStatusPhase): string => (phase === "queued" ? "queued" : phase);
+
+const fitStatusPart = (value: string, maxCells: number): string => truncateToWidth(value, maxCells).trimEnd();
+
+const fitsStatusWidth = (value: string, maxCells: number): boolean => visibleWidth(value) <= maxCells;
+
+const formatStatusHead = (status: FlowStatusSelectorState, label: string): string => {
+	const prefix = status.mode === "team" ? "team" : "flow";
+	if (status.counts.active > 1) {
+		if (status.counts.running > 0) {
+			return `${prefix} ${status.counts.running} running`;
+		}
+		if (status.counts.pending > 0) {
+			return `${prefix} ${status.counts.pending} queued`;
+		}
+		return `${prefix} ${status.counts.active} active`;
+	}
+	return `${prefix} ${label} ${phaseLabel(status.phase)}`;
+};
+
+const formatPrioritySegments = (status: FlowStatusSelectorState): string[] => {
+	const segments: string[] = [];
+	if (status.checkpointState === "blocked" && status.phase !== "blocked") {
+		segments.push("blocked");
+	}
+	if (status.checkpointState === "summary") {
+		segments.push("writing-summary");
+	}
+	const budget = formatBudgetState(status.budgetState);
+	if (budget !== undefined) {
+		segments.push(budget);
+	}
+	return segments;
+};
+
+const formatQueueCountSegments = (status: FlowStatusSelectorState): string[] => {
+	const segments: string[] = [];
+	if (status.counts.active > 1) {
+		if (status.counts.pending > 0) {
+			segments.push(`${status.counts.pending} pending`);
+		}
+		if (status.counts.writingSummary > 0) {
+			segments.push(`${status.counts.writingSummary} summary`);
+		}
+	}
+	if (status.counts.failed > 0) {
+		segments.push(`${status.counts.failed} failed`);
+	}
+	if (status.counts.cancelled > 0) {
+		segments.push(`${status.counts.cancelled} cancelled`);
+	}
+	return segments;
+};
 
 export const selectCompactFlowStatusLine = (
 	status: FlowStatusSelectorState,
@@ -354,43 +389,47 @@ export const selectCompactFlowStatusLine = (
 	let maxActivityChars = options.maxActivityChars ?? 40;
 	const maxModelChars = options.maxModelChars ?? 20;
 	const labelBase = status.label.trim().length > 0 ? status.label.trim() : "flow";
-	const extra = status.counts.active > 1 ? ` +${status.counts.active - 1}` : "";
-	let label = ellipsize(labelBase, maxLabelChars);
-	let activity = ellipsize(status.activity, maxActivityChars);
-	const checkpoint = formatCheckpointState(status.checkpointState);
-	const budget = formatBudgetState(status.budgetState);
-	let meta = formatStatusMeta(status).map((piece, index) =>
-		index === 0 ? `m:${ellipsize(piece.slice(2), maxModelChars)}` : piece,
+	let label = fitStatusPart(labelBase, maxLabelChars);
+	const activityBase = status.activity.trim();
+	let activity = status.counts.active <= 1 && activityBase.length > 0 ? fitStatusPart(activityBase, maxActivityChars) : undefined;
+	const priority = formatPrioritySegments(status);
+	const counts = formatQueueCountSegments(status);
+	let meta = formatStatusMeta(status).map((piece) =>
+		piece.startsWith("m:") ? `m:${fitStatusPart(piece.slice(2), maxModelChars)}` : piece,
 	);
 
 	const render = (): string => {
-		const prefix = `${statusIcon(status.phase)} ${label}${extra}`;
 		return joinStatusPieces([
-			prefix,
+			formatStatusHead(status, label),
+			...priority,
+			...counts,
 			activity,
-			checkpoint,
-			budget,
+			"/flow",
 			...meta,
 		]);
 	};
 
 	let line = render();
-	while (line.length > maxChars && meta.length > 0) {
+	while (!fitsStatusWidth(line, maxChars) && meta.length > 0) {
 		meta = meta.slice(0, -1);
 		line = render();
 	}
-	while (line.length > maxChars && maxActivityChars > 8) {
+	while (!fitsStatusWidth(line, maxChars) && activity !== undefined && maxActivityChars > 8) {
 		maxActivityChars = Math.max(8, maxActivityChars - 4);
-		activity = ellipsize(status.activity, maxActivityChars);
+		activity = fitStatusPart(activityBase, maxActivityChars);
 		line = render();
 	}
-	while (line.length > maxChars && maxLabelChars > 8) {
+	if (!fitsStatusWidth(line, maxChars) && activity !== undefined) {
+		activity = undefined;
+		line = render();
+	}
+	while (!fitsStatusWidth(line, maxChars) && maxLabelChars > 8) {
 		maxLabelChars = Math.max(8, maxLabelChars - 2);
-		label = ellipsize(labelBase, maxLabelChars);
+		label = fitStatusPart(labelBase, maxLabelChars);
 		line = render();
 	}
 
-	return line.length > maxChars ? ellipsize(line, maxChars) : line;
+	return fitsStatusWidth(line, maxChars) ? line : fitStatusPart(line, maxChars);
 };
 
 export const selectFlowStatusState = (snapshot: FlowQueue): FlowStatusSelectorState => {

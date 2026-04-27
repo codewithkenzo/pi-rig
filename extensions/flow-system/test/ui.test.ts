@@ -40,8 +40,7 @@ describe("flow UI helpers", () => {
 			],
 		});
 
-		expect(status).toContain("explore");
-		expect(status).toContain("scan");
+		expect(status).toBe("flow 1 running · 1 pending · /flow");
 	});
 
 	it("includes model, reasoning, and effort in status line", () => {

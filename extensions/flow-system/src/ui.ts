@@ -63,26 +63,6 @@ const hasActiveJobs = (queue: FlowQueue): boolean => selectFlowStatusState(queue
 const hasRunningJobs = (queue: FlowQueue): boolean => runningJobs(queue).length > 0;
 const isWritingSummary = (job: FlowJob | undefined): boolean => job?.status === "running" && job.writingSummary === true;
 
-const normalize = (value: string | undefined): string | undefined => {
-	if (value === undefined) {
-		return undefined;
-	}
-	const trimmed = value.trim();
-	return trimmed.length > 0 ? trimmed : undefined;
-};
-
-const modelStatusValue = (job: FlowJob): string => {
-	const model = normalize(job.envelope?.model) ?? normalize(job.model);
-	const provider = normalize(job.envelope?.provider);
-	if (model === undefined) {
-		return "(default)";
-	}
-	return provider !== undefined ? `${model}@${provider}` : model;
-};
-
-const reasoningStatusValue = (job: FlowJob): string => job.envelope?.reasoning ?? "(profile)";
-const effortStatusValue = (job: FlowJob): string => job.envelope?.effort ?? "auto";
-
 const toneForStatus = (status: FlowJob["status"]): "active" | "warning" | "success" | "error" | "inactive" => {
 	switch (status) {
 		case "running":
@@ -117,60 +97,11 @@ const staticIconForJob = (job: FlowJob, fallback = "•"): string => {
 
 export const flowStatusText = (
 	queue: FlowQueue,
-	cwd?: string,
-	animationState = { frame: 0, startedAt: Date.now() },
+	_cwd?: string,
+	_animationState = { frame: 0, startedAt: Date.now() },
 ): string | undefined => {
 	const status = selectFlowStatusState(queue);
-	const primary = status.primaryJob;
-	if (status.mode === "idle" || primary === undefined) {
-		return undefined;
-	}
-
-	if (cwd === undefined) {
-		return selectCompactFlowStatusLine(status);
-	}
-
-	const { config, palette } = loadTheme(cwd);
-	const engine = createEngine(palette, config.colorMode);
-	const reducedMotion = !config.animation.enabled || config.animation.reducedMotion;
-	const frames = palette.animations?.streamingFrames ?? palette.animations?.runningFrames ?? ["⠋", "⠙", "⠹", "⠸"];
-	const icon = hasRunningJobs(queue)
-		? withMotion(
-				() => spin(frames, animationState, Math.max(6, config.animation.fps)),
-				staticIconForJob(primary),
-				reducedMotion,
-			)
-		: staticIconForJob(primary);
-	const more = status.counts.active > 1 ? engine.fg("muted", `+${status.counts.active - 1}`) : undefined;
-	const summary = status.counts.writingSummary > 0
-		? withMotion(
-				() =>
-					shimmer(
-						`writing-summary${status.counts.writingSummary > 1 ? `:${status.counts.writingSummary}` : ""}`,
-						palette.semantic.warning,
-						palette.semantic.success,
-						animationState,
-						2,
-					),
-				engine.fg("success", `writing-summary${status.counts.writingSummary > 1 ? `:${status.counts.writingSummary}` : ""}`),
-				reducedMotion,
-			)
-		: undefined;
-	const budget = status.budgetState !== "none" ? engine.fg(status.budgetState === "tracked" ? "muted" : "warning", `budget:${status.budgetState}`) : undefined;
-	const model = engine.fg("muted", `m:${ellipsize(modelStatusValue(primary), 24)}`);
-	const reasoning = engine.fg("muted", `r:${reasoningStatusValue(primary)}`);
-	const effort = engine.fg("muted", `e:${effortStatusValue(primary)}`);
-	return joinCompact(engine, [
-		engine.fg(toneForStatus(primary.status), icon),
-		tag(engine, toneForStatus(primary.status), status.label),
-		engine.fg("value", ellipsize(status.activity, 56)),
-		model,
-		reasoning,
-		effort,
-		summary,
-		budget,
-		more,
-	]);
+	return selectCompactFlowStatusLine(status);
 };
 
 export const renderFlowWidgetLines = (
