@@ -1,13 +1,17 @@
 ---
 name: pi-blitz
-description: Symbol-anchored AST edits through the blitz Zig CLI. Effective for large preserved bodies and structural symbolic edits; tiny or one-line edits often favor core edit. Use with undo discipline; public prebuilt release pending cross-platform binary matrix.
+description: Symbol-anchored AST edits through the blitz Zig CLI (alpha 0.1.0-alpha.0). Effective for large preserved bodies and structural symbolic edits; not a universal replacement for core edit. Tiny or one-line edits often favor core edit. No prebuilt binaries yet — requires blitz built from source and configured via ~/.pi/pi-blitz.json. MCP alternative available at codewithkenzo/blitz.
 ---
 
 # pi-blitz
 
 ## Current status
 
-Private release candidate. Standalone `blitz` passed `gpt-5.5` xhigh review. Authenticated Pi/model benchmarks show large reductions in provider output tokens, tool-call argument tokens, wall time, and cost on handled symbol edits. Use with undo/review discipline. Public prebuilt release is pending the cross-platform binary matrix.
+Alpha — version 0.1.0-alpha.0. Requires blitz CLI 0.1.0-alpha.0 built from source ([codewithkenzo/blitz](https://github.com/codewithkenzo/blitz)). No prebuilt binaries published yet. Configure the binary path via `~/.pi/pi-blitz.json`.
+
+Authenticated Pi/model benchmarks show large reductions in provider output tokens, tool-call argument tokens, wall time, and cost on handled symbol edits. Benchmark 2 efficiency claims compare a correct blitz result against a failed core attempt — not two correct results. Use with undo/review discipline.
+
+Blitz is not a universal replacement for core `edit`. See "When NOT to use" below.
 
 ## When to use
 

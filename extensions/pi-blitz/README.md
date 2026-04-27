@@ -1,10 +1,12 @@
 # @codewithkenzo/pi-blitz
 
-Pi extension that wraps the [`blitz`](https://github.com/codewithkenzo/blitz) AST-aware symbol-scoped edit CLI.
+Pi extension wrapping the [`blitz`](https://github.com/codewithkenzo/blitz) AST-aware symbol-scoped edit CLI.
 
 ## Status
 
-Private release candidate. Local CLI passed `gpt-5.5` xhigh review. Authenticated Pi/model benchmarks show substantial reductions in provider output tokens, tool-call argument tokens, wall time, and cost on handled symbol edits. Extension is wired to the live binary for local testing with undo/review discipline. Public install awaits cross-platform prebuilt binary matrix.
+**Alpha — version 0.1.0-alpha.0.** Requires blitz CLI 0.1.0-alpha.0. No prebuilt binaries published yet; build blitz from source and configure the path (see Install).
+
+Blitz is not a universal replacement for core `edit`. It is most effective for large preserved bodies and structural symbolic edits. Tiny or one-line edits often favor core `edit` directly.
 
 ## Tools
 
@@ -43,20 +45,20 @@ Two authenticated Pi/model benchmark runs (N=5, `gpt-5.4-mini`):
 
 **Benchmark 2 — multi / large-structural:**
 
-Core attempt: 0% correct. `pi_blitz_patch`: 100% correct.
+Core attempt: 0% correct (comparator failed on a large structural patch). `pi_blitz_patch`: 100% correct.
 
-| Metric | Core attempt | `pi_blitz_patch` | Reduction |
+| Metric | Core attempt (failed) | `pi_blitz_patch` | Reduction |
 |---|---|---|---|
 | Provider output tokens (median) | 9,739 | 108 | 98.9% |
 | Tool-call arg tokens (median) | 9,689 | 89 | 99.1% |
 | Wall time (median) | 86,839 ms | 3,211 ms | 96.3% |
 | Cost (sum, N=5) | $0.2972 | $0.0310 | 89.6% |
 
-Benchmark 2 compares correctness and efficiency vs a failed core attempt, not two correct results. Tiny or one-line edits often favor core `edit`. Blitz is most effective for large preserved bodies and structural symbolic edits.
+**Caveats:** Benchmark 2 compares a correct blitz result against a failed core attempt — not two correct results. Efficiency claims for that benchmark reflect the failed baseline. Benchmark 1 is a fair comparison (both lanes correct). Tiny or one-line edits are outside blitz's effective range.
 
 ## Install
 
-Requires a `blitz` binary on `PATH`. For local testing, build from source or point config at your binary:
+No prebuilt binaries are published yet. Build `blitz` from source at [codewithkenzo/blitz](https://github.com/codewithkenzo/blitz), then configure the extension to point at your binary via `~/.pi/pi-blitz.json`:
 
 ```json
 // ~/.pi/pi-blitz.json
@@ -75,13 +77,17 @@ pi install npm:@codewithkenzo/pi-blitz
 
 Verify: `/help` should list all 15 `pi_blitz_*` tools.
 
+## MCP alternative
+
+A standalone MCP server for blitz is available at [codewithkenzo/blitz](https://github.com/codewithkenzo/blitz). Use it for environments where a Pi extension is not available.
+
 ## Config
 
-`~/.pi/pi-blitz.json` can point the extension at a specific `blitz` binary. Project config is read for future compatibility, but `binary` is user-only and cannot be overridden from `.pi/pi-blitz.json`.
+`~/.pi/pi-blitz.json` points the extension at a specific `blitz` binary. The `binary` field is user-only and cannot be overridden from a project-level `.pi/pi-blitz.json`.
 
 ```ts
 type PiBlitzConfig = {
-  binary?: string; // user-only; absolute path or command name for blitz
+  binary?: string; // absolute path or command name on PATH
 };
 ```
 
