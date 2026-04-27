@@ -62,7 +62,7 @@ pi_blitz_edit({
 });
 ```
 
-For `replace`, pass only the symbol name in `replace`; the `snippet` is the replacement body. Do not repeat the function signature unless you already have it handy — blitz preserves it automatically.
+For `replace`, pass only the symbol name in `replace`; the `snippet` is the replacement body. Do not repeat the function signature unless you already have it handy — blitz preserves it automatically. For large unchanged bodies, use `// ... existing code ...` or `// @keep`; never repeat unchanged code.
 
 ### Insert a helper after a symbol
 
