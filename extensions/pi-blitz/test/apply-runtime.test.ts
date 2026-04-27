@@ -136,6 +136,38 @@ describe("pi_blitz_apply runtime path", () => {
 		]);
 	});
 
+	test("narrow try_catch invokes patch tuple", async () => {
+		const tool = tools.tryCatchToolDef("blitz", tmpDir);
+		await tool.execute("1", {
+			file: "app.ts",
+			symbol: "handle",
+			catchBody: "console.error(error);\nthrow error;",
+			indent: 2,
+		});
+
+		expect(spawnCollectMock).toHaveBeenCalledTimes(1);
+		const firstCall = spawnCollectMock.mock.calls[0] as unknown as [string[], { stdin: string }];
+		const payload = JSON.parse(firstCall[1].stdin);
+		expect(payload.operation).toBe("patch");
+		expect(payload.edit.ops).toEqual([["try_catch", "handle", "console.error(error);\nthrow error;", 2]]);
+	});
+
+	test("narrow replace_return invokes patch tuple", async () => {
+		const tool = tools.replaceReturnToolDef("blitz", tmpDir);
+		await tool.execute("1", {
+			file: "app.ts",
+			symbol: "handle",
+			expr: "value + 1",
+			occurrence: "last",
+		});
+
+		expect(spawnCollectMock).toHaveBeenCalledTimes(1);
+		const firstCall = spawnCollectMock.mock.calls[0] as unknown as [string[], { stdin: string }];
+		const payload = JSON.parse(firstCall[1].stdin);
+		expect(payload.operation).toBe("patch");
+		expect(payload.edit.ops).toEqual([["replace_return", "handle", "value + 1", "last"]]);
+	});
+
 	test("invokes blitz apply --edit - --json with JSON IR", async () => {
 		const tool = tools.piBlitzApplyToolDef("blitz", tmpDir);
 		const result = await tool.execute("1", {

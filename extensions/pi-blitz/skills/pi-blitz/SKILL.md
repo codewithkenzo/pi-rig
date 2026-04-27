@@ -37,6 +37,8 @@ Use when:
 | `pi_blitz_compose_body` | Narrow low-token wrapper for preserve-island / multi-hunk body composition. |
 | `pi_blitz_multi_body` | Narrow low-token wrapper for multiple body-scoped edits in one atomic apply. |
 | `pi_blitz_patch` | Compact tuple patch wrapper for replace/insert_after/wrap/replace_return/try_catch. |
+| `pi_blitz_try_catch` | Narrow semantic wrapper for wrapping a symbol body in try/catch. |
+| `pi_blitz_replace_return` | Narrow semantic wrapper for replacing a return expression. |
 | `pi_blitz_batch` | Multiple symbol-anchored edits in one file. |
 | `pi_blitz_rename` | AST-verified rename in one file (skips strings/comments). |
 | `pi_blitz_undo` | Revert the last blitz edit on a file. Requires `confirm: true`. |

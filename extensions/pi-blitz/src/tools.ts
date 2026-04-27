@@ -171,7 +171,6 @@ const multiBodyEditItemSchema = Type.Object(
 				Type.Literal("replace_body_span"),
 				Type.Literal("insert_body_span"),
 				Type.Literal("wrap_body"),
-				Type.Literal("compose_body"),
 			],
 			{ description: "Structured body operation for one edit entry." },
 		),
@@ -348,12 +347,11 @@ const isOccurrence = (value: unknown): value is "only" | "first" | "last" | numb
 
 const isStructuredOp = (
 	value: unknown,
-): value is "replace_body_span" | "insert_body_span" | "wrap_body" | "compose_body" => {
+): value is "replace_body_span" | "insert_body_span" | "wrap_body" => {
 	return (
 		value === "replace_body_span" ||
 		value === "insert_body_span" ||
-		value === "wrap_body" ||
-		value === "compose_body"
+		value === "wrap_body"
 	);
 };
 
@@ -528,7 +526,7 @@ const assertApplyPayload = (params: BlitzApplyParams): InvalidParamsError | null
 				const editItem = item as MultiBodyEditItem;
 				if (!isStructuredOp(editItem.op)) {
 					return new InvalidParamsError({
-						reason: `multi_body.edits[${i}].op must be one of: replace_body_span, insert_body_span, wrap_body, compose_body`,
+						reason: `multi_body.edits[${i}].op must be one of: replace_body_span, insert_body_span, wrap_body`,
 					});
 				}
 				if (!isNonEmptyString(editItem.symbol)) {
@@ -832,9 +830,19 @@ type ComposeBodyParams = NarrowCommonParams & {
 	segments: Array<Record<string, unknown>>;
 };
 
+type TryCatchParams = NarrowCommonParams & {
+	catchBody: string;
+	indent?: number;
+};
+
+type ReplaceReturnParams = NarrowCommonParams & {
+	expr: string;
+	occurrence?: "only" | "first" | "last" | number;
+};
+
 type MultiBodyEditItem = Record<string, unknown> & {
 	symbol: string;
-	op: "replace_body_span" | "insert_body_span" | "wrap_body" | "compose_body";
+	op: "replace_body_span" | "insert_body_span" | "wrap_body";
 };
 
 type MultiBodyParams = Omit<NarrowCommonParams, "symbol"> & {
@@ -990,6 +998,48 @@ export const patchToolDef = (binary: string, cwd: string) =>
 				file: params.file,
 				operation: "patch",
 				edit: { ops: params.ops },
+				...(params.dry_run !== undefined ? { dry_run: params.dry_run } : {}),
+				...(params.include_diff !== undefined ? { include_diff: params.include_diff } : {}),
+			}),
+	}) as const;
+
+export const tryCatchToolDef = (binary: string, cwd: string) =>
+	({
+		name: "pi_blitz_try_catch",
+		label: "blitz try catch",
+		description:
+			"Compact semantic edit: wrap a symbol body in TypeScript try/catch without repeating the body. Use for large functions that need catch logging/rethrow logic.",
+		parameters: Type.Object({
+			...narrowApplyBaseSchema,
+			catchBody: Type.String({ minLength: 1, maxLength: SNIPPET_MAX, description: "Catch body, without outer catch braces." }),
+			indent: Type.Optional(Type.Number({ minimum: 0, description: "Spaces to add before each kept body line. Defaults to 2." })),
+		}),
+		execute: async (_tcid: string, params: TryCatchParams): Promise<BlitzToolResult> =>
+			executeApplyParams(binary, cwd, {
+				file: params.file,
+				operation: "patch",
+				edit: { ops: [["try_catch", params.symbol, params.catchBody, ...(params.indent !== undefined ? [params.indent] : [])]] },
+				...(params.dry_run !== undefined ? { dry_run: params.dry_run } : {}),
+				...(params.include_diff !== undefined ? { include_diff: params.include_diff } : {}),
+			}),
+	}) as const;
+
+export const replaceReturnToolDef = (binary: string, cwd: string) =>
+	({
+		name: "pi_blitz_replace_return",
+		label: "blitz replace return",
+		description:
+			"Compact semantic edit: replace a return statement expression inside a symbol body. Avoids repeating surrounding logic.",
+		parameters: Type.Object({
+			...narrowApplyBaseSchema,
+			expr: Type.String({ minLength: 1, maxLength: SNIPPET_MAX, description: "Return expression, without leading return and without required trailing semicolon." }),
+			occurrence: occurrenceSchema,
+		}),
+		execute: async (_tcid: string, params: ReplaceReturnParams): Promise<BlitzToolResult> =>
+			executeApplyParams(binary, cwd, {
+				file: params.file,
+				operation: "patch",
+				edit: { ops: [["replace_return", params.symbol, params.expr, ...(params.occurrence !== undefined ? [params.occurrence] : [])]] },
 				...(params.dry_run !== undefined ? { dry_run: params.dry_run } : {}),
 				...(params.include_diff !== undefined ? { include_diff: params.include_diff } : {}),
 			}),

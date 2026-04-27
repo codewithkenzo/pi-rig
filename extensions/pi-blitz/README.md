@@ -8,7 +8,7 @@ Private release candidate. Local CLI passed `gpt-5.5` xhigh review. Authenticate
 
 ## Tools
 
-13 tools registered:
+15 tools registered:
 
 | Tool | Purpose |
 |---|---|
@@ -22,6 +22,8 @@ Private release candidate. Local CLI passed `gpt-5.5` xhigh review. Authenticate
 | `pi_blitz_compose_body` | Preserve multiple body islands while rewriting the rest. |
 | `pi_blitz_multi_body` | Multiple body-scoped edits in one atomic apply. |
 | `pi_blitz_patch` | Compact tuple patch ops: `replace`, `insert_after`, `wrap`, `replace_return`, `try_catch`. |
+| `pi_blitz_try_catch` | Narrow semantic wrapper for `try_catch` patch ops. |
+| `pi_blitz_replace_return` | Narrow semantic wrapper for `replace_return` patch ops. |
 | `pi_blitz_rename` | AST-verified rename in one file (skips strings/comments). |
 | `pi_blitz_undo` | Revert last blitz edit. Requires `confirm: true`. |
 | `pi_blitz_doctor` | Version, supported grammars, cache health. |
@@ -71,19 +73,15 @@ pi install /abs/path/to/pi-plugins-repo-kenzo/extensions/pi-blitz
 pi install npm:@codewithkenzo/pi-blitz
 ```
 
-Verify: `/help` should list all 13 `pi_blitz_*` tools.
+Verify: `/help` should list all 15 `pi_blitz_*` tools.
 
 ## Config
 
-`~/.pi/pi-blitz.json` (user-level) merged with `.pi/pi-blitz.json` (project-level). `binary` and `trustedExternalPaths` are user-only and cannot be set in project config.
+`~/.pi/pi-blitz.json` can point the extension at a specific `blitz` binary. Project config is read for future compatibility, but `binary` is user-only and cannot be overridden from `.pi/pi-blitz.json`.
 
 ```ts
 type PiBlitzConfig = {
-  binary?: string;                 // user-only; absolute path to blitz binary
-  trustedExternalPaths?: boolean;  // user-only; allow paths outside cwd
-  defaultTimeoutMs?: number;       // default 60_000 for edits, 30_000 otherwise
-  cacheDir?: string;               // override default ~/.cache/blitz
-  noUpdateCheck?: boolean;
+  binary?: string; // user-only; absolute path or command name for blitz
 };
 ```
 

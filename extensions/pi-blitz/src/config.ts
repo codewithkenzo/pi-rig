@@ -6,14 +6,10 @@ import { homedir } from "node:os";
 
 export const PiBlitzConfigSchema = Type.Object({
 	binary: Type.Optional(Type.String({ minLength: 1 })),
-	trustedExternalPaths: Type.Optional(Type.Boolean()),
-	defaultTimeoutMs: Type.Optional(Type.Number({ minimum: 1_000, maximum: 600_000 })),
-	cacheDir: Type.Optional(Type.String({ minLength: 1 })),
-	noUpdateCheck: Type.Optional(Type.Boolean()),
 });
 export type PiBlitzConfig = Static<typeof PiBlitzConfigSchema>;
 
-const USER_ONLY_KEYS = new Set<keyof PiBlitzConfig>(["binary", "trustedExternalPaths"]);
+const USER_ONLY_KEYS = new Set<keyof PiBlitzConfig>(["binary"]);
 
 const CONFIG_FILE = "pi-blitz.json";
 
