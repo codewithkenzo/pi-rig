@@ -11,7 +11,7 @@ import {
 } from "../src/errors.js";
 import { makePathLocks } from "../src/mutex.js";
 import { runTool } from "../src/tool-runtime.js";
-import { applyToolParamsSchema, parseApplyResultPayload } from "../src/tools.js";
+import { applyToolParamsSchema, parseApplyResultPayload, patchToolParamsSchema } from "../src/tools.js";
 
 const wait = (ms: number): Promise<void> =>
 	new Promise((r) => {
@@ -27,6 +27,14 @@ describe("@codewithkenzo/pi-blitz smoke", () => {
 			edit: { find: "return 1;", replace: "return 2;" },
 		};
 		expect(Value.Check(applyToolParamsSchema, valid)).toBe(true);
+	});
+
+	test("pi_blitz_patch schema accepts tuple ops", () => {
+		const valid = {
+			file: "src/app.ts",
+			ops: [["replace", "handleRequest", "return 1;", "return 2;", "only"]],
+		};
+		expect(Value.Check(patchToolParamsSchema, valid)).toBe(true);
 	});
 
 	test("pi_blitz_apply schema rejects unknown operation", () => {

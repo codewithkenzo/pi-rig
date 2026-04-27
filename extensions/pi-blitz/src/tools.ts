@@ -50,10 +50,11 @@ const applyOperationSchema = Type.Union(
 		Type.Literal("multi_body"),
 		Type.Literal("insert_after_symbol"),
 		Type.Literal("set_body"),
+		Type.Literal("patch"),
 	],
 	{
 		description:
-			"Structured edit operation. Prefer one of: replace_body_span, insert_body_span, wrap_body, compose_body, multi_body, insert_after_symbol, set_body.",
+			"Structured edit operation. Prefer one of: replace_body_span, insert_body_span, wrap_body, compose_body, multi_body, insert_after_symbol, set_body, patch.",
 	},
 );
 
@@ -116,6 +117,44 @@ const applyOptionsSchema = Type.Object(
 	{ additionalProperties: false },
 );
 
+const patchSymbolSchema = Type.String({
+	minLength: 1,
+	maxLength: 512,
+	description: "Target symbol name (declaration, not call-site).",
+});
+const patchTextSchema = Type.String({ minLength: 1, maxLength: SNIPPET_MAX, description: "Patch text payload." });
+const patchOccurrenceValueSchema = Type.Union([
+	Type.Literal("only"),
+	Type.Literal("first"),
+	Type.Literal("last"),
+	Type.Integer({ minimum: 0 }),
+]);
+const patchTupleSchemas = [
+	Type.Tuple([Type.Literal("replace"), patchSymbolSchema, patchTextSchema, patchTextSchema]),
+	Type.Tuple([Type.Literal("replace"), patchSymbolSchema, patchTextSchema, patchTextSchema, patchOccurrenceValueSchema]),
+	Type.Tuple([Type.Literal("insert_after"), patchSymbolSchema, patchTextSchema, patchTextSchema]),
+	Type.Tuple([Type.Literal("insert_after"), patchSymbolSchema, patchTextSchema, patchTextSchema, patchOccurrenceValueSchema]),
+	Type.Tuple([Type.Literal("wrap"), patchSymbolSchema, patchTextSchema, patchTextSchema]),
+	Type.Tuple([Type.Literal("wrap"), patchSymbolSchema, patchTextSchema, patchTextSchema, Type.Integer({ minimum: 0 })]),
+	Type.Tuple([Type.Literal("replace_return"), patchSymbolSchema, patchTextSchema]),
+	Type.Tuple([Type.Literal("replace_return"), patchSymbolSchema, patchTextSchema, patchOccurrenceValueSchema]),
+	Type.Tuple([Type.Literal("try_catch"), patchSymbolSchema, patchTextSchema]),
+	Type.Tuple([Type.Literal("try_catch"), patchSymbolSchema, patchTextSchema, Type.Integer({ minimum: 0 })]),
+] as const;
+
+const patchOpsSchema = Type.Array(Type.Union([...patchTupleSchemas]), {
+	minItems: 1,
+	maxItems: BATCH_MAX_ITEMS,
+	description: "Compact Blitz patch tuples.",
+});
+
+export const patchToolParamsSchema = Type.Object({
+	file: pathSchema,
+	ops: patchOpsSchema,
+	dry_run: Type.Optional(Type.Boolean({ description: "No-write preview request for patch." })),
+	include_diff: Type.Optional(Type.Boolean({ description: "Request compact diff summary in CLI output." })),
+});
+
 export const applyToolParamsSchema = Type.Object({
 	file: pathSchema,
 	operation: applyOperationSchema,
@@ -135,7 +174,8 @@ type BlitzApplyOperation =
 	| "compose_body"
 	| "multi_body"
 	| "insert_after_symbol"
-	| "set_body";
+	| "set_body"
+	| "patch";
 
 const multiBodyEditItemSchema = Type.Object(
 	{
@@ -331,6 +371,26 @@ const isStructuredOp = (
 	);
 };
 
+const isPatchTuple = (value: unknown): value is readonly unknown[] => {
+	if (!Array.isArray(value) || value.length < 3 || value.length > 5) return false;
+	const [op, symbol, a, b, c] = value;
+	if (!isNonEmptyString(symbol)) return false;
+	switch (op) {
+		case "replace":
+			return isNonEmptyString(a) && isNonEmptyString(b) && (c === undefined || isOccurrence(c));
+		case "insert_after":
+			return isNonEmptyString(a) && isNonEmptyString(b) && (c === undefined || isOccurrence(c));
+		case "wrap":
+			return isNonEmptyString(a) && isNonEmptyString(b) && (c === undefined || (typeof c === "number" && Number.isFinite(c) && c >= 0));
+		case "replace_return":
+			return isNonEmptyString(a) && (b === undefined || isOccurrence(b));
+		case "try_catch":
+			return isNonEmptyString(a) && (b === undefined || (typeof b === "number" && Number.isFinite(b) && b >= 0));
+		default:
+			return false;
+	}
+};
+
 const assertApplyPayload = (params: BlitzApplyParams): InvalidParamsError | null => {
 	switch (params.operation) {
 		case "replace_body_span": {
@@ -456,6 +516,17 @@ const assertApplyPayload = (params: BlitzApplyParams): InvalidParamsError | null
 				return new InvalidParamsError({
 					reason: "set_body indentation must be 'preserve' or 'normalize'",
 				});
+			}
+			break;
+		}
+		case "patch": {
+			if (!Array.isArray(params.edit.ops) || params.edit.ops.length < 1) {
+				return new InvalidParamsError({ reason: "patch requires edit.ops array" });
+			}
+			for (let i = 0; i < params.edit.ops.length; i++) {
+				if (!isPatchTuple(params.edit.ops[i])) {
+					return new InvalidParamsError({ reason: `patch.ops[${i}] must be a valid tuple` });
+				}
 			}
 			break;
 		}
@@ -683,7 +754,7 @@ const executeApplyParams = (
 	params: BlitzApplyParams,
 ): Promise<BlitzToolResult> => {
 	const eff = Effect.gen(function* () {
-		if (params.operation !== "multi_body" && !isNonEmptyString(params.target?.symbol)) {
+		if (params.operation !== "multi_body" && params.operation !== "patch" && !isNonEmptyString(params.target?.symbol)) {
 			return yield* Effect.fail(
 				new InvalidParamsError({ reason: "target.symbol must be a non-empty string" }),
 			);
@@ -916,6 +987,23 @@ export const multiBodyToolDef = (binary: string, cwd: string) =>
 				file: params.file,
 				operation: "multi_body",
 				edit: { edits: params.edits },
+				...(params.dry_run !== undefined ? { dry_run: params.dry_run } : {}),
+				...(params.include_diff !== undefined ? { include_diff: params.include_diff } : {}),
+			}),
+	}) as const;
+
+export const patchToolDef = (binary: string, cwd: string) =>
+	({
+		name: "pi_blitz_patch",
+		label: "blitz patch",
+		description:
+			"Compact tuple patch wrapper. Use ops tuples for replace/insert_after/wrap/replace_return/try_catch without repeating full symbol bodies.",
+		parameters: patchToolParamsSchema,
+		execute: async (_tcid: string, params: { file: string; ops: Array<unknown>; dry_run?: boolean; include_diff?: boolean }): Promise<BlitzToolResult> =>
+			executeApplyParams(binary, cwd, {
+				file: params.file,
+				operation: "patch",
+				edit: { ops: params.ops },
 				...(params.dry_run !== undefined ? { dry_run: params.dry_run } : {}),
 				...(params.include_diff !== undefined ? { include_diff: params.include_diff } : {}),
 			}),

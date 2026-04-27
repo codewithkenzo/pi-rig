@@ -10,6 +10,7 @@ import {
 	editToolDef,
 	insertBodySpanToolDef,
 	multiBodyToolDef,
+	patchToolDef,
 	piBlitzApplyToolDef,
 	readToolDef,
 	replaceBodySpanToolDef,
@@ -47,6 +48,7 @@ export default async function piBlitz(pi: ExtensionAPI): Promise<void> {
 	pi.registerTool(wrapBodyToolDef(binary, cwd));
 	pi.registerTool(composeBodyToolDef(binary, cwd));
 	pi.registerTool(multiBodyToolDef(binary, cwd));
+	pi.registerTool(patchToolDef(binary, cwd));
 	pi.registerTool(renameToolDef(binary, cwd));
 	pi.registerTool(undoToolDef(binary, cwd));
 	pi.registerTool(doctorToolDef(binary, cwd));

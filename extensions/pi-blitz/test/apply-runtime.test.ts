@@ -109,6 +109,33 @@ describe("pi_blitz_apply runtime path", () => {
 		]);
 	});
 
+	test("narrow patch invokes blitz apply with tuple ops preserved", async () => {
+		const tool = tools.patchToolDef("blitz", tmpDir);
+		await tool.execute("1", {
+			file: "app.ts",
+			ops: [
+				["replace", "foo", "return 1;", "return 2;", "only"],
+				["insert_after", "bar", "anchor();", "next();"],
+				["wrap", "baz", "try {", "} finally {}", 2],
+				["replace_return", "qux", "value + 1;", 0],
+				["try_catch", "zap", "console.error(error);", 4],
+			],
+		});
+
+		expect(spawnCollectMock).toHaveBeenCalledTimes(1);
+		const firstCall = spawnCollectMock.mock.calls[0] as unknown as [string[], { stdin: string }];
+		const payload = JSON.parse(firstCall[1].stdin);
+		expect(payload.operation).toBe("patch");
+		expect(payload.target).toBeUndefined();
+		expect(payload.edit.ops).toEqual([
+			["replace", "foo", "return 1;", "return 2;", "only"],
+			["insert_after", "bar", "anchor();", "next();"],
+			["wrap", "baz", "try {", "} finally {}", 2],
+			["replace_return", "qux", "value + 1;", 0],
+			["try_catch", "zap", "console.error(error);", 4],
+		]);
+	});
+
 	test("invokes blitz apply --edit - --json with JSON IR", async () => {
 		const tool = tools.piBlitzApplyToolDef("blitz", tmpDir);
 		const result = await tool.execute("1", {

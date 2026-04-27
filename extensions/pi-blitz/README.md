@@ -2,11 +2,11 @@
 
 Pi extension that wraps the [`blitz`](https://github.com/codewithkenzo/blitz) AST-aware fast-edit CLI.
 
-> **Status: pre-alpha scaffold, local CLI review-passed.** Twelve tool slots are registered, including narrow structured apply tools. Standalone `blitz` passed local `gpt-5.5` xhigh review for controlled testing, but this extension is not ready for public install/prebuilt release yet.
+> **Status: pre-alpha scaffold, local CLI review-passed.** Thirteen tool slots are registered, including narrow structured apply tools. Standalone `blitz` passed local `gpt-5.5` xhigh review for controlled testing, but this extension is not ready for public install/prebuilt release yet.
 
 ## What you get
 
-- 12 tools: `pi_blitz_read`, `pi_blitz_edit`, `pi_blitz_batch`, `pi_blitz_apply`, `pi_blitz_replace_body_span`, `pi_blitz_insert_body_span`, `pi_blitz_wrap_body`, `pi_blitz_compose_body`, `pi_blitz_multi_body`, `pi_blitz_rename`, `pi_blitz_undo`, `pi_blitz_doctor`.
+- 13 tools: `pi_blitz_read`, `pi_blitz_edit`, `pi_blitz_batch`, `pi_blitz_apply`, `pi_blitz_replace_body_span`, `pi_blitz_insert_body_span`, `pi_blitz_wrap_body`, `pi_blitz_compose_body`, `pi_blitz_multi_body`, `pi_blitz_patch`, `pi_blitz_rename`, `pi_blitz_undo`, `pi_blitz_doctor`.
 - Effect v4 internals (typed error union, per-path mutex via `acquireUseRelease`, `Cause.findErrorOption` boundary).
 - Token-savings path has local microbench evidence only: direct lane ~41%, marker fixture ~83% by bytes/4 estimate; public claims wait for the 10-case benchmark.
 - Single prebuilt binary per platform (no Python, no local model).
@@ -29,7 +29,7 @@ pi install npm:@codewithkenzo/pi-blitz
 pi install /abs/path/to/pi-plugins-repo-kenzo/extensions/pi-blitz
 ```
 
-Verify: `/help` should list the twelve `pi_blitz_*` tools. Use locally with review/undo discipline until telemetry is collected.
+Verify: `/help` should list the thirteen `pi_blitz_*` tools. Use locally with review/undo discipline until telemetry is collected.
 
 ## Config
 
