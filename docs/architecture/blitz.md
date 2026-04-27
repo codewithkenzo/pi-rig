@@ -2,7 +2,7 @@
 
 Single source of truth. Supersedes and absorbs `blitz-design.md`, `blitz-gap-closure.md`, `blitz-perf-patterns.md`, `pi-edit-positioning.md`, `pi-edit-ecosystem-compare.md`, `pi-edit-local-overlap.md`, `zig-0.16-verification.md` (all archived).
 
-Status: **spec draft, not yet implemented.** All numeric targets in this doc are hypotheses until the benchmark harness in §10 runs.
+Status: **implementation alpha, review-blocked before Pi extension wiring.** The standalone `codewithkenzo/blitz` CLI exists and is pushed private; `@codewithkenzo/pi-blitz` scaffold exists in this repo. As of 2026-04-27, xhigh read-only review found correctness blockers in `edit --after`, symbol targeting, marker splice, batch marker parity, and test/benchmark wiring. Do **not** wire or promote the Pi extension until the review gates in §10.3 pass.
 
 ## 1. North star
 
@@ -11,7 +11,7 @@ Ship an AST-aware edit CLI that preserves fastedit's **output-token savings** an
 - **Zero local ML model** — no MLX, no vLLM, no 1.7B Qwen.
 - **Zero interpreter** — single static Zig 0.16 binary, target 3-5 MB (hypothesis; see §10).
 - **Zero Python** — nothing to install besides the binary.
-- **Cold-call latency target:** sub-10 ms deterministic path. Real number TBD (see §10).
+- **Cold-call latency target:** sub-20 ms deterministic path. Current debug/musl internal runs are roughly 12-13 ms median, but release-mode/public numbers are not frozen (see §10).
 - **MIT**, Kenzo-owned, ships via npm prebuilts per platform (esbuild/biome pattern).
 
 The extension (`@codewithkenzo/pi-blitz`) is a thin Effect v4 wrapper around the binary.
@@ -42,7 +42,7 @@ codewithkenzo/blitz                              # Zig 0.16 CLI (MIT, standalone
   src/cli.zig                                      # arg parsing, JSON stdin helpers
   src/ast.zig                                      # tree-sitter integration (see §4.3)
   src/symbols.zig                                  # symbol resolve, scope extraction
-  src/splice.zig                                   # deterministic text-match + direct-swap (Layer A)
+  src/splice.zig                                   # deterministic marker splice (Layer A; correctness hardening in progress)
   src/fuzzy.zig                                    # whitespace-insensitive + relative-indent recovery (v0.2, Layer B)
   src/queries.zig                                  # structural tree-sitter query rewrites (v0.2, Layer C)
   src/backup.zig                                   # SHA-keyed backup store + atomic write
@@ -233,13 +233,14 @@ Stderr on exit 0 is ignored (keeps space for banners/logs without polluting sign
 ### 7.1 Pipeline
 
 ```
-1. canonical path: realpath; reject escapes from cwd; SHA-key includes realpath+mtime
+1. canonical path: realpath; reject escapes from cwd; backup key currently single-depth per realpath
 2. parse current file with tree-sitter
    - cache tree per { realpath, mtime_ns }
    - on subsequent edits, call ts_tree_edit before re-parse (incremental reuse)
 3. resolve target symbol
-   - exact match on node @name capture
+   - exact match on declaration/name capture, not arbitrary call-site identifiers
    - scope by kind hint (function / class / method / variable)
+   - declaration nodes must win over reference identifiers; call-site replacement is not a valid v0.1 edit target
    - miss → stderr "symbol not found, available: [...]", exit 1
 4. extract target node byte range + ~3 lines of sibling context
 5. classify snippet
@@ -257,8 +258,8 @@ Stderr on exit 0 is ignored (keeps space for banners/logs without polluting sign
    - `dir.createFileAtomic(io, path, .{ .replace = true })`
    - write/flush through `File.Writer`; sync file when durability mode is enabled; `atomic.replace(io)`; `defer atomic.deinit(io)`
 9. backup store
-   - key = sha256(realpath + "\0" + pre_edit_mtime_ns)
-   - single-depth undo per path
+   - key = sha256(realpath)
+   - single-depth undo per path; a second edit overwrites the prior backup snapshot
 10. stdout success line + optional unified-diff tail
 ```
 
@@ -363,9 +364,18 @@ type PiBlitzConfig = {
 };
 ```
 
-## 10. Numbers — targets, not facts
+## 10. Numbers — current evidence, not public claims
 
-All numeric claims below are **hypotheses** to be confirmed by the benchmark harness under `@codewithkenzo/pi-blitz/test/benchmark/`. Public data on AST-rewrite tools (ast-grep: 43ms-1s, srgn: ~1s for 450k lines, Comby: 187ms for 2591 LOC Go file) suggests our targets are reachable but not given.
+Internal `bench/run.ts` exists in `codewithkenzo/blitz`, but the current benchmark must be treated as a **debug signal only** until it asserts golden output bytes for every case and the fix flow closes review blockers. Do not quote current marker savings publicly.
+
+Read-only xhigh audit on 2026-04-27 observed:
+
+- Build/test commands passed, but `zig build test --summary all` initially ran only one test, so CI coverage was not real enough.
+- Direct-swap cases were stable around **18.4-18.9% estimated output-token savings**.
+- Adding one marker case raised aggregate to **36.7%**, but that marker output was semantically wrong, so the marker win is **untrusted**.
+- Wall time on debug/musl runs was roughly **12.3-13.4 ms median**. Earlier ~8.6 ms numbers were noisy/not reproducible under the audited command.
+
+Public data on AST-rewrite tools (ast-grep: 43ms-1s, srgn: ~1s for 450k lines, Comby: 187ms for 2591 LOC Go file) still suggests the target is reachable, but blitz must pass correctness gates before any claim.
 
 | Metric | Pi core `edit` | fastedit (with model) | blitz v0.1 target | blitz v0.2 target (A+B+C) |
 |---|---|---|---|---|
@@ -396,6 +406,21 @@ Per case: `tokens_out`, `wall_ms`, `success`, `files_touched`, `model_calls`. Me
 
 - **Go** if blitz cuts `tokens_out` ≥ 40% on 5/7 handled cases (1-5, 7) **and** ties or beats fastedit on wall-time.
 - **No-go** if deterministic path coverage of cases 1-5 is below 90% structurally correct.
+- **No-go** if any marker case exits 0 but produces non-golden output.
+- **No-go** if `edit --after` replaces instead of inserts, or if symbol resolution edits a call-site/reference before the declaration.
+
+### 10.3 Pre-extension review gate (active)
+
+`@codewithkenzo/pi-blitz` must not be wired to the live binary until all pass:
+
+1. `edit --after` inserts at `target.endByte()` and preserves original symbol.
+2. `edit --replace` and `batch-edit` resolve declaration nodes before/without arbitrary identifiers.
+3. Marker splice either produces golden output or fails closed without mutating disk.
+4. Marker path re-parses/validates merged content enough to reject obvious corruption.
+5. Batch replace has marker parity or explicit marker rejection.
+6. `zig build test -Dtarget=x86_64-linux-musl --summary all` runs module tests, not just a single root test.
+7. `bench/run.ts` asserts exact expected output bytes, splits direct-swap vs marker aggregates, and removes stale direct-swap-only caveats.
+8. A fresh `gpt-5.5` xhigh read-only review returns PASS or PASS WITH FIXES.
 
 ## 11. Risks
 
@@ -423,9 +448,9 @@ Per case: `tokens_out`, `wall_ms`, `success`, `files_touched`, `model_calls`. Me
 
 | Sprint | Goal |
 |---|---|
-| Sprint 1 (week 1) | Zig skeleton, tree-sitter static link, `blitz read`, `blitz edit --after`, `blitz edit --replace` direct-swap (no markers), cross-compile CI green. |
-| Sprint 2 (week 2) | Port Layer A (marker-aware deterministic splice), backup store, `blitz undo`, `blitz rename`, `blitz doctor`. |
-| Sprint 3 (week 3) | `@codewithkenzo/pi-blitz` TS scaffold with Effect v4, 6-tool surface, doctor, telemetry, npm prebuilt matrix, first benchmark. |
+| Sprint 1 (done, review-blocked) | Zig skeleton, tree-sitter static link, `blitz read`, `blitz edit --replace` direct-swap, initial CI/bench. `edit --after` behavior is under fix due review failure. |
+| Sprint 2 (in progress, review-blocked) | Backup store, `blitz undo`, `blitz rename`, `blitz doctor`, and first Layer A marker splice landed. Marker splice is under correctness hardening; do not claim token wins yet. |
+| Sprint 3 (blocked) | `@codewithkenzo/pi-blitz` TS scaffold exists, but live binary wiring waits for §10.3 review gate. npm prebuilts and public benchmark still pending. |
 | v0.2 (weeks 4-6) | Layer B (fuzzy recovery) + Layer C (structural tree-sitter queries) + `multi-edit` + `rename-all` + `query`. |
 | v1.1 (later) | LSP refactor bridge, benchmark-proven latency targets, public release. |
 
@@ -450,5 +475,5 @@ External sources this design relies on (URLs frozen at research time):
 
 Internal (this repo):
 - `pi-extension-surface-notes.md` — pi-mono ExtensionAPI reference (shared across plugins).
-- `next-spec-synthesis.md` — master roadmap (plugin rows).
+- `roadmap.md` — master roadmap (plugin rows).
 - `archive/` — prior drafts (fastedit wrapper, pi-rollback, first-pass review, ecosystem/positioning/overlap one-offs; kept for context only).

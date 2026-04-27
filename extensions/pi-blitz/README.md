@@ -2,18 +2,18 @@
 
 Pi extension that wraps the [`blitz`](https://github.com/codewithkenzo/blitz) AST-aware fast-edit CLI.
 
-> **Status: pre-alpha scaffold.** Six tool slots registered, binary link gated on the standalone `blitz` CLI v0.1 landing (tickets `d1o-qphx` → `d1o-cewc`).
+> **Status: pre-alpha scaffold, review-blocked.** Six tool slots are registered, but live binary wiring is blocked until standalone `blitz` passes the pre-extension review gate in `docs/architecture/blitz.md` §10.3. Do not install this as an active edit lane yet.
 
 ## What you get
 
 - 6 tools: `pi_blitz_read`, `pi_blitz_edit`, `pi_blitz_batch`, `pi_blitz_rename`, `pi_blitz_undo`, `pi_blitz_doctor`.
 - Effect v4 internals (typed error union, per-path mutex via `acquireUseRelease`, `Cause.findErrorOption` boundary).
-- ~40-50% output-token savings on handled edits (hypothesis, gated on benchmark `d1o-gso9`).
+- Token-savings path is under active validation. Direct-swap internal runs are ~18-19%; marker savings are not trusted until golden-output benchmarks pass.
 - Single prebuilt binary per platform (no Python, no local model).
 
 ## Install
 
-Requires `blitz` binary on `PATH`. Either:
+Requires a review-approved `blitz` binary on `PATH` (not true yet for active Pi editing). Once approved, either:
 
 - `npm install -g @codewithkenzo/blitz` (once published; pulls the prebuilt binary for your platform).
 - or point `~/.pi/pi-blitz.json` at your built binary:
@@ -29,7 +29,7 @@ pi install npm:@codewithkenzo/pi-blitz
 pi install /abs/path/to/pi-plugins-repo-kenzo/extensions/pi-blitz
 ```
 
-Verify: `/help` should list the six `pi_blitz_*` tools.
+Verify: `/help` should list the six `pi_blitz_*` tools. Do not use them for writes until the CLI review gate passes.
 
 ## Config
 
@@ -47,7 +47,7 @@ type PiBlitzConfig = {
 
 ## Design
 
-See `codewithkenzo/pi-rig/docs/architecture/blitz.md` for the full spec (CLI surface, error taxonomy, Effect v4 patterns, gap-closure layers, benchmark matrix).
+See `codewithkenzo/pi-rig/docs/architecture/blitz.md` for the full spec, active blockers, and the pre-extension review gate.
 
 ## License
 
