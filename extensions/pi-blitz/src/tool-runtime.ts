@@ -19,12 +19,17 @@ export interface PiBlitzDetails {
 	snippetBytes?: number;
 	blitzPayloadBytes?: number;
 	coreFullSymbolPayloadBytes?: number;
+	coreRealisticAnchorPayloadBytes?: number;
 	coreMinimalAnchorPayloadBytes?: number;
 	estimatedPayloadSavedBytesVsFullSymbol?: number;
 	estimatedPayloadSavedPctVsFullSymbol?: number;
+	estimatedPayloadSavedBytesVsRealisticAnchor?: number;
+	estimatedPayloadSavedPctVsRealisticAnchor?: number;
+	estimatedTokensSavedBytesDiv4VsRealisticAnchor?: number;
 	estimatedPayloadSavedBytesVsMinimalAnchor?: number;
 	estimatedPayloadSavedPctVsMinimalAnchor?: number;
 	estimatedTokensSavedBytesDiv4VsMinimalAnchor?: number;
+	realisticContextLines?: number;
 	usedMarkers?: boolean;
 	wallMs?: number;
 }
