@@ -48,6 +48,46 @@ describe("pi_blitz_apply runtime path", () => {
 		}
 	});
 
+	test("narrow replace_body_span invokes blitz apply with compact schema", async () => {
+		const tool = tools.replaceBodySpanToolDef("blitz", tmpDir);
+		await tool.execute("1", {
+			file: "app.ts",
+			symbol: "foo",
+			find: "return 1;",
+			replace: "return 2;",
+			occurrence: "only",
+		});
+
+		expect(spawnCollectMock).toHaveBeenCalledTimes(1);
+		const firstCall = spawnCollectMock.mock.calls[0] as unknown as [string[], { stdin: string }];
+		const payload = JSON.parse(firstCall[1].stdin);
+		expect(payload.operation).toBe("replace_body_span");
+		expect(payload.target).toEqual({ symbol: "foo", range: "body" });
+		expect(payload.edit).toEqual({ find: "return 1;", replace: "return 2;", occurrence: "only" });
+	});
+
+	test("narrow wrap_body invokes blitz apply without body text", async () => {
+		const tool = tools.wrapBodyToolDef("blitz", tmpDir);
+		await tool.execute("1", {
+			file: "app.ts",
+			symbol: "foo",
+			before: "\n  try {",
+			after: "  } catch (error) {\n    throw error;\n  }\n",
+			indentKeptBodyBy: 2,
+		});
+
+		expect(spawnCollectMock).toHaveBeenCalledTimes(1);
+		const firstCall = spawnCollectMock.mock.calls[0] as unknown as [string[], { stdin: string }];
+		const payload = JSON.parse(firstCall[1].stdin);
+		expect(payload.operation).toBe("wrap_body");
+		expect(payload.edit).toEqual({
+			before: "\n  try {",
+			keep: "body",
+			after: "  } catch (error) {\n    throw error;\n  }\n",
+			indentKeptBodyBy: 2,
+		});
+	});
+
 	test("invokes blitz apply --edit - --json with JSON IR", async () => {
 		const tool = tools.piBlitzApplyToolDef("blitz", tmpDir);
 		const result = await tool.execute("1", {

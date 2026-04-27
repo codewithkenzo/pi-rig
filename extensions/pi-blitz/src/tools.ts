@@ -619,6 +619,50 @@ const bindPath = (rawFile: string, cwd: string) => canonicalize(rawFile, cwd);
 
 // ---------------- Tools ----------------
 
+const executeApplyParams = (
+	binary: string,
+	cwd: string,
+	params: BlitzApplyParams,
+): Promise<BlitzToolResult> => {
+	const eff = Effect.gen(function* () {
+		if (!isNonEmptyString(params.target?.symbol)) {
+			return yield* Effect.fail(
+				new InvalidParamsError({ reason: "target.symbol must be a non-empty string" }),
+			);
+		}
+		const validate = assertApplyPayload(params);
+		if (validate !== null) return yield* Effect.fail(validate);
+		const abs = yield* bindPath(params.file, cwd);
+		const requestPayload = buildApplyRequest(abs, params);
+		const request = JSON.stringify(requestPayload);
+		const tooBig = assertByteCap(request, APPLY_MAX_PAYLOAD, "apply request");
+		if (tooBig !== null) return yield* Effect.fail(tooBig);
+		const argv = ["apply", "--edit", "-", "--json"];
+		if (params.dry_run === true || params.options?.dryRun === true) argv.push("--dry-run");
+		if (params.include_diff === true || params.options?.includeDiff === true) argv.push("--diff");
+		const res = yield* locks.withLock(
+			abs,
+			runBlitz(binary, argv, {
+				stdin: request,
+				cwd,
+				timeoutMs: 60_000,
+			}),
+		);
+		if (res.exitCode === 0) {
+			const parsed = parseApplyResponsePayload(res.stdout);
+			if (parsed !== undefined) {
+				return applyResultToText(parsed as ApplyResponsePayload);
+			}
+			return okResult(res.stdout.trimEnd(), classifySuccessStdout(res.stdout));
+		}
+		const soft = classifySoft(res.stdout, res.stderr);
+		return yield* Effect.fail(
+			soft ?? new BlitzSoftError({ reason: "blitz-error", stderr: res.stderr }),
+		);
+	});
+	return runTool(eff, (v) => v);
+};
+
 export const piBlitzApplyToolDef = (binary: string, cwd: string) =>
 	({
 		name: "pi_blitz_apply",
@@ -626,45 +670,161 @@ export const piBlitzApplyToolDef = (binary: string, cwd: string) =>
 		description:
 			"Structured v0.2 apply via JSON IR. Use operation enum + target + edit payload. Prefer this for deterministic symbol edits and scoped wraps/insertions.",
 		parameters: applyToolParamsSchema,
-		execute: async (_tcid: string, params: BlitzApplyParams): Promise<BlitzToolResult> => {
-			const eff = Effect.gen(function* () {
-				if (!isNonEmptyString(params.target?.symbol)) {
-					return yield* Effect.fail(
-						new InvalidParamsError({ reason: "target.symbol must be a non-empty string" }),
-					);
-				}
-				const validate = assertApplyPayload(params);
-				if (validate !== null) return yield* Effect.fail(validate);
-				const abs = yield* bindPath(params.file, cwd);
-				const requestPayload = buildApplyRequest(abs, params);
-				const request = JSON.stringify(requestPayload);
-				const tooBig = assertByteCap(request, APPLY_MAX_PAYLOAD, "apply request");
-				if (tooBig !== null) return yield* Effect.fail(tooBig);
-				const argv = ["apply", "--edit", "-", "--json"];
-				if (params.dry_run === true || params.options?.dryRun === true) argv.push("--dry-run");
-				if (params.include_diff === true || params.options?.includeDiff === true) argv.push("--diff");
-				const res = yield* locks.withLock(
-					abs,
-					runBlitz(binary, argv, {
-						stdin: request,
-						cwd,
-						timeoutMs: 60_000,
-					}),
-				);
-				if (res.exitCode === 0) {
-					const parsed = parseApplyResponsePayload(res.stdout);
-					if (parsed !== undefined) {
-						return applyResultToText(parsed as ApplyResponsePayload);
-					}
-					return okResult(res.stdout.trimEnd(), classifySuccessStdout(res.stdout));
-				}
-				const soft = classifySoft(res.stdout, res.stderr);
-				return yield* Effect.fail(
-					soft ?? new BlitzSoftError({ reason: "blitz-error", stderr: res.stderr }),
-				);
-			});
-			return runTool(eff, (v) => v);
-		},
+		execute: async (_tcid: string, params: BlitzApplyParams): Promise<BlitzToolResult> =>
+			executeApplyParams(binary, cwd, params),
+	}) as const;
+
+const occurrenceSchema = Type.Optional(
+	Type.Union([Type.Literal("only"), Type.Literal("first"), Type.Literal("last"), Type.Number()], {
+		description: "Which occurrence to target. Use 'only' unless duplicate anchors are expected; use 'last' for tail edits.",
+	}),
+);
+
+const narrowApplyBaseSchema = {
+	file: pathSchema,
+	symbol: Type.String({ minLength: 1, maxLength: 512, description: "Target declaration symbol name only." }),
+	dry_run: Type.Optional(Type.Boolean({ description: "No-write preview request." })),
+	include_diff: Type.Optional(Type.Boolean({ description: "Request diff summary from blitz." })),
+};
+
+type NarrowCommonParams = {
+	file: string;
+	symbol: string;
+	dry_run?: boolean;
+	include_diff?: boolean;
+};
+
+type ReplaceBodySpanParams = NarrowCommonParams & {
+	find: string;
+	replace: string;
+	occurrence?: "only" | "first" | "last" | number;
+};
+
+type InsertBodySpanParams = NarrowCommonParams & {
+	anchor: string;
+	position: "before" | "after";
+	text: string;
+	occurrence?: "only" | "first" | "last" | number;
+};
+
+type WrapBodyParams = NarrowCommonParams & {
+	before: string;
+	after: string;
+	indentKeptBodyBy?: number;
+};
+
+type ComposeBodyParams = NarrowCommonParams & {
+	segments: Array<Record<string, unknown>>;
+};
+
+const toCommonApplyParams = (
+	params: NarrowCommonParams,
+	operation: BlitzApplyOperation,
+	edit: Record<string, unknown>,
+): BlitzApplyParams => ({
+	file: params.file,
+	operation,
+	target: { symbol: params.symbol, range: "body" },
+	edit,
+	...(params.dry_run !== undefined ? { dry_run: params.dry_run } : {}),
+	...(params.include_diff !== undefined ? { include_diff: params.include_diff } : {}),
+});
+
+export const replaceBodySpanToolDef = (binary: string, cwd: string) =>
+	({
+		name: "pi_blitz_replace_body_span",
+		label: "blitz replace body span",
+		description:
+			"Compact structured edit: replace exact text inside a symbol body. Use for medium/large symbols when exact in-body span is known. For tiny unique text edits, core edit may be cheaper.",
+		parameters: Type.Object({
+			...narrowApplyBaseSchema,
+			find: Type.String({ minLength: 1, maxLength: SNIPPET_MAX, description: "Exact text to find inside the symbol body." }),
+			replace: Type.String({ minLength: 1, maxLength: SNIPPET_MAX, description: "Replacement text." }),
+			occurrence: occurrenceSchema,
+		}),
+		execute: async (_tcid: string, params: ReplaceBodySpanParams): Promise<BlitzToolResult> =>
+			executeApplyParams(
+				binary,
+				cwd,
+				toCommonApplyParams(params, "replace_body_span", {
+					find: params.find,
+					replace: params.replace,
+					...(params.occurrence !== undefined ? { occurrence: params.occurrence } : {}),
+				}),
+			),
+	}) as const;
+
+export const insertBodySpanToolDef = (binary: string, cwd: string) =>
+	({
+		name: "pi_blitz_insert_body_span",
+		label: "blitz insert body span",
+		description:
+			"Compact structured edit: insert text before/after exact text inside a symbol body. Use for structural inserts in large symbols without repeating body text.",
+		parameters: Type.Object({
+			...narrowApplyBaseSchema,
+			anchor: Type.String({ minLength: 1, maxLength: SNIPPET_MAX, description: "Exact anchor text inside the symbol body." }),
+			position: Type.Union([Type.Literal("before"), Type.Literal("after")], { description: "Insert before or after anchor." }),
+			text: Type.String({ minLength: 1, maxLength: SNIPPET_MAX, description: "Text to insert." }),
+			occurrence: occurrenceSchema,
+		}),
+		execute: async (_tcid: string, params: InsertBodySpanParams): Promise<BlitzToolResult> =>
+			executeApplyParams(
+				binary,
+				cwd,
+				toCommonApplyParams(params, "insert_body_span", {
+					anchor: params.anchor,
+					position: params.position,
+					text: params.text,
+					...(params.occurrence !== undefined ? { occurrence: params.occurrence } : {}),
+				}),
+			),
+	}) as const;
+
+export const wrapBodyToolDef = (binary: string, cwd: string) =>
+	({
+		name: "pi_blitz_wrap_body",
+		label: "blitz wrap body",
+		description:
+			"Compact structured edit: wrap an entire symbol body without re-emitting it. Best token-saving path for try/catch, guards, timing wrappers, and similar large-body transforms.",
+		parameters: Type.Object({
+			...narrowApplyBaseSchema,
+			before: Type.String({ minLength: 1, maxLength: SNIPPET_MAX, description: "Text placed before kept body." }),
+			after: Type.String({ minLength: 1, maxLength: SNIPPET_MAX, description: "Text placed after kept body." }),
+			indentKeptBodyBy: Type.Optional(Type.Number({ minimum: 0, description: "Spaces to add before each kept body line." })),
+		}),
+		execute: async (_tcid: string, params: WrapBodyParams): Promise<BlitzToolResult> =>
+			executeApplyParams(
+				binary,
+				cwd,
+				toCommonApplyParams(params, "wrap_body", {
+					before: params.before,
+					keep: "body",
+					after: params.after,
+					...(params.indentKeptBodyBy !== undefined ? { indentKeptBodyBy: params.indentKeptBodyBy } : {}),
+				}),
+			),
+	}) as const;
+
+export const composeBodyToolDef = (binary: string, cwd: string) =>
+	({
+		name: "pi_blitz_compose_body",
+		label: "blitz compose body",
+		description:
+			"Compact structured edit: compose a symbol body from text segments and kept ranges. Use for multi-hunk/preserve-island edits in medium/large symbols.",
+		parameters: Type.Object({
+			...narrowApplyBaseSchema,
+			segments: Type.Array(Type.Record(Type.String({ minLength: 1, maxLength: 64 }), Type.Unknown()), {
+				minItems: 1,
+				maxItems: 32,
+				description: "Segments: {text:string}, {keep:'body'}, or {keep:{beforeKeep?,afterKeep?,includeBefore?,includeAfter?,occurrence?}}.",
+			}),
+		}),
+		execute: async (_tcid: string, params: ComposeBodyParams): Promise<BlitzToolResult> =>
+			executeApplyParams(
+				binary,
+				cwd,
+				toCommonApplyParams(params, "compose_body", { segments: params.segments }),
+			),
 	}) as const;
 
 export const readToolDef = (binary: string, cwd: string) =>

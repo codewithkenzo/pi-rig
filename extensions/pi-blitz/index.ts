@@ -5,10 +5,14 @@ import { fileURLToPath } from "node:url";
 import { loadConfig } from "./src/config.js";
 import {
 	batchToolDef,
+	composeBodyToolDef,
 	doctorToolDef,
 	editToolDef,
+	insertBodySpanToolDef,
 	piBlitzApplyToolDef,
 	readToolDef,
+	replaceBodySpanToolDef,
+	wrapBodyToolDef,
 	renameToolDef,
 	undoToolDef,
 } from "./src/tools.js";
@@ -37,6 +41,10 @@ export default async function piBlitz(pi: ExtensionAPI): Promise<void> {
 	pi.registerTool(editToolDef(binary, cwd));
 	pi.registerTool(batchToolDef(binary, cwd));
 	pi.registerTool(piBlitzApplyToolDef(binary, cwd));
+	pi.registerTool(replaceBodySpanToolDef(binary, cwd));
+	pi.registerTool(insertBodySpanToolDef(binary, cwd));
+	pi.registerTool(wrapBodyToolDef(binary, cwd));
+	pi.registerTool(composeBodyToolDef(binary, cwd));
 	pi.registerTool(renameToolDef(binary, cwd));
 	pi.registerTool(undoToolDef(binary, cwd));
 	pi.registerTool(doctorToolDef(binary, cwd));

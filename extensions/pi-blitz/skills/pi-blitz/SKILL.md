@@ -31,6 +31,10 @@ Use when:
 | `pi_blitz_read` | AST structure summary of a file (imports + L-range definitions). |
 | `pi_blitz_edit` | Single symbol-anchored edit. Exactly one of `after`/`replace`. |
 | `pi_blitz_apply` | Structured v0.2 edit using JSON IR. Choose operation + target + edit object. |
+| `pi_blitz_replace_body_span` | Narrow low-token wrapper for exact in-body replacement. |
+| `pi_blitz_insert_body_span` | Narrow low-token wrapper for body-anchor insertion. |
+| `pi_blitz_wrap_body` | Narrow low-token wrapper for wrapping a large body without repeating it. |
+| `pi_blitz_compose_body` | Narrow low-token wrapper for preserve-island / multi-hunk body composition. |
 | `pi_blitz_batch` | Multiple symbol-anchored edits in one file. |
 | `pi_blitz_rename` | AST-verified rename in one file (skips strings/comments). |
 | `pi_blitz_undo` | Revert the last blitz edit on a file. Requires `confirm: true`. |
@@ -38,7 +42,9 @@ Use when:
 
 ## pi_blitz_apply operation selection
 
-Use `pi_blitz_apply` when edit shape is structured and deterministic:
+Prefer the narrow tools when possible. Use `pi_blitz_apply` only when the narrow tool does not fit or you need the full JSON IR.
+
+Use structured operations when edit shape is deterministic:
 
 - `replace_body_span`:
   - Exact anchor edit inside a symbol body.
@@ -95,6 +101,46 @@ pi_blitz_edit({
 ```
 
 For `replace`, pass only the symbol name in `replace`; the `snippet` is the replacement body. Do not repeat the function signature unless you already have it handy — blitz preserves it automatically. For large unchanged bodies, use `// ... existing code ...` or `// @keep`; never repeat unchanged code.
+
+### Narrow structured examples
+
+### Replace one tail span
+
+```ts
+pi_blitz_replace_body_span({
+  file: "src/logic.ts",
+  symbol: "computeTotal",
+  find: "return subtotal;",
+  replace: "return subtotal + fee;",
+  occurrence: "last",
+});
+```
+
+### Wrap with retry block
+
+```ts
+pi_blitz_wrap_body({
+  file: "src/logic.ts",
+  symbol: "handleRequest",
+  before: "\n  try {",
+  after: "  } catch (error) {\n    logger.error(error);\n    throw error;\n  }\n",
+  indentKeptBodyBy: 2,
+});
+```
+
+### Compose preserved islands
+
+```ts
+pi_blitz_compose_body({
+  file: "src/logic.ts",
+  symbol: "computeTotal",
+  segments: [
+    { keep: { afterKeep: "  let total = seed;", includeAfter: true, occurrence: "only" } },
+    { text: "\n  if (!Number.isFinite(total)) throw new RangeError();\n" },
+    { keep: { beforeKeep: "  return total;", includeBefore: true, occurrence: "last" } },
+  ],
+});
+```
 
 ### Apply JSON examples
 
