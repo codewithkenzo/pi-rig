@@ -175,10 +175,11 @@ const buildFeedViewport = (
 
 const computeWidePaneWidths = (width: number): { left: number; center: number; right: number } => {
 	const separatorWidth = 2;
-	const left = clamp(Math.floor(width * 0.29), 25, 38);
-	const right = clamp(Math.floor(width * 0.3), 28, 42);
-	const center = Math.max(24, width - separatorWidth - left - right);
-	return { left, center, right: Math.max(20, width - separatorWidth - left - center) };
+	const contentWidth = Math.max(0, width - separatorWidth);
+	const left = Math.min(contentWidth, Math.max(0, Math.round(width * 0.29)));
+	const right = Math.min(contentWidth - left, Math.max(0, Math.round(width * 0.31)));
+	const center = Math.max(0, contentWidth - left - right);
+	return { left, center, right };
 };
 
 const buildPaneHeader = (engine: ThemeEngine, title: string, meta: string, width: number): string => {

@@ -153,6 +153,31 @@ const expectExactFrame = (frame: readonly string[], width: number, termRows: num
 	}
 };
 
+const countSeparators = (line: string): number => Array.from(line).filter((char) => char === "│").length;
+
+const paneWidthsFromWideLine = (line: string): { left: number; center: number; right: number } => {
+	const parts = line.split("│");
+	expect(parts).toHaveLength(3);
+	const [left = "", center = "", right = ""] = parts;
+	return {
+		left: visibleWidth(left),
+		center: visibleWidth(center),
+		right: visibleWidth(right),
+	};
+};
+
+const expectWidePaneRatios = (line: string, width: number): void => {
+	expect(countSeparators(line)).toBe(2);
+	const panes = paneWidthsFromWideLine(line);
+	expect(panes.left + panes.center + panes.right + 2).toBe(width);
+	expect(panes.left / width).toBeGreaterThanOrEqual(0.26);
+	expect(panes.left / width).toBeLessThanOrEqual(0.31);
+	expect(panes.center / width).toBeGreaterThanOrEqual(0.37);
+	expect(panes.center / width).toBeLessThanOrEqual(0.44);
+	expect(panes.right / width).toBeGreaterThanOrEqual(0.30);
+	expect(panes.right / width).toBeLessThanOrEqual(0.32);
+};
+
 const makeQueueJobs = (count: number): FlowJob[] =>
 	Array.from({ length: count }, (_, index) =>
 		makeJob({
@@ -600,6 +625,80 @@ describe("renderWideBody — wide 3-region body", () => {
 			expect(line).not.toContain("\t");
 			expect(visibleWidth(line)).toBe(120);
 		}
+	});
+
+	it("keeps wide pane ratios and exact frame width at design breakpoints", () => {
+		const jobs = makeQueueJobs(12);
+		const selected = jobs[6];
+		if (selected === undefined) {
+			throw new Error("missing selected fixture job");
+		}
+		const snapshot = makeQueue(jobs);
+		const railRows = selectQueueRailRows(snapshot, selected.id, 20_000);
+		const activityRows: FlowActivityRow[] = [
+			{ kind: "tool_start", label: "read", text: "inspect deck body", ts: 2_000, tone: "active" },
+			{ kind: "assistant", text: "center stream row", ts: 3_000 },
+		];
+
+		for (const width of [96, 100, 120, 200]) {
+			const layout = computeDeckFrameLayout(40, false);
+			const bodyHeight = layout.columnsHeight + layout.summaryHeight;
+			const body = renderWideBody(
+				mockEngine(),
+				mockPalette(),
+				mockConfig(),
+				railRows,
+				selected,
+				activityRows,
+				0,
+				mockAnimState(),
+				width,
+				bodyHeight,
+			);
+			const frame = renderDeck({
+				job: selected,
+				queue: snapshot,
+				selectedId: selected.id,
+				activityRows,
+				width,
+				termRows: 40,
+			});
+
+			expectExactFrame(frame, width, 40);
+			expect(body).toHaveLength(bodyHeight);
+			for (const line of body) {
+				expect(visibleWidth(line)).toBe(width);
+			}
+			expectWidePaneRatios(body[1] ?? "", width);
+		}
+	});
+
+	it("keeps 30-job wide selected rail strip visible without overflow", () => {
+		const jobs = makeQueueJobs(30);
+		const selected = jobs[29];
+		if (selected === undefined) {
+			throw new Error("missing selected fixture job");
+		}
+		const snapshot = makeQueue(jobs);
+		const frame = renderDeck({
+			job: selected,
+			queue: snapshot,
+			selectedId: selected.id,
+			activityRows: makeActivityRows(18, "wide-selected"),
+			width: 96,
+			termRows: 40,
+		});
+		const selectedLines = frame.filter((line) => line.includes("▎"));
+		const selectedLine = selectedLines[0];
+		if (selectedLine === undefined) {
+			throw new Error("missing selected rail line");
+		}
+
+		expectExactFrame(frame, 96, 40);
+		expect(selectedLines).toHaveLength(1);
+		expect(selectedLine).toContain("30");
+		expect(selectedLine).toContain("PENDING");
+		expect(countSeparators(selectedLine)).toBe(2);
 	});
 
 	it("keeps wide frame exact width and stable height while stream rows append", () => {
