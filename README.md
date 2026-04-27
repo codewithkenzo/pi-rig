@@ -36,6 +36,7 @@ The installer path for getting the published extensions onto a fresh Pi setup.
 |---|---|---|---|---|
 | [Pi Dispatch](https://github.com/codewithkenzo/pi-dispatch) | [`@codewithkenzo/pi-dispatch`](https://www.npmjs.com/package/@codewithkenzo/pi-dispatch) | **Published** | `flow_run`, `flow_batch`, `/flow` | Core execution and queue lane |
 | [Theme Switcher](https://github.com/codewithkenzo/pi-theme-switcher) | [`@codewithkenzo/pi-theme-switcher`](https://www.npmjs.com/package/@codewithkenzo/pi-theme-switcher) | **Published** | `theme_set`, `theme_list`, `theme_preview`, `/theme` | Runtime theming and session restore |
+| [Pi Blitz](https://github.com/codewithkenzo/pi-blitz) | [`@codewithkenzo/pi-blitz`](https://www.npmjs.com/package/@codewithkenzo/pi-blitz) | **Published** | `pi_blitz_*` tools | AST-aware symbol edits through the `blitz` CLI |
 | Gateway Messaging | `@codewithkenzo/pi-gateway-messaging` | Source preview | `gateway_turn_preview`, `/gateway` | Remote turn updates + action routing |
 | Notify Cron | `@codewithkenzo/pi-notify-cron` | Source preview | `notify_cron_*`, `/notify-cron` | Scheduled delivery and lease-aware ticks |
 
@@ -48,8 +49,7 @@ The installer path for getting the published extensions onto a fresh Pi setup.
 | `pi-memory` | Planned | Short/long/last-active memory lanes | selective injection, markdown-first storage |
 | `pi-board` | Planned | Mission/task coordination surface | planned to absorb interactive plan-mode workflow |
 | `pi-voice` | Planned | Voice ingress + transcript workflows | pairs with gateway/remote flows |
-| `pi-diff` | Planned | Structured change/delta workflows | token-efficient review lane |
-| `pi-rollback` | Planned | Safe rollback/recovery workflows | revert/undo safety for risky operations |
+| `pi-rollback` | Deferred | See `pi-rewind` ecosystem plugin + Pi core rollback | revisit only if fastedit-undo integration needs its own plugin |
 
 ### Phase map
 
@@ -77,6 +77,10 @@ pi install npm:@codewithkenzo/pi-dispatch
 
 ```bash
 pi install npm:@codewithkenzo/pi-theme-switcher
+```
+
+```bash
+pi install npm:@codewithkenzo/pi-blitz
 ```
 
 ### Install everything
@@ -107,6 +111,9 @@ bun run setup
 ```bash
 pi install ./extensions/gateway-messaging
 pi install ./extensions/notify-cron
+
+# pi-blitz requires the blitz CLI binary. See https://github.com/codewithkenzo/blitz
+pi install ./extensions/pi-blitz
 ```
 
 </details>
@@ -128,7 +135,8 @@ Install Pi Rig extensions.
 - `pi install npm:@codewithkenzo/pi-dispatch`
 - `pi install npm:@codewithkenzo/pi-theme-switcher`
 - Restart Pi if needed.
-- Verify: `/flow profiles` and `/theme list`
+- Optional: `pi install npm:@codewithkenzo/pi-blitz` after configuring the `blitz` CLI binary
+- Verify: `/flow profiles`, `/theme list`, and `/help` for `pi_blitz_*` tools if installed
 - Report what was installed.
 ````
 

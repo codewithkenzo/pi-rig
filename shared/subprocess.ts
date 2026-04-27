@@ -15,6 +15,10 @@ export interface SpawnOptions {
   env?: Record<string, string>;
   timeoutMs?: number;
   maxOutputBytes?: number;
+  /** Optional input piped to child stdin; stream is closed after write. */
+  stdin?: string | Uint8Array;
+  /** External abort signal; aborts wait + kills subprocess when signaled. */
+  signal?: AbortSignal;
 }
 
 const DEFAULT_MAX_OUTPUT = 256 * 1024; // 256KB
@@ -22,47 +26,93 @@ const DEFAULT_MAX_OUTPUT = 256 * 1024; // 256KB
 /**
  * Runs a command and returns a SpawnResult.
  * Non-zero exit codes do NOT throw — caller decides what to do.
+ *
+ * Supports optional stdin payload and AbortSignal cancellation. Timeout and
+ * external abort both map to exit code 124 (same convention as coreutils `timeout`).
  */
 export const spawnCollect = async (
   argv: string[],
   opts: SpawnOptions = {},
 ): Promise<SpawnResult> => {
-  const { cwd, env, timeoutMs, maxOutputBytes = DEFAULT_MAX_OUTPUT } = opts;
+  const { cwd, env, timeoutMs, maxOutputBytes = DEFAULT_MAX_OUTPUT, stdin, signal } = opts;
   const start = Date.now();
 
   const [cmd, ...args] = argv;
   if (!cmd) throw new Error("spawnCollect: empty argv");
 
-  const proc = Bun.spawn([cmd, ...args], {
-    cwd,
-    env: env ?? (process.env as Record<string, string>),
-    stdout: "pipe",
-    stderr: "pipe",
-  });
+  const hasStdin = stdin !== undefined;
+  const proc = hasStdin
+    ? (cwd !== undefined
+      ? Bun.spawn([cmd, ...args], {
+          cwd,
+          env: env ?? (process.env as Record<string, string>),
+          stdin: "pipe" as const,
+          stdout: "pipe" as const,
+          stderr: "pipe" as const,
+        })
+      : Bun.spawn([cmd, ...args], {
+          env: env ?? (process.env as Record<string, string>),
+          stdin: "pipe" as const,
+          stdout: "pipe" as const,
+          stderr: "pipe" as const,
+        }))
+    : (cwd !== undefined
+      ? Bun.spawn([cmd, ...args], {
+          cwd,
+          env: env ?? (process.env as Record<string, string>),
+          stdout: "pipe" as const,
+          stderr: "pipe" as const,
+        })
+      : Bun.spawn([cmd, ...args], {
+          env: env ?? (process.env as Record<string, string>),
+          stdout: "pipe" as const,
+          stderr: "pipe" as const,
+        }));
+
+  if (hasStdin && typeof (proc as { stdin?: unknown }).stdin === "object") {
+    const writer = (proc as { stdin: { write: (data: string | Uint8Array) => void; end: () => void } }).stdin;
+    try {
+      writer.write(stdin);
+    } finally {
+      writer.end();
+    }
+  }
 
   let aborted = false;
-  const timer = timeoutMs
-    ? setTimeout(() => {
-        aborted = true;
-        proc.kill();
-      }, timeoutMs)
-    : null;
-
-  const [rawOut, rawErr] = await Promise.all([
-    collectStream(proc.stdout, maxOutputBytes),
-    collectStream(proc.stderr, maxOutputBytes),
-  ]);
-
-  if (timer) clearTimeout(timer);
-
-  await proc.exited;
-
-  return {
-    stdout: rawOut,
-    stderr: rawErr,
-    exitCode: aborted ? 124 : (proc.exitCode ?? -1),
-    durationMs: Date.now() - start,
+  const killProc = () => {
+    aborted = true;
+    proc.kill();
   };
+
+  const timer = timeoutMs ? setTimeout(killProc, timeoutMs) : null;
+
+  const onAbort = () => killProc();
+  if (signal) {
+    if (signal.aborted) {
+      killProc();
+    } else {
+      signal.addEventListener("abort", onAbort, { once: true });
+    }
+  }
+
+  try {
+    const [rawOut, rawErr] = await Promise.all([
+      collectStream(proc.stdout, maxOutputBytes),
+      collectStream(proc.stderr, maxOutputBytes),
+    ]);
+
+    await proc.exited;
+
+    return {
+      stdout: rawOut,
+      stderr: rawErr,
+      exitCode: aborted ? 124 : (proc.exitCode ?? -1),
+      durationMs: Date.now() - start,
+    };
+  } finally {
+    if (timer) clearTimeout(timer);
+    if (signal) signal.removeEventListener("abort", onAbort);
+  }
 };
 
 const collectStream = async (

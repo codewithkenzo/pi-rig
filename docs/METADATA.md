@@ -153,9 +153,9 @@ Scheduled notifications for Pi with lease-aware ticks. (Coming soon)
 - add `pi-memory` MVP (short + long memory lanes)
 - add `fs-sandbox` execution isolation plugin
 - add `pi-board` coordination plugin (includes integrated plan-mode UX)
-- add `pi-diff` structured diff plugin
+- add `pi-blitz` AST-aware fast-edit plugin backed by the standalone `blitz` Zig 0.16 CLI (no local model, static binary; absorbs prior `pi-diff` slot)
 - add `pi-voice` voice/transcript plugin
-- draft `pi-rollback` plugin for safe recovery/undo workflows
+- **Deferred**: dedicated `pi-rollback` plugin. Pi core rollback + `pi-rewind` cover the space; revisit only if fastedit-undo integration needs its own surface.
 - ship `/plan` flow in Pi Dispatch as the bridge into pi-board workflow
 - deepen VFS preload + sandbox adapter integration in Pi Dispatch
 - add richer install diagnostics and post-install checks
