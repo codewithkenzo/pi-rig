@@ -60,10 +60,13 @@ type EditMetrics = {
 	symbolBytesAfter: number;
 	snippetBytes: number;
 	blitzPayloadBytes: number;
-	coreEquivalentPayloadBytes: number;
-	estimatedPayloadSavedBytes: number;
-	estimatedPayloadSavedPct: number;
-	estimatedTokensSavedBytesDiv4: number;
+	coreFullSymbolPayloadBytes: number;
+	coreMinimalAnchorPayloadBytes: number;
+	estimatedPayloadSavedBytesVsFullSymbol: number;
+	estimatedPayloadSavedPctVsFullSymbol: number;
+	estimatedPayloadSavedBytesVsMinimalAnchor: number;
+	estimatedPayloadSavedPctVsMinimalAnchor: number;
+	estimatedTokensSavedBytesDiv4VsMinimalAnchor: number;
 	usedMarkers: boolean;
 	wallMs: number;
 };
@@ -72,7 +75,7 @@ const parseEditMetrics = (stdout: string): EditMetrics | undefined => {
 	try {
 		const parsed = JSON.parse(stdout) as Partial<EditMetrics>;
 		if (parsed.status !== "applied" || parsed.command !== "edit") return undefined;
-		if (typeof parsed.estimatedPayloadSavedPct !== "number") return undefined;
+		if (typeof parsed.estimatedPayloadSavedPctVsMinimalAnchor !== "number") return undefined;
 		return parsed as EditMetrics;
 	} catch {
 		return undefined;
@@ -80,8 +83,11 @@ const parseEditMetrics = (stdout: string): EditMetrics | undefined => {
 };
 
 const editMetricsResult = (metrics: EditMetrics): BlitzToolResult => {
-	const pct = metrics.estimatedPayloadSavedPct.toFixed(1);
-	const text = `Applied edit to ${metrics.file}. Payload: blitz ${metrics.blitzPayloadBytes}B vs core-equivalent ${metrics.coreEquivalentPayloadBytes}B. Estimated saved: ${pct}% (~${metrics.estimatedTokensSavedBytesDiv4} tokens by bytes/4). Lane: ${metrics.lane}. CLI wall: ${metrics.wallMs}ms.`;
+	const realisticPct = metrics.estimatedPayloadSavedPctVsMinimalAnchor.toFixed(1);
+	const fullPct = metrics.estimatedPayloadSavedPctVsFullSymbol.toFixed(1);
+	const tokens = metrics.estimatedTokensSavedBytesDiv4VsMinimalAnchor;
+	const verdict = tokens >= 0 ? `saved ~${tokens} tokens` : `cost ~${Math.abs(tokens)} extra tokens`;
+	const text = `Applied edit to ${metrics.file}. Lane: ${metrics.lane}. blitz payload ${metrics.blitzPayloadBytes}B. Core minimal anchor ${metrics.coreMinimalAnchorPayloadBytes}B (${realisticPct}% vs blitz, ${verdict} bytes/4). Core full-symbol upper bound ${metrics.coreFullSymbolPayloadBytes}B (${fullPct}% saved). CLI wall: ${metrics.wallMs}ms.`;
 	return okResult(text, {
 		status: metrics.status,
 		lane: metrics.lane,
@@ -93,10 +99,13 @@ const editMetricsResult = (metrics: EditMetrics): BlitzToolResult => {
 		symbolBytesAfter: metrics.symbolBytesAfter,
 		snippetBytes: metrics.snippetBytes,
 		blitzPayloadBytes: metrics.blitzPayloadBytes,
-		coreEquivalentPayloadBytes: metrics.coreEquivalentPayloadBytes,
-		estimatedPayloadSavedBytes: metrics.estimatedPayloadSavedBytes,
-		estimatedPayloadSavedPct: metrics.estimatedPayloadSavedPct,
-		estimatedTokensSavedBytesDiv4: metrics.estimatedTokensSavedBytesDiv4,
+		coreFullSymbolPayloadBytes: metrics.coreFullSymbolPayloadBytes,
+		coreMinimalAnchorPayloadBytes: metrics.coreMinimalAnchorPayloadBytes,
+		estimatedPayloadSavedBytesVsFullSymbol: metrics.estimatedPayloadSavedBytesVsFullSymbol,
+		estimatedPayloadSavedPctVsFullSymbol: metrics.estimatedPayloadSavedPctVsFullSymbol,
+		estimatedPayloadSavedBytesVsMinimalAnchor: metrics.estimatedPayloadSavedBytesVsMinimalAnchor,
+		estimatedPayloadSavedPctVsMinimalAnchor: metrics.estimatedPayloadSavedPctVsMinimalAnchor,
+		estimatedTokensSavedBytesDiv4VsMinimalAnchor: metrics.estimatedTokensSavedBytesDiv4VsMinimalAnchor,
 		usedMarkers: metrics.usedMarkers,
 		wallMs: metrics.wallMs,
 	});
