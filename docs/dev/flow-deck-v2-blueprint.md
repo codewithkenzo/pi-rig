@@ -334,6 +334,7 @@ Required derived fields:
 - selected job facts rows
 - queue rail rows with title / subtitle / status / preview
 - stream rows for selected job
+- coordinator/detail sections from real `FlowJob` + `FlowActivityJournal` data only
 - overlay footer status text
 - compact HUD-compatible summary line reuse where useful
 
@@ -422,7 +423,15 @@ Writing summary state must show dedicated phase row.
 - if text must truncate, truncate tail, not head
 - empty stream message: muted `Waiting for activity…`
 
-### Summary/output contract
+### Summary/detail contract
+Right/detail panel title should stay close to `DETAIL / SELECTED FLOW` or `COORDINATOR TRUTH / DETAIL` while remaining API-gated.
+
+Allowed sections from current Flow data:
+- `CURRENT STATE`: status/profile/task/model/reasoning/tool count/budget/timestamps from selected `FlowJob`
+- `RECENT SIGNALS / NOTES`: last bounded journal rows plus real `lastProgress`, `lastAssistantText`, and `recentTools`
+- `OUTPUT / SUMMARY`: selected text using summary/output priority below
+- `BUDGET / VERIFICATION`: real envelope budget fields and terminal job status only; no fake lint/test/schema states
+
 Priority:
 1. failed job -> `error`
 2. done job -> `output`

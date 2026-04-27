@@ -218,8 +218,9 @@ export const showFlowDeck = async (
 						}
 
 						const job = selectedJob(state);
+						const allStreamRows = selectStreamRows(journal, job);
 						const streamRows = selectVisibleStreamRows(
-							selectStreamRows(journal, job),
+							allStreamRows,
 							compact ? STREAM_LINES_COMPACT : STREAM_LINES_WIDE,
 							state.streamScroll,
 							state.followMode,
@@ -230,7 +231,7 @@ export const showFlowDeck = async (
 							[
 								...renderHeader(engine, palette, config, state.snapshot, ctx.cwd, animState, width, compact),
 								...renderColumns(engine, palette, config, railRows, job, streamRows, animState, width, compact, layout.columnsHeight),
-								...renderSummary(engine, palette, config, job, state.summaryScroll, width, layout.summaryHeight, animState),
+								...renderSummary(engine, palette, config, job, state.summaryScroll, width, layout.summaryHeight, animState, allStreamRows),
 								...renderFooter(engine, {
 									active_key: state.keyFlash.activeKey,
 									flash_timeout: state.keyFlash.flashTimeout,

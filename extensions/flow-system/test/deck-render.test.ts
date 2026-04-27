@@ -119,7 +119,7 @@ const renderDeck = ({
 		[
 			...renderHeader(engine, palette, config, snapshot, "/home/kenzo/dev/pi-plugins-repo-kenzo-worktrees/flow-deck-v2", mockAnimState(), width, compact),
 			...renderColumns(engine, palette, config, railRows, job, activityRows, mockAnimState(), width, compact, layout.columnsHeight),
-			...renderSummary(engine, palette, config, job, summaryScroll, width, layout.summaryHeight, mockAnimState()),
+			...renderSummary(engine, palette, config, job, summaryScroll, width, layout.summaryHeight, mockAnimState(), activityRows),
 			...renderFooter(engine, keyFlash, snapshot, width, compact, width < 60),
 		],
 		layout.frameHeight,
@@ -271,9 +271,9 @@ describe("renderSummary", () => {
 		const palette = mockPalette();
 		const config = mockConfig();
 		const j = makeJob({ output: "great success" });
-		const lines = renderSummary(engine, palette, config, j, 0, 80, 10, mockAnimState());
+		const lines = renderSummary(engine, palette, config, j, 0, 80, 14, mockAnimState());
 		expect(lines.join("")).toContain("great success");
-		expect(lines).toHaveLength(10);
+		expect(lines).toHaveLength(14);
 	});
 
 	it("renders job error for failed jobs", () => {
@@ -281,9 +281,9 @@ describe("renderSummary", () => {
 		const palette = mockPalette();
 		const config = mockConfig();
 		const j = makeJob({ status: "failed", error: "something broke" });
-		const lines = renderSummary(engine, palette, config, j, 0, 80, 10, mockAnimState());
+		const lines = renderSummary(engine, palette, config, j, 0, 80, 14, mockAnimState());
 		expect(lines.join("")).toContain("something broke");
-		expect(lines).toHaveLength(10);
+		expect(lines).toHaveLength(14);
 	});
 
 	it("sanitizes ANSI from subprocess output", () => {
@@ -291,10 +291,10 @@ describe("renderSummary", () => {
 		const palette = mockPalette();
 		const config = mockConfig();
 		const j = makeJob({ output: "\x1b[31mred text\x1b[0m" });
-		const lines = renderSummary(engine, palette, config, j, 0, 80, 10, mockAnimState());
+		const lines = renderSummary(engine, palette, config, j, 0, 80, 14, mockAnimState());
 		expect(lines.join("")).toContain("red text");
 		expect(lines.join("")).not.toContain("\x1b[31m");
-		expect(lines).toHaveLength(10);
+		expect(lines).toHaveLength(14);
 	});
 
 	it("renders old-format FlowJob (no optional fields) without crash", () => {
@@ -322,6 +322,90 @@ describe("renderSummary", () => {
 		const lines = renderSummary(engine, palette, config, j, 0, 80, 10, mockAnimState());
 		expect(lines.join("")).toContain("explore the codebase");
 		expect(lines).toHaveLength(10);
+	});
+
+	it("renders detail panel scaffold with exact widths and stable rows", () => {
+		const states: Array<{ job: FlowJob | undefined; activityRows: FlowActivityRow[] }> = [
+			{ job: undefined, activityRows: [] },
+			{
+				job: {
+					id: "old-job",
+					profile: "explore",
+					task: "map repo",
+					status: "done",
+					createdAt: 1_000,
+				},
+				activityRows: [],
+			},
+			{
+				job: makeJob({
+					id: "rich-job",
+					profile: "coder",
+					status: "running",
+					startedAt: 2_000,
+					toolCount: 4,
+					lastProgress: "editing detail selector",
+					lastAssistantText: "summary draft",
+					recentTools: ["read", "edit"],
+					envelope: {
+						model: "gpt-5.5",
+						provider: "openai",
+						reasoning: "high",
+						maxIterations: 35,
+						maxToolCalls: 10,
+					},
+				}),
+				activityRows: [{ ts: 2_500, kind: "tool_start", label: "read", text: "inspect", tone: "active" }],
+			},
+			{
+				job: makeJob({ status: "failed", error: "boom" }),
+				activityRows: [{ ts: 2_000, kind: "status", label: "failed", text: "boom", tone: "error" }],
+			},
+			{
+				job: makeJob({ status: "done", output: "long output ".repeat(120) }),
+				activityRows: [],
+			},
+		];
+
+		for (const width of [62, 80, 120]) {
+			const lengths = new Set<number>();
+			for (const state of states) {
+				const lines = renderSummary(
+					mockEngine(),
+					mockPalette(),
+					mockConfig(),
+					state.job,
+					0,
+					width,
+					12,
+					mockAnimState(),
+					state.activityRows,
+				);
+				lengths.add(lines.length);
+				expect(lines).toHaveLength(12);
+				expect(lines.join("\n")).toContain("DETAIL / SELECTED FLOW");
+				for (const line of lines) {
+					expect(visibleWidth(line)).toBe(width);
+				}
+			}
+			expect(lengths.size).toBe(1);
+		}
+	});
+
+	it("does not render future-only fake detail sections", () => {
+		const lines = renderSummary(
+			mockEngine(),
+			mockPalette(),
+			mockConfig(),
+			makeJob({ status: "running", lastProgress: "real progress" }),
+			0,
+			120,
+			18,
+			mockAnimState(),
+			[],
+		);
+		const all = lines.join("\n").toLowerCase();
+		expect(all).not.toMatch(/context packets|artifacts|topology|orchestrator/);
 	});
 });
 

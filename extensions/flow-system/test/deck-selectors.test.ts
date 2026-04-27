@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { selectActivityDisplayRows, selectQueueRailRows } from "../src/deck/selectors.js";
+import { selectActivityDisplayRows, selectCoordinatorDetail, selectQueueRailRows } from "../src/deck/selectors.js";
 import type { FlowActivityRow } from "../src/deck/journal.js";
 import type { FlowJob, FlowQueue } from "../src/types.js";
 
@@ -83,6 +83,93 @@ describe("selectActivityDisplayRows", () => {
 			detail: "task-running",
 			marker: ">",
 		});
+	});
+});
+
+describe("selectCoordinatorDetail", () => {
+	it("handles undefined selected job without future placeholders", () => {
+		const detail = selectCoordinatorDetail(undefined);
+		expect(detail.title).toBe("DETAIL / SELECTED FLOW");
+		expect(detail.sections).toHaveLength(1);
+		expect(detail.sections[0]?.title).toBe("CURRENT STATE");
+		expect(detail.sections[0]?.rows[0]).toEqual({ label: "state", value: "No selected flow job." });
+		expect(JSON.stringify(detail).toLowerCase()).not.toMatch(/context packets|artifacts|topology|orchestrator/);
+	});
+
+	it("handles minimal old FlowJob with task fallback only", () => {
+		const minimal: FlowJob = {
+			id: "old-job",
+			profile: "explore",
+			task: "map the repo",
+			status: "done",
+			createdAt: 1_000,
+		};
+		const detail = selectCoordinatorDetail(minimal, [], { now: 2_000 });
+		const allRows = detail.sections.flatMap((section) => section.rows);
+		expect(detail.selectedId).toBe("old-job");
+		expect(allRows).toContainEqual({ label: "status", value: "done", tone: "success" });
+		expect(allRows).toContainEqual({ label: "profile", value: "explore" });
+		expect(allRows).toContainEqual({ label: "task", value: "map the repo" });
+		expect(allRows).toContainEqual({ label: "source", value: "task" });
+		expect(allRows).toContainEqual({ label: "terminal", value: "done", tone: "success" });
+		expect(allRows.some((row) => row.label === "model")).toBe(false);
+	});
+
+	it("derives rich job state, budget, timestamps, tools, and journal signals", () => {
+		const rich = job("rich", {
+			profile: "coder",
+			agent: "builder",
+			task: "implement detail selector",
+			createdAt: 1_000,
+			startedAt: 2_000,
+			toolCount: 7,
+			lastProgress: "editing summary",
+			lastAssistantText: "selector ready",
+			recentTools: ["read", "edit"],
+			writingSummary: true,
+			summaryPhaseSource: "explicit",
+			envelope: {
+				model: "gpt-5.5",
+				provider: "openai",
+				reasoning: "high",
+				effort: "medium",
+				requestedMaxIterations: 30,
+				maxIterations: 35,
+				maxToolCalls: 12,
+				runtimeWarningMs: 60_000,
+				maxRuntimeMs: 120_000,
+			},
+		});
+		const rows: FlowActivityRow[] = [
+			{ ts: 2_500, kind: "tool_start", label: "read", text: "inspect selectors", tone: "active" },
+			{ ts: 3_000, kind: "tool_end", label: "read", text: "done", tone: "success" },
+		];
+		const detail = selectCoordinatorDetail(rich, rows, { now: 4_000 });
+		const allRows = detail.sections.flatMap((section) => section.rows);
+		expect(allRows).toContainEqual({ label: "model", value: "gpt-5.5@openai" });
+		expect(allRows).toContainEqual({ label: "reasoning", value: "high" });
+		expect(allRows).toContainEqual({ label: "tool count", value: "7" });
+		expect(allRows).toContainEqual({ label: "tools", value: "7/12" });
+		expect(allRows).toContainEqual({ label: "runtime warn", value: "1m" });
+		expect(allRows).toContainEqual({ label: "max runtime", value: "2m" });
+		expect(allRows).toContainEqual({ label: "phase", value: "writing-summary:explicit", tone: "warning" });
+		expect(allRows).toContainEqual({ label: "TOOL CALL", value: "+1s > read: inspect selectors", tone: "active" });
+		expect(allRows).toContainEqual({ label: "TOOL RESULT", value: "+1s + read: done", tone: "success" });
+		expect(allRows).toContainEqual({ label: "recent tools", value: "read, edit" });
+	});
+
+	it("prioritizes error for failed jobs and output for done jobs", () => {
+		const failed = selectCoordinatorDetail(job("failed", { status: "failed", error: "boom", lastAssistantText: "ignored" }));
+		const failedRows = failed.sections.flatMap((section) => section.rows);
+		expect(failedRows).toContainEqual({ label: "source", value: "error" });
+		expect(failedRows).toContainEqual({ label: "text", value: "boom" });
+		expect(failedRows).toContainEqual({ label: "terminal", value: "failed", tone: "error" });
+
+		const done = selectCoordinatorDetail(job("done", { status: "done", output: "shipped", lastAssistantText: "ignored" }));
+		const doneRows = done.sections.flatMap((section) => section.rows);
+		expect(doneRows).toContainEqual({ label: "source", value: "output" });
+		expect(doneRows).toContainEqual({ label: "text", value: "shipped" });
+		expect(doneRows).toContainEqual({ label: "terminal", value: "done", tone: "success" });
 	});
 });
 

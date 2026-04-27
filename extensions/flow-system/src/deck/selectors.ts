@@ -84,6 +84,29 @@ export interface FlowActivityDisplayRow {
 	tone?: FlowActivityDisplayTone;
 }
 
+export interface FlowCoordinatorDetailRow {
+	label: string;
+	value: string;
+	tone?: FlowActivityDisplayTone;
+}
+
+export interface FlowCoordinatorDetailSection {
+	title: string;
+	rows: FlowCoordinatorDetailRow[];
+}
+
+export interface FlowCoordinatorDetail {
+	title: string;
+	selectedId?: string;
+	sections: FlowCoordinatorDetailSection[];
+}
+
+export interface FlowCoordinatorDetailOptions {
+	maxSignals?: number;
+	maxOutputChars?: number;
+	now?: number;
+}
+
 const normalizeCell = (value: string | undefined): string | undefined => {
 	if (value === undefined) {
 		return undefined;
@@ -601,4 +624,177 @@ export const selectSummaryPreview = (job: FlowJob | undefined, maxChars = 120): 
 		return undefined;
 	}
 	return value.length > maxChars ? `${value.slice(0, maxChars)}…` : value;
+};
+
+const appendDetailRow = (
+	rows: FlowCoordinatorDetailRow[],
+	label: string,
+	value: string | number | undefined,
+	tone?: FlowActivityDisplayTone,
+): void => {
+	const normalized = normalizeCell(value === undefined ? undefined : String(value));
+	if (normalized === undefined) {
+		return;
+	}
+	rows.push({
+		label,
+		value: normalized,
+		...(tone !== undefined ? { tone } : {}),
+	});
+};
+
+const formatTimestampValue = (ms: number | undefined): string | undefined => {
+	if (ms === undefined || !Number.isFinite(ms)) {
+		return undefined;
+	}
+	return new Date(ms).toISOString();
+};
+
+const formatRuntimeValue = (job: FlowJob, now: number): string | undefined => {
+	const start = job.startedAt;
+	const end = job.finishedAt ?? (job.status === "running" ? now : undefined);
+	if (start === undefined || end === undefined) {
+		return undefined;
+	}
+	return formatDurationLabel(Math.max(0, end - start));
+};
+
+const modelDetailValue = (job: FlowJob): string | undefined => {
+	const model = normalizeCell(job.envelope?.model) ?? normalizeCell(job.model);
+	const provider = normalizeCell(job.envelope?.provider);
+	if (model === undefined) {
+		return undefined;
+	}
+	return provider !== undefined ? `${model}@${provider}` : model;
+};
+
+const budgetRows = (job: FlowJob): FlowCoordinatorDetailRow[] => {
+	const rows: FlowCoordinatorDetailRow[] = [];
+	const envelope = job.envelope;
+	if (job.toolCount !== undefined || envelope?.maxToolCalls !== undefined) {
+		appendDetailRow(rows, "tools", `${job.toolCount ?? 0}${envelope?.maxToolCalls !== undefined ? `/${envelope.maxToolCalls}` : ""}`);
+	}
+	if (envelope?.requestedMaxIterations !== undefined) {
+		appendDetailRow(rows, "requested iters", envelope.requestedMaxIterations);
+	}
+	if (envelope?.maxIterations !== undefined) {
+		appendDetailRow(rows, "max iters", envelope.maxIterations);
+	}
+	if (envelope?.runtimeWarningMs !== undefined) {
+		appendDetailRow(rows, "runtime warn", formatDurationLabel(envelope.runtimeWarningMs));
+	}
+	if (envelope?.maxRuntimeMs !== undefined) {
+		appendDetailRow(rows, "max runtime", formatDurationLabel(envelope.maxRuntimeMs));
+	}
+	if (job.status === "done" || job.status === "failed" || job.status === "cancelled") {
+		appendDetailRow(rows, "terminal", job.status, job.status === "done" ? "success" : job.status === "failed" ? "error" : "muted");
+	} else {
+		appendDetailRow(rows, "status", job.status, job.status === "running" ? "active" : "muted");
+	}
+	return rows;
+};
+
+const summarySource = (job: FlowJob): string => {
+	if (job.status === "failed") {
+		return job.error !== undefined ? "error" : job.lastAssistantText !== undefined ? "assistant" : job.lastProgress !== undefined ? "progress" : "task";
+	}
+	if (job.status === "done") {
+		return job.output !== undefined ? "output" : job.lastAssistantText !== undefined ? "assistant" : job.lastProgress !== undefined ? "progress" : "task";
+	}
+	if (job.status === "cancelled") {
+		return job.error !== undefined ? "error" : job.lastProgress !== undefined ? "progress" : "status";
+	}
+	return job.lastAssistantText !== undefined
+		? "assistant"
+		: job.output !== undefined
+			? "output"
+			: job.error !== undefined
+				? "error"
+				: job.lastProgress !== undefined
+					? "progress"
+					: "task";
+};
+
+const capDetailText = (text: string, maxChars: number): string => {
+	const normalized = text.trim();
+	return normalized.length > maxChars ? `${normalized.slice(0, maxChars)}…` : normalized;
+};
+
+export const selectCoordinatorDetail = (
+	job: FlowJob | undefined,
+	rows: readonly FlowActivityRow[] = [],
+	options: FlowCoordinatorDetailOptions = {},
+): FlowCoordinatorDetail => {
+	const title = "DETAIL / SELECTED FLOW";
+	if (job === undefined) {
+		return {
+			title,
+			sections: [
+				{
+					title: "CURRENT STATE",
+					rows: [{ label: "state", value: "No selected flow job." }],
+				},
+			],
+		};
+	}
+
+	const now = options.now ?? Date.now();
+	const maxSignals = options.maxSignals ?? 5;
+	const maxOutputChars = options.maxOutputChars ?? 2_000;
+	const sections: FlowCoordinatorDetailSection[] = [];
+
+	const currentRows: FlowCoordinatorDetailRow[] = [];
+	appendDetailRow(currentRows, "status", job.status, job.status === "running" ? "active" : job.status === "done" ? "success" : job.status === "failed" ? "error" : "muted");
+	appendDetailRow(currentRows, "profile", job.profile);
+	appendDetailRow(currentRows, "agent", job.agent);
+	appendDetailRow(currentRows, "task", job.task);
+	appendDetailRow(currentRows, "model", modelDetailValue(job));
+	appendDetailRow(currentRows, "reasoning", job.envelope?.reasoning);
+	appendDetailRow(currentRows, "effort", job.envelope?.effort);
+	appendDetailRow(currentRows, "tool count", job.toolCount);
+	appendDetailRow(currentRows, "created", formatTimestampValue(job.createdAt));
+	appendDetailRow(currentRows, "started", formatTimestampValue(job.startedAt));
+	appendDetailRow(currentRows, "finished", formatTimestampValue(job.finishedAt));
+	appendDetailRow(currentRows, "runtime", formatRuntimeValue(job, now));
+	if (job.writingSummary === true) {
+		appendDetailRow(currentRows, "phase", job.summaryPhaseSource !== undefined ? `writing-summary:${job.summaryPhaseSource}` : "writing-summary", "warning");
+	}
+	sections.push({ title: "CURRENT STATE", rows: currentRows });
+
+	const signalRows: FlowCoordinatorDetailRow[] = [];
+	for (const row of rows.slice(-maxSignals)) {
+		const tone = displayTone(row);
+		const label = activityLabel(row, job);
+		const detail = normalizeActivityDetail(row.text);
+		appendDetailRow(
+			signalRows,
+			activityChip(row),
+			`${activityTimestamp(row.ts, job.startedAt)} ${activityMarker(tone)} ${label}: ${detail}`,
+			tone,
+		);
+	}
+	appendDetailRow(signalRows, "last progress", job.lastProgress, "active");
+	appendDetailRow(signalRows, "assistant", job.lastAssistantText);
+	if (job.recentTools !== undefined && job.recentTools.length > 0) {
+		appendDetailRow(signalRows, "recent tools", job.recentTools.join(", "));
+	}
+	if (signalRows.length > 0) {
+		sections.push({ title: "RECENT SIGNALS / NOTES", rows: signalRows });
+	}
+
+	const outputRows: FlowCoordinatorDetailRow[] = [];
+	appendDetailRow(outputRows, "source", summarySource(job));
+	appendDetailRow(outputRows, "text", capDetailText(selectSummaryText(job), maxOutputChars));
+	sections.push({ title: "OUTPUT / SUMMARY", rows: outputRows });
+
+	const verificationRows = budgetRows(job);
+	if (verificationRows.length > 0) {
+		sections.push({ title: "BUDGET / VERIFICATION", rows: verificationRows });
+	}
+
+	return {
+		title,
+		selectedId: job.id,
+		sections,
+	};
 };
