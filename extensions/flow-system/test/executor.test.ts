@@ -26,21 +26,20 @@ const withProcessArgvBin = async <T>(bin: string, run: () => Promise<T>): Promis
 	}
 };
 
+const makeFakePiScript = async (body: string): Promise<{ tempDir: string; script: string }> => {
+	const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "flow-budget-"));
+	const script = path.join(tempDir, "fake-pi.mjs");
+	await fs.writeFile(script, [`#!/usr/bin/env bun`, body].join("\n"), "utf8");
+	await fs.chmod(script, 0o755);
+	return { tempDir, script };
+};
+
 describe("runSubprocess", () => {
 	it("fails when observed tool calls exceed maxToolCalls", async () => {
-		const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "flow-budget-"));
-		const script = path.join(tempDir, "fake-pi.mjs");
-		await fs.writeFile(
-			script,
-			[
-				"#!/usr/bin/env bun",
-				"console.log(JSON.stringify({ type: 'tool_execution_start', toolName: 'read' }));",
-				"console.log(JSON.stringify({ type: 'tool_execution_start', toolName: 'bash' }));",
-				"setTimeout(() => {}, 5000);",
-			].join("\n"),
-			"utf8",
+		const { tempDir, script } = await makeFakePiScript(
+			["console.log(JSON.stringify({ type: 'tool_execution_start', toolName: 'read' }));", "console.log(JSON.stringify({ type: 'tool_execution_start', toolName: 'bash' }));", "setTimeout(() => {}, 5000);"]
+				.join("\n"),
 		);
-		await fs.chmod(script, 0o755);
 		try {
 			await expect(
 				withProcessArgvBin(script, () =>
@@ -61,6 +60,93 @@ describe("runSubprocess", () => {
 					),
 				),
 			).rejects.toBeInstanceOf(SubprocessError);
+		} finally {
+			await fs.rm(tempDir, { recursive: true, force: true });
+		}
+	});
+
+	it("adds diagnostics when child exits nonzero with empty stderr", async () => {
+		const { tempDir, script } = await makeFakePiScript("process.exit(7);");
+		try {
+			const error = await withProcessArgvBin(script, async () => {
+				try {
+					await Effect.runPromise(
+						runSubprocess(
+							"ignored prompt",
+							PROFILE,
+							undefined,
+							undefined,
+							"low",
+							"opus",
+							"anthropic",
+							tempDir,
+							undefined,
+							undefined,
+							{ summaryIdleMs: 0, streamIdleMs: 0, summaryFinalizeGraceMs: 0 },
+						),
+					);
+					throw new Error("expected SubprocessError");
+				} catch (candidate) {
+					expect(candidate).toBeInstanceOf(SubprocessError);
+					return candidate as SubprocessError;
+				}
+			});
+
+			expect(error.exitCode).toBe(7);
+			expect(error.stderr).toContain("[flow-system] child exited without stderr");
+			expect(error.stderr).toContain("profile: test");
+			expect(error.stderr).toContain("model: anthropic/opus");
+			expect(error.stderr).toContain("provider: anthropic");
+			expect(error.stderr).toContain(`cwd: ${tempDir}`);
+			expect(error.stderr).toContain("command: ");
+			expect(error.stderr).toContain("--thinking low");
+			expect(error.stderr).toContain("[task redacted]");
+			expect(error.stderr).not.toContain("ignored prompt");
+		} finally {
+			await fs.rm(tempDir, { recursive: true, force: true });
+		}
+	});
+
+	it("adds watchdog diagnostics when child stalls without stderr", async () => {
+		const { tempDir, script } = await makeFakePiScript(
+			[
+				"console.log(JSON.stringify({ type: 'tool_execution_start', toolName: 'read' }));",
+				"setTimeout(() => {}, 5000);",
+			].join("\n"),
+		);
+		try {
+			const error = await withProcessArgvBin(script, async () => {
+				try {
+					await Effect.runPromise(
+						runSubprocess(
+							"ignored prompt",
+							PROFILE,
+							undefined,
+							undefined,
+							"low",
+							"opus",
+							"anthropic",
+							tempDir,
+							undefined,
+							undefined,
+							{ streamIdleMs: 100, summaryIdleMs: 0, summaryFinalizeGraceMs: 0 },
+						),
+					);
+					throw new Error("expected SubprocessError");
+				} catch (candidate) {
+					expect(candidate).toBeInstanceOf(SubprocessError);
+					return candidate as SubprocessError;
+				}
+			});
+
+			expect(error.exitCode).not.toBe(0);
+			expect(error.stderr).toContain("[flow-system] child exited without stderr");
+			expect(error.stderr).toContain("watchdog: stream-idle 100ms");
+			expect(error.stderr).toContain("profile: test");
+			expect(error.stderr).toContain("model: anthropic/opus");
+			expect(error.stderr).toContain(`cwd: ${tempDir}`);
+			expect(error.stderr).toContain("last json event: tool_execution_start");
+			expect(error.stderr).toContain("last event: tool_start: read");
 		} finally {
 			await fs.rm(tempDir, { recursive: true, force: true });
 		}

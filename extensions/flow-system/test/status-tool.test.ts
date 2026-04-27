@@ -54,6 +54,34 @@ describe("flow_status tool", () => {
 		expect(result.content[0]?.text).toContain("docs summary complete");
 	});
 
+	it("shows failed job diagnostics in error preview", async () => {
+		const queue = await Effect.runPromise(makeQueue());
+		const job = await Effect.runPromise(queue.enqueue("review", "check failure"));
+		await Effect.runPromise(
+			queue.setStatus(job.id, "failed", {
+				finishedAt: Date.now(),
+				error: [
+					"[flow-system] child exited without stderr",
+					"exitCode: 7",
+					"profile: review",
+					"model: anthropic/opus",
+					"provider: anthropic",
+					"cwd: /tmp/flow-review",
+				].join("\n"),
+				lastProgress: "failed",
+			}),
+		);
+
+		const tool = makeFlowStatusTool(queue);
+		const result = await tool.execute("flow-status-failed", { jobId: job.id }, undefined, undefined, {});
+
+		expect(result.isError ?? false).toBe(true);
+		expect(result.content[0]?.text).toContain("error preview:");
+		expect(result.content[0]?.text).toContain("[flow-system] child exited without stderr");
+		expect(result.content[0]?.text).toContain("exitCode: 7");
+		expect(result.content[0]?.text).toContain("model: anthropic/opus");
+	});
+
 	it("waits for running job to finish and can include full output", async () => {
 		const queue = await Effect.runPromise(makeQueue());
 		const job = await Effect.runPromise(queue.enqueue("explore", "wait for finish"));

@@ -1,9 +1,10 @@
-import { Effect, Exit, Cause } from "effect";
+import { Effect, Exit } from "effect";
 import { spawn } from "node:child_process";
 import * as readline from "node:readline";
 import { stageSkills, writeTempSkillFile, cleanupTempFile } from "./vfs.js";
 import type { FlowProfile, ReasoningLevel } from "./types.js";
 import { FlowCancelledError, SubprocessError, SkillLoadError } from "./types.js";
+import { formatFlowError } from "./errors.js";
 
 const TOOLSET_MAP: Record<string, readonly string[]> = {
 	terminal: ["bash"],
@@ -109,6 +110,34 @@ const FLOW_CANCELLED_REASON = "Flow cancelled.";
 
 const cancelledError = (): FlowCancelledError =>
 	new FlowCancelledError({ reason: FLOW_CANCELLED_REASON });
+
+const DIAGNOSTIC_FIELD_LIMIT = 160;
+const DIAGNOSTIC_TEXT_LIMIT = 1800;
+
+const clipDiagnostic = (value: string | undefined, max = DIAGNOSTIC_FIELD_LIMIT): string | undefined => {
+	if (value === undefined) {
+		return undefined;
+	}
+	const normalized = value.trim();
+	if (normalized.length === 0) {
+		return undefined;
+	}
+	return normalized.length > max ? `${normalized.slice(0, max)}…` : normalized;
+};
+
+const summarizeAssistantEvent = (event: FlowProgressEvent): string => {
+	switch (event._tag) {
+		case "tool_start":
+		case "tool_end":
+			return `${event._tag}: ${event.toolName}${event.detail.length > 0 ? ` · ${clipDiagnostic(event.detail) ?? ""}` : ""}`.trim();
+		case "assistant_text":
+			return `assistant_text: ${clipDiagnostic(event.detail) ?? ""}`.trim();
+		case "summary_state":
+			return event.active ? "summary_state: active" : "summary_state: inactive";
+		case "budget_warning":
+			return `budget_warning: ${clipDiagnostic(event.detail) ?? ""}`.trim();
+	}
+};
 
 // ── Watchdog configuration ────────────────────────────────────────────────────
 
@@ -330,11 +359,13 @@ export const runSubprocess = (
 		const { summaryIdleMs, streamIdleMs, summaryFinalizeGraceMs, maxToolCalls, maxRuntimeMs, runtimeWarningMs } = resolveWatchdog(watchdog);
 		const MAX_STDERR_BYTES = 64 * 1024;
 		const args: string[] = ["--mode", "json", "-p", "--no-session"];
+		const reasoningLevel = reasoning ?? profile.reasoning_level;
+		let resolvedModel: string | undefined;
 
-		args.push("--thinking", reasoning ?? profile.reasoning_level);
+		args.push("--thinking", reasoningLevel);
 
 		if (model !== undefined && model.length > 0) {
-			const resolvedModel =
+			resolvedModel =
 				provider !== undefined && provider.length > 0 && !model.includes("/")
 					? `${provider}/${model}`
 					: model;
@@ -359,9 +390,25 @@ export const runSubprocess = (
 			args.push("--append-system-prompt", systemPrompt);
 		}
 
-		args.push(task);
-
 		const bin = process.argv[1] ?? "pi";
+		const diagnosticCommand = [
+			bin,
+			"--mode json",
+			"-p",
+			"--no-session",
+			`--thinking ${reasoningLevel}`,
+			resolvedModel !== undefined ? `--model ${resolvedModel}` : undefined,
+			resolvedModel === undefined && provider !== undefined && provider.length > 0 ? `--provider ${provider}` : undefined,
+			tools.length > 0 ? `--tools ${tools.join(",")}` : undefined,
+			skillFile !== undefined ? "--append-system-prompt [skill file]" : undefined,
+			profile.system_prompt_prefix !== undefined ? "--system-prompt [redacted]" : undefined,
+			systemPrompt !== undefined && systemPrompt.length > 0 ? "--append-system-prompt [redacted]" : undefined,
+			"[task redacted]",
+		]
+			.filter((part): part is string => part !== undefined)
+			.join(" ");
+
+		args.push(task);
 		let child: ReturnType<typeof spawn> | undefined;
 		let rl: readline.Interface | undefined;
 		let finished = false;
@@ -372,6 +419,8 @@ export const runSubprocess = (
 
 		let lastText = "";
 		let lastAssistantText = "";
+		let lastJsonEventType: string | undefined;
+		let lastEventSummary: string | undefined;
 		let stderrBuf = "";
 		let stderrTruncated = false;
 
@@ -381,6 +430,30 @@ export const runSubprocess = (
 		const startedAt = Date.now();
 		let observedToolCalls = 0;
 		let runtimeWarningEmitted = false;
+
+		const buildFailureStderr = (exitCode: number, signal: string | undefined): string => {
+			if (cappedStderr().trim().length > 0) {
+				return cappedStderr();
+			}
+			const lines: Array<string | undefined> = [
+				"[flow-system] child exited without stderr",
+				`exitCode: ${exitCode}`,
+				signal !== undefined ? `signal: ${signal}` : undefined,
+				`profile: ${profile.name}`,
+				`reasoning: ${reasoningLevel}`,
+				`model: ${resolvedModel ?? "(default)"}`,
+				`provider: ${provider !== undefined && provider.length > 0 ? provider : "(default)"}`,
+				`cwd: ${cwd}`,
+				`command: ${diagnosticCommand}`,
+				watchdogReason !== undefined ? `watchdog: ${watchdogReason}` : undefined,
+				lastJsonEventType !== undefined ? `last json event: ${clipDiagnostic(lastJsonEventType)}` : undefined,
+				lastEventSummary !== undefined ? `last event: ${clipDiagnostic(lastEventSummary)}` : undefined,
+				lastText.length > 0 && lastText !== lastAssistantText ? `last text: ${clipDiagnostic(lastText)}` : undefined,
+				lastAssistantText.length > 0 ? `last assistant text: ${clipDiagnostic(lastAssistantText)}` : undefined,
+			];
+			const text = lines.filter((line): line is string => line !== undefined).join("\n");
+			return text.length > DIAGNOSTIC_TEXT_LIMIT ? `${text.slice(0, DIAGNOSTIC_TEXT_LIMIT)}…` : text;
+		};
 
 		const finish = (effect: Effect.Effect<string, SubprocessError | FlowCancelledError>): void => {
 			if (finished) return;
@@ -472,8 +545,15 @@ export const runSubprocess = (
 				cwd,
 			});
 		} catch (error) {
-			const stderr = error instanceof Error ? error.message : String(error);
-			finish(Effect.fail(new SubprocessError({ exitCode: 1, stderr })));
+			const stderr = error instanceof Error ? error.message.trim() : String(error).trim();
+			finish(
+				Effect.fail(
+					new SubprocessError({
+						exitCode: 1,
+						stderr: stderr.length > 0 ? stderr : buildFailureStderr(1, undefined),
+					}),
+				),
+			);
 			return;
 		}
 
@@ -510,8 +590,14 @@ export const runSubprocess = (
 			lastActivityAt = Date.now();
 			try {
 				const msg: unknown = JSON.parse(line);
+				if (isRecord(msg) && typeof msg["type"] === "string") {
+					lastJsonEventType = msg["type"];
+				}
 				const text = extractText(msg);
-				if (text !== undefined) lastText = text;
+				if (text !== undefined) {
+					lastText = text;
+					lastEventSummary = `text: ${clipDiagnostic(text) ?? ""}`.trim();
+				}
 				const assistantText = extractAssistantMessageText(msg);
 				if (assistantText !== undefined && assistantText.length > 0) {
 					if (assistantText !== lastAssistantText) {
@@ -520,9 +606,11 @@ export const runSubprocess = (
 					} else if (summaryFinalTextAt === undefined) {
 						summaryFinalTextAt = lastActivityAt;
 					}
+					lastEventSummary = `assistant_text: ${clipDiagnostic(assistantText) ?? ""}`.trim();
 				}
 				const progress = extractProgressEvent(msg);
 				if (progress !== undefined) {
+					lastEventSummary = summarizeAssistantEvent(progress);
 					if (progress._tag === "summary_state") {
 						if (progress.active) {
 							if (summaryActiveSince === undefined) {
@@ -574,17 +662,18 @@ export const runSubprocess = (
 				finish(Effect.fail(cancelledError()));
 				return;
 			}
+			const stderr = `${cappedStderr()}\n${error.message}`.trim();
 			finish(
 				Effect.fail(
 					new SubprocessError({
 						exitCode: 1,
-						stderr: `${cappedStderr()}\n${error.message}`.trim(),
+						stderr: stderr.length > 0 ? stderr : buildFailureStderr(1, undefined),
 					}),
 				),
 			);
 		});
 
-		proc.on("close", (code) => {
+		proc.on("close", (code, signal) => {
 			if (cancelled || abortSignal?.aborted || effectSignal.aborted) {
 				finish(Effect.fail(cancelledError()));
 				return;
@@ -601,7 +690,7 @@ export const runSubprocess = (
 					);
 					return;
 				}
-				const watchdogStderr = `${cappedStderr()}\n[flow-system] watchdog: ${watchdogReason}`.trim();
+				const watchdogStderr = buildFailureStderr(code ?? 1, signal ?? undefined);
 				finish(
 					Effect.fail(
 						new SubprocessError({ exitCode: code ?? 1, stderr: watchdogStderr }),
@@ -613,9 +702,10 @@ export const runSubprocess = (
 				const resolved = lastText.length > 0 ? lastText : lastAssistantText;
 				finish(Effect.succeed(resolved));
 			} else {
+				const stderr = buildFailureStderr(code ?? 1, signal ?? undefined);
 				finish(
 					Effect.fail(
-						new SubprocessError({ exitCode: code ?? 1, stderr: cappedStderr() }),
+						new SubprocessError({ exitCode: code ?? 1, stderr }),
 					),
 				);
 			}
@@ -715,6 +805,6 @@ export const executeFlowToText = (opts: ExecuteOptions): Promise<string> =>
 	Effect.runPromiseExit(executeFlow(opts)).then((exit) =>
 		Exit.match(exit, {
 			onSuccess: (text) => text || "(no output)",
-			onFailure: (cause) => `Flow failed: ${Cause.pretty(cause)}`,
+			onFailure: (cause) => `Flow failed: ${formatFlowError(cause)}`,
 		}),
 	);
