@@ -25,11 +25,12 @@ Primary user flow:
 This design supports the planned Team Run model only where APIs and Flow data sources can back the UI. It is not a web dashboard, analytics UI, marketing mockup, or generic card layout.
 
 Primary direction comes from latest mocks:
-- `/tmp/pi-clipboard-769e4fd0-5926-4127-b3b1-630d08b99450.png` — main deck reference
-- `/tmp/clipboard-images/clip_20260424_104359.png` — status-line reference
-- `/tmp/pi-clipboard-e7299c80-9c16-4e1a-b875-adef45e65c1d.png` — status-line variants
+- `docs/media/design/flow-deck-v2/flow-deck-v2-reference-01.png` — main deck reference; supersedes `/tmp/pi-clipboard-769e4fd0-5926-4127-b3b1-630d08b99450.png`
+- `docs/media/design/flow-deck-v2/flow-deck-v2-style-board-01.png` — style board / visual territory; supersedes `/tmp/clipboard-images/clip_20260427_063336.png`
 
-Use the dispatch deck mock as structural reference. Use compact status-line variants as status-line reference.
+Older `/tmp` clipboard refs are superseded by the repo-local assets above.
+
+Use the dispatch deck mock as structural reference. Use the status language described below as status-line reference.
 
 ## API-Gated UI Rules
 

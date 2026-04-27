@@ -86,11 +86,11 @@ full dashboard, web navbar, large cards, rounded SaaS pills only, mobile mockup,
 
 ## Known generated references
 
-Current session memory mentions prior design ref:
-- `/tmp/clipboard-images/clip_20260423_042821.png`
+Current accessible refs:
+- `docs/media/design/flow-deck-v2/flow-deck-v2-reference-01.png`
+- `docs/media/design/flow-deck-v2/flow-deck-v2-style-board-01.png`
 
-That file is no longer present in `/tmp/clipboard-images` after restart. If recovered from clipboard/history, copy it into this folder as:
-- `flow-deck-v2-reference-01.png`
+Older clipboard refs from `/tmp/clipboard-images/clip_20260423_042821.png` are superseded by the repo-local copies above.
 
 Future generated images should be saved here with names:
 - `flow-deck-v2-reference-02.png`
