@@ -9,6 +9,21 @@ export interface PiBlitzDetails {
 	degraded?: boolean;
 	status?: string;
 	parseFallback?: boolean;
+	lane?: string;
+	mode?: string;
+	language?: string;
+	fileBytesBefore?: number;
+	fileBytesAfter?: number;
+	symbolBytesBefore?: number;
+	symbolBytesAfter?: number;
+	snippetBytes?: number;
+	blitzPayloadBytes?: number;
+	coreEquivalentPayloadBytes?: number;
+	estimatedPayloadSavedBytes?: number;
+	estimatedPayloadSavedPct?: number;
+	estimatedTokensSavedBytesDiv4?: number;
+	usedMarkers?: boolean;
+	wallMs?: number;
 }
 
 export interface BlitzToolResult {

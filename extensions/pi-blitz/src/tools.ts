@@ -46,6 +46,62 @@ const okResult = (text: string, details?: BlitzToolResult["details"]): BlitzTool
 	details,
 });
 
+type EditMetrics = {
+	status: "applied";
+	command: "edit";
+	mode: "replace" | "after";
+	lane: "direct" | "marker";
+	language: string;
+	file: string;
+	symbol: string;
+	fileBytesBefore: number;
+	fileBytesAfter: number;
+	symbolBytesBefore: number;
+	symbolBytesAfter: number;
+	snippetBytes: number;
+	blitzPayloadBytes: number;
+	coreEquivalentPayloadBytes: number;
+	estimatedPayloadSavedBytes: number;
+	estimatedPayloadSavedPct: number;
+	estimatedTokensSavedBytesDiv4: number;
+	usedMarkers: boolean;
+	wallMs: number;
+};
+
+const parseEditMetrics = (stdout: string): EditMetrics | undefined => {
+	try {
+		const parsed = JSON.parse(stdout) as Partial<EditMetrics>;
+		if (parsed.status !== "applied" || parsed.command !== "edit") return undefined;
+		if (typeof parsed.estimatedPayloadSavedPct !== "number") return undefined;
+		return parsed as EditMetrics;
+	} catch {
+		return undefined;
+	}
+};
+
+const editMetricsResult = (metrics: EditMetrics): BlitzToolResult => {
+	const pct = metrics.estimatedPayloadSavedPct.toFixed(1);
+	const text = `Applied edit to ${metrics.file}. Payload: blitz ${metrics.blitzPayloadBytes}B vs core-equivalent ${metrics.coreEquivalentPayloadBytes}B. Estimated saved: ${pct}% (~${metrics.estimatedTokensSavedBytesDiv4} tokens by bytes/4). Lane: ${metrics.lane}. CLI wall: ${metrics.wallMs}ms.`;
+	return okResult(text, {
+		status: metrics.status,
+		lane: metrics.lane,
+		mode: metrics.mode,
+		language: metrics.language,
+		fileBytesBefore: metrics.fileBytesBefore,
+		fileBytesAfter: metrics.fileBytesAfter,
+		symbolBytesBefore: metrics.symbolBytesBefore,
+		symbolBytesAfter: metrics.symbolBytesAfter,
+		snippetBytes: metrics.snippetBytes,
+		blitzPayloadBytes: metrics.blitzPayloadBytes,
+		coreEquivalentPayloadBytes: metrics.coreEquivalentPayloadBytes,
+		estimatedPayloadSavedBytes: metrics.estimatedPayloadSavedBytes,
+		estimatedPayloadSavedPct: metrics.estimatedPayloadSavedPct,
+		estimatedTokensSavedBytesDiv4: metrics.estimatedTokensSavedBytesDiv4,
+		usedMarkers: metrics.usedMarkers,
+		wallMs: metrics.wallMs,
+	});
+};
+
 const classifySuccessStdout = (stdout: string): BlitzToolResult["details"] => {
 	if (/^needs_host_merge\b/m.test(stdout) || stdout.trim().startsWith('{"status":"needs_host_merge"')) {
 		return { status: "needs_host_merge", parseFallback: true };
@@ -197,12 +253,15 @@ export const editToolDef = (binary: string, cwd: string) =>
 					"-",
 					hasAfter ? "--after" : "--replace",
 					(hasAfter ? params.after : params.replace)!,
+					"--json",
 				];
 				const res = yield* locks.withLock(
 					abs,
 					runBlitz(binary, argv, { stdin: params.snippet, cwd, timeoutMs: 60_000 }),
 				);
 				if (res.exitCode === 0) {
+					const metrics = parseEditMetrics(res.stdout);
+					if (metrics) return editMetricsResult(metrics);
 					return okResult(res.stdout.trimEnd(), classifySuccessStdout(res.stdout));
 				}
 				const soft = classifySoft(res.stdout, res.stderr);
