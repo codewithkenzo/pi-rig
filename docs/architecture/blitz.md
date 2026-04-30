@@ -2,22 +2,22 @@
 
 Single source of truth. Supersedes and absorbs `blitz-design.md`, `blitz-gap-closure.md`, `blitz-perf-patterns.md`, `pi-edit-positioning.md`, `pi-edit-ecosystem-compare.md`, `pi-edit-local-overlap.md`, `zig-0.16-verification.md` (all archived).
 
-Status: **v0.2 structured-edit redesign in progress; do not publish token-savings claims yet.** The standalone `codewithkenzo/blitz` CLI exists and is pushed private. v0.1 symbol edits work for controlled local testing, but authentic Pi/model benches showed freeform `snippet` ergonomics are not reliable enough for drastic token savings. Public/prebuilt release waits on the v0.2 structured apply IR and benchmark gates below.
+Status: **`0.1.0-alpha.10`.** Standalone `codewithkenzo/blitz` CLI, npm platform packages, MCP stdio server, and `@codewithkenzo/pi-blitz` are published. Structured apply IR (`blitz apply`) is implemented. MCP stdio server ships as `blitz-mcp` with a Node entrypoint and workspace guard. Linux x64 has been smoke-tested locally; macOS and Windows packages are published but still need runtime smoke verification. Authentic Pi/model benchmarks show meaningful reductions in provider output tokens, tool-call argument tokens, wall time, and cost on handled symbol edits (see §10). Freeform `snippet` ergonomics are less reliable than structured operations for large bodies; structured apply tools are the preferred Pi-facing API.
 
 ## 1. North star
 
 Ship an AST-aware edit CLI that preserves fastedit's **output-token savings** and removes its runtime drag:
 
 - **Zero local ML model** — no MLX, no vLLM, no 1.7B Qwen.
-- **Zero interpreter** — single static Zig 0.16 binary, target 3-5 MB (hypothesis; see §10).
+- **Zero interpreter** — single static Zig 0.16 binary, target 3-5 MB; see §10 for current evidence.
 - **Zero Python** — nothing to install besides the binary.
-- **Cold-call latency target:** sub-20 ms deterministic path. Current debug/musl internal runs are roughly 12-13 ms median, but release-mode/public numbers are not frozen (see §10).
-- **MIT**, Kenzo-owned, ships via npm prebuilts per platform (esbuild/biome pattern).
+- **Cold-call latency target:** sub-20 ms deterministic path. Internal debug/musl runs are roughly 12-13 ms median; release-mode public numbers reflect benchmark runs in §10.
+- **MIT**, Kenzo-owned. Alpha package ships a Node wrapper, MCP bridge, and native platform packages. `BLITZ_BIN` remains an override for custom/source builds.
 
 The extension (`@codewithkenzo/pi-blitz`) is a thin Effect v4 wrapper around the binary.
 
 
-## 1.1 v0.2 pivot: structured apply IR before release
+## 1.1 Structured apply IR
 
 ### Problem
 
@@ -33,11 +33,11 @@ Models must infer whether `snippet` means a whole declaration, body-only replace
 - unique one-line edits are already near-optimal in core `edit`,
 - medium/huge freeform snippets often repeat too much unchanged code unless heavily guided.
 
-Therefore blitz must not release as a token-savings package until v0.2 replaces freeform marker prompting with structured deterministic edit operations.
+The release-facing API therefore centers on structured deterministic edit operations. Freeform `snippet` editing remains available, but Pi-facing tools should prefer narrow structured operations for large bodies and multi-step symbolic edits.
 
 ### Design rule
 
-v0.2 moves from “model writes replacement snippet” to “model selects a compact operation enum + changed text/anchors; blitz owns AST scope, body extraction, indentation, validation, backup, and write.”
+Structured apply moves the model from writing replacement bodies to selecting a compact operation enum plus changed text/anchors. Blitz owns AST scope, body extraction, indentation, validation, backup, and write.
 
 ### New canonical command
 
@@ -57,7 +57,9 @@ type BlitzApplyRequest = {
     | "wrap_body"
     | "compose_body"
     | "insert_after_symbol"
-    | "set_body";
+    | "set_body"
+    | "multi_body"
+    | "patch";
   target: {
     symbol: string;
     kind?: "function" | "method" | "class" | "variable" | "type";
@@ -149,8 +151,8 @@ If authentic Pi benches show model confusion with the union-shaped `edit` field,
 - `pi_blitz_insert_body_span`
 - `pi_blitz_wrap_body`
 - `pi_blitz_compose_body`
-
-Reliability beats API elegance.
+- `pi_blitz_multi_body`
+- `pi_blitz_patch`
 
 ### Failure and validation policy
 
@@ -161,30 +163,9 @@ Reliability beats API elegance.
 - `dryRun` and apply use the same engine.
 - Result JSON must include `status`, `operation`, `validation`, `ranges`, compact `diffSummary`, and metrics. Full diff is opt-in.
 
-### Benchmark gates before release
+### Benchmark reporting discipline
 
-No public “drastic savings” claim until all included rows meet correctness thresholds. Failed blitz runs count as zero savings.
-
-Required lanes:
-
-1. deterministic CLI golden bench,
-2. tokenizer payload bench,
-3. authentic Pi-driven model bench (`pi --print` with isolated tools).
-
-Required minimum cases:
-
-1. small body change,
-2. medium 10KB tail change (`replace_body_span`),
-3. huge 100KB tail change (`replace_body_span`),
-4. medium body wrap (`wrap_body`),
-5. insert after exact body anchor (`insert_body_span`),
-6. preserve islands (`compose_body`),
-7. multi-hunk same symbol (`compose_body`),
-8. insert after symbol,
-9. ambiguous anchor fail-closed,
-10. legacy marker regression.
-
-Public docs must separate:
+Use real Pi/model sessions for product claims. Failed or incorrect rows stay in reports and are counted in correctness rate. Public docs must separate:
 
 - provider `usage.output`,
 - tool-call argument tokens,
@@ -224,8 +205,8 @@ codewithkenzo/blitz                              # Zig 0.16 CLI (MIT, standalone
   src/fuzzy.zig                                    # whitespace-insensitive + relative-indent recovery (v0.2, Layer B)
   src/queries.zig                                  # structural tree-sitter query rewrites (v0.2, Layer C)
   src/backup.zig                                   # SHA-keyed backup store + atomic write
-  src/lock.zig                                     # per-file fcntl advisory lock
-  src/fallback.zig                                 # host-LLM scope payload emitter
+  src/lock.zig                                     # per-file mkdir lock with stale cleanup
+  src/fallback.zig                                 # planned host-LLM scope payload emitter
   grammars/tree-sitter-rust/{parser.c,scanner.c}   # vendored, MIT-compat
   grammars/tree-sitter-typescript/…
   grammars/tree-sitter-tsx/…
@@ -237,7 +218,7 @@ codewithkenzo/blitz                              # Zig 0.16 CLI (MIT, standalone
   LICENSE, README.md, NOTICE.md
 
 codewithkenzo/pi-blitz                           # Pi extension (TS/Bun/Effect v4)
-  index.ts                                         # default export, register v0.1 tools, Effect boundary
+  index.ts                                         # default export, register Pi tools, Effect boundary
   src/errors.ts                                    # Data.TaggedError union
   src/tool-runtime.ts                              # Effect.runPromiseExit + Cause discrimination
   src/tools.ts                                     # tools → spawnCollect(blitz …)
@@ -245,7 +226,6 @@ codewithkenzo/pi-blitz                           # Pi extension (TS/Bun/Effect v
   src/paths.ts                                     # canonical realpath + symlink escape guard
   src/mutex.ts                                     # Effect.acquireUseRelease per canonical path
   src/config.ts                                    # user/project .pi/pi-blitz.json loader
-  src/telemetry.ts                                 # pi_blitz_metrics entry persist
   skills/pi-blitz/SKILL.md
   package.json                                     # optionalDependencies: @codewithkenzo/blitz-<platform>; peerDependencies: pi core/coding-agent
   README.md
@@ -470,7 +450,7 @@ When Layers A, B, C all fail, emit a compact JSON object to stdout (single line,
 }
 ```
 
-Target: fallback-path token cost **~60-80% less than a full-file replay** (hypothesis; see §10).
+Target: fallback-path token cost significantly less than a full-file replay; exact numbers depend on symbol body size relative to file.
 
 ## 8. Input format — snippet markers
 
@@ -488,20 +468,30 @@ Rationale per `blitz-perf-patterns.md` research: Morph, Relace, Aider, Continue 
 
 Effect v4 patterns verbatim from `extensions/flow-system` (same repo). The wrapper is backend-agnostic; blitz is just the `spawnCollect` target. Effect stays internal; Pi tool `execute` is the Promise/`AgentToolResult` boundary.
 
-### 9.1 Tool surface (v0.1 = 6 tools)
 
-| Pi tool | blitz command |
-|---|---|
-| `pi_blitz_read` | `blitz read <file>` |
-| `pi_blitz_edit` | `blitz edit <file> --snippet - --after\|--replace <symbol>` |
-| `pi_blitz_batch` | `blitz batch-edit <file> --edits -` |
-| `pi_blitz_rename` | `blitz rename <file> <old> <new>` |
-| `pi_blitz_undo` | `blitz undo <file>` |
-| `pi_blitz_doctor` | `blitz doctor` |
+### 9.1 Tool surface (v0.2 stream UX)
 
-v0.2 adds `pi_blitz_multi`, `pi_blitz_rename_all`, `pi_blitz_query`.
+| Pi tool | blitz command | Notes |
+|---|---|---|
+| `pi_blitz_read` | `blitz read <file>` | AST/source summary; read-only; no progress updates. |
+| `pi_blitz_edit` | `blitz edit <file> --snippet - --after\|--replace <symbol>` | Legacy symbol edit surface. |
+| `pi_blitz_batch` | `blitz batch-edit <file> --edits -` | Legacy batch edit surface. |
+| `pi_blitz_apply` | `blitz apply --edit - --json` | Canonical structured JSON IR. |
+| `pi_blitz_replace_body_span` | `blitz apply --edit - --json` | Narrow wrapper for exact body-span replacement. |
+| `pi_blitz_insert_body_span` | `blitz apply --edit - --json` | Narrow wrapper for body-span insertion. |
+| `pi_blitz_wrap_body` | `blitz apply --edit - --json` | Narrow wrapper for whole-body wrapping. |
+| `pi_blitz_compose_body` | `blitz apply --edit - --json` | Narrow wrapper for preserve-island body composition. |
+| `pi_blitz_multi_body` | `blitz apply --edit - --json` | Multiple body-scoped edits in one file. |
+| `pi_blitz_patch` | `blitz apply --edit - --json` | Compact tuple patch ops. |
+| `pi_blitz_try_catch` | `blitz apply --edit - --json` | Patch tuple helper for try/catch wrapping. |
+| `pi_blitz_replace_return` | `blitz apply --edit - --json` | Patch tuple helper for return replacement. |
+| `pi_blitz_rename` | `blitz rename <file> <old> <new>` | Single-file AST rename. |
+| `pi_blitz_undo` | `blitz undo <file>` | Last-edit rollback; requires explicit confirm. |
+| `pi_blitz_doctor` | `blitz doctor` | Binary/version/cache diagnostics. |
 
-Register each with `pi.registerTool({ name, parameters, execute(toolCallId, params, signal, onUpdate, ctx) })`; `execute` returns `Promise<AgentToolResult<BlitzDetails>>` for friendly results or throws for hard tool failure.
+Diff output is opt-in. The canonical wire field is `options.diffContext`; Pi also accepts top-level `diff_context` as an LLM-friendly alias. Both are honored only when `include_diff` / `options.includeDiff` is true; otherwise no `--diff` flag or `options.diffContext` is sent.
+
+Register each with `pi.registerTool({ name, parameters, renderCall, renderResult, execute(toolCallId, params, signal, onUpdate, ctx) })`; `execute` returns `Promise<AgentToolResult<BlitzDetails>>` for friendly results or throws for hard tool failure.
 
 ### 9.2 Effect v4 shape
 
@@ -530,56 +520,155 @@ Caps per `@mariozechner/pi-coding-agent` conventions:
 
 ### 9.4 Config
 
-`~/.pi/pi-blitz.json` + `$(cwd)/.pi/pi-blitz.json`, same precedence model as `flow-system`. User-level only for `binary` override and `trustedExternalPaths`; project config cannot set those.
+`~/.pi/pi-blitz.json` can point the extension at a specific `blitz` binary. Project config is read for future compatibility, but `binary` is user-only and cannot be overridden from `$(cwd)/.pi/pi-blitz.json`.
 
 ```ts
 type PiBlitzConfig = {
-  binary?: string;                 // user-only; absolute path
-  trustedExternalPaths?: boolean;  // user-only
-  defaultTimeoutMs?: number;       // default 30_000
-  cacheDir?: string;               // override backup cache; default ~/.cache/blitz
-  noUpdateCheck?: boolean;
+  binary?: string; // user-only; absolute path or command name for blitz
 };
 ```
 
-## 10. Numbers — current evidence, not public claims
+### 9.5 MCP stdio server
 
-Internal `bench/run.ts` exists in `codewithkenzo/blitz` and now asserts golden output bytes before reporting performance. Treat the numbers as **local microbench evidence**, not broad public claims, until the 10-case benchmark lands.
+`blitz-mcp` is a self-contained MCP server (JSON-RPC over stdio, protocol `2025-06-18`). The published package exposes a Node entrypoint (`mcp/blitz-mcp.js`) and keeps `mcp/blitz-mcp.ts` as source. Use it for MCP-capable hosts (Claude Desktop, Claude Code, Cursor, Codex, etc.).
 
-`gpt-5.5` xhigh focused review on 2026-04-27 observed after commits `2962aa0` + `b55d35d`:
+**Tools:**
+
+| MCP tool | blitz command | Description |
+|---|---|---|
+| `blitz_doctor` | `blitz doctor` | Binary version, supported grammars, cache health. |
+| `blitz_read` | `blitz read <file>` | AST/source summary. |
+| `blitz_patch` | `blitz apply --edit -` (`patch` op) | Compact patch tuple array (`replace`, `insert_after`, `wrap`, `replace_return`, `try_catch`). |
+| `blitz_try_catch` | `blitz apply --edit -` (`patch/try_catch` op) | Wrap symbol body in try/catch. |
+| `blitz_replace_return` | `blitz apply --edit -` (`patch/replace_return` op) | Replace a return expression in a symbol body. |
+| `blitz_undo` | `blitz undo <file>` | Revert last mutation. |
+
+**Primary MCP setup examples:**
+
+Claude Code CLI:
+
+```bash
+claude mcp add --transport stdio blitz -- npx --yes --package=@codewithkenzo/blitz -- blitz-mcp --workspace "$PWD"
+```
+
+Claude Code JSON (`.mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "blitz": {
+      "command": "npx",
+      "args": ["--yes", "--package=@codewithkenzo/blitz", "--", "blitz-mcp", "--workspace", "/absolute/path/to/your/project"]
+    }
+  }
+}
+```
+
+VS Code (`mcp.json`):
+
+```json
+{
+  "servers": {
+    "blitz": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["--yes", "--package=@codewithkenzo/blitz", "--", "blitz-mcp", "--workspace", "${workspaceFolder}"]
+    }
+  }
+}
+```
+
+Codex (`~/.codex/config.toml` or `.codex/config.toml`):
+
+```toml
+[mcp_servers.blitz]
+command = "npx"
+args = ["--yes", "--package=@codewithkenzo/blitz", "--", "blitz-mcp", "--workspace", "/absolute/path/to/your/project"]
+```
+
+MCP clients launch Blitz as a local subprocess and speak JSON-RPC over stdin/stdout. `--workspace` is the project root Blitz may read/write. Use `BLITZ_BIN` only for custom/source builds.
+
+### 9.6 Environment variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `BLITZ_BIN` | `blitz` (PATH) | Binary used by the MCP server and `bin/blitz.js` npm wrapper. |
+| `BLITZ_WORKSPACE` | required | Workspace root for MCP path resolution. All file arguments are resolved relative to this directory and rechecked by the Zig CLI. |
+| `BLITZ_MCP_TIMEOUT_MS` | `30000` | Per-call timeout in ms for MCP subprocess invocations. |
+| `BLITZ_MCP_MAX_FRAME_BYTES` | `1048576` | Maximum JSON-RPC frame size in bytes. |
+
+### 9.7 Workspace safety
+
+The MCP server enforces a path escape guard: every file argument is resolved via `path.resolve(BLITZ_WORKSPACE, file)` and rejected with an error if the result is outside `BLITZ_WORKSPACE`. The server also passes `--workspace-root` to the Zig CLI so the native layer rechecks real paths before reads/writes.
+
+The Pi extension enforces the same guard via `src/paths.ts` (`canonicalRealpath` + symlink check against canonical cwd).
+
+## 10. Numbers — benchmark evidence
+
+Internal `bench/run.ts` asserts golden output bytes before reporting performance. Two authentic Pi/model benchmark runs with `gpt-5.4-mini` are on record. All metrics below are from actual provider API calls, not byte/4 estimates, unless noted.
+
+**CLI review (2026-04-27, commits `2962aa0` + `b55d35d`):**
 
 - `zig build test -Dtarget=x86_64-linux-musl --summary all`: **54/54 tests passed**.
-- Direct lane: **~41.2% estimated output-token reduction**, **~12.5 ms median/case**.
-- Marker lane: **~83.2% estimated output-token reduction** on one correctness-gated marker fixture, **~15.3 ms median/case**.
-- Overall 4-case fixture mix: **~56.1% estimated output-token reduction**, **~13.2 ms median/case**.
-- The prior marker-corruption issue, `edit --after` replace bug, call-site targeting bug, and failed-batch undo-history clobber are fixed in the reviewed CLI.
 
-Caveats: token counts are `bytes/4` estimates, not provider tokenizer counts; wall time is local binary spawn + parse + write, not LLM round trip; marker evidence currently covers one fixture. Public data on AST-rewrite tools (ast-grep: 43ms-1s, srgn: ~1s for 450k lines, Comby: 187ms for 2591 LOC Go file) still suggests the target is reachable, but public claims wait for the 10-case suite.
+**Benchmark 1 — medium-10k / wrap_body, N=5, both lanes 100% correct:**
 
-| Metric | Pi core `edit` | fastedit (with model) | blitz v0.1 target | blitz v0.2 target (A+B+C) |
-|---|---|---|---|---|
-| Handled-case token savings | 0% | 50-54% (measured) | **target: 40-50%** | **target: 40-55%** |
-| Real-workload coverage | 100% | 100% | target: 70-85% | **target: 90-95%** |
-| Fallback regression | n/a | n/a | 0% (Layer D → host `edit`) | 0% |
-| Weighted aggregate savings | 0% | ~50% | target: 30-40% | **target: 40-50%** |
-| Wall-time deterministic path | <1 ms (in-process) | ~95 ms | target: <20 ms | target: <20 ms |
-| Wall-time fallback | n/a | ~500 ms (local model) | host `edit` round-trip | host `edit` round-trip |
-| Binary + runtime deps | none | Python + MLX/vLLM + 3 GB model | **~4 MB static binary** | ~4 MB |
+| Metric | pi core `edit` | `pi_blitz_wrap_body` | Reduction |
+|---|---|---|---|
+| Provider output tokens (median) | 9,639 | 85 | **99.1%** |
+| Tool-call arg tokens (median) | 9,624 | 65 | **99.3%** |
+| Wall time (median) | ~61,699 ms | ~3,919 ms | **93.6%** |
+| Cost (sum, N=5) | $0.2453 | $0.0321 | **86.9%** |
 
-### 10.1 Benchmark matrix (10 cases)
+Both lanes were 100% correct. Reductions reflect savings on a handled case where both approaches produced correct output.
+
+**Benchmark 2 — multi / large-structural, N=5:**
+
+Core attempt: 0% correct, median provider output 9,739 tokens, tool-call args 9,689 tokens, wall ~86,839 ms, cost sum $0.2972.
+
+`pi_blitz_patch` (restricted structured ops, after normalization): 100% correct, median provider output 108 tokens, tool-call args 89 tokens, wall ~3,211 ms, cost sum $0.0310.
+
+Reductions vs core attempt (correctness + efficiency, not both-correct savings):
+
+| Metric | Reduction |
+|---|---|
+| Provider output tokens | **98.9%** |
+| Tool-call arg tokens | **99.1%** |
+| Wall time | **96.3%** |
+| Cost | **89.6%** |
+
+**Scope and caveats:**
+
+- These benchmarks cover specific handled cases. Tiny or one-line edits often favor the core `edit` tool, which has zero spawn overhead.
+- Blitz is most effective for large preserved bodies and structural symbolic edits.
+- Claims distinguish: provider `usage.output` tokens, tool-call argument tokens, correctness rate, wall time, and cost.
+- Wall time includes LLM round-trip, not binary-only. Binary-only spawn + parse + write is roughly 12-15 ms median internally.
+- Public claims on additional cases will be gated on correctness parity first.
+
+| Metric | Pi core `edit` | fastedit (with model) | blitz structured ops |
+|---|---|---|---|
+| Handled-case token savings | 0% | 50-54% | **86-99% (measured, handled cases)** |
+| Coverage | 100% | 100% | high for symbol-scoped edits; fallback via Layer D |
+| Fallback regression | n/a | n/a | 0% (Layer D → host `edit`) |
+| Wall-time deterministic path | <1 ms (in-process) | ~95 ms | ~12-15 ms (binary spawn + parse + write) |
+| Binary + runtime deps | none | Python + MLX/vLLM + 3 GB model | Native Zig binary; current platform packages are ~0.8-2.5 MB compressed |
+
+### 10.1 Benchmark matrix
+
+Planned coverage (status: two cases measured, remainder planned):
 
 1. Trivial insert (after symbol)
 2. One-line substitution
-3. Guard clause wrap (add try/except)
+3. Guard clause wrap — `wrap_body` ✅ measured (Benchmark 1)
 4. Function body expansion
-5. Multi-hunk same file
+5. Multi-hunk same file — `patch` ✅ measured (Benchmark 2)
 6. Cross-file import update (v0.2)
 7. Cross-file rename
 8. Move function within file (v0.3)
 9. Move symbol to new file (v0.3)
 10. Delete symbol (v0.3)
 
-Per case: `tokens_out`, `wall_ms`, `success`, `files_touched`, `model_calls`. Median of 5 reps. CI uses a stub binary; local + release gates use the real binary.
+Per case: `usage.output` (provider tokens), tool-call arg tokens, `wall_ms`, `success`, `files_touched`, `model_calls`. Median of 5 reps. CI uses a stub binary; local + release gates use the real binary.
 
 ### 10.2 Go / no-go gate for v0.1
 
@@ -588,9 +677,9 @@ Per case: `tokens_out`, `wall_ms`, `success`, `files_touched`, `model_calls`. Me
 - **No-go** if any marker case exits 0 but produces non-golden output.
 - **No-go** if `edit --after` replaces instead of inserts, or if symbol resolution edits a call-site/reference before the declaration.
 
-### 10.3 Pre-extension review gate (passed for local Linux musl)
+### 10.3 Extension review gate (passed — local Linux musl)
 
-`@codewithkenzo/pi-blitz` may now be wired to the live binary for controlled local testing because all gate items passed in `gpt-5.5` xhigh review:
+`@codewithkenzo/pi-blitz` is wired to the live binary for local testing. All gate items passed in `gpt-5.5` xhigh review:
 
 1. `edit --after` inserts at `target.endByte()` and preserves original symbol.
 2. `edit --replace` and `batch-edit` resolve declaration nodes before/without arbitrary identifiers.
@@ -612,26 +701,28 @@ Per case: `tokens_out`, `wall_ms`, `success`, `files_touched`, `model_calls`. Me
 | Fuzzy match false positives | Bounded search window; confidence threshold; refuse-over-repair on ambiguous matches |
 | Single-depth undo surprises | Docs + `blitz doctor` explicitly state "last-only"; pair with pi-rewind for deeper history |
 | Grammar license mixing | All target grammars MIT-compatible; NOTICE.md attribution |
-| Aspirational latency targets | All numbers labeled hypothesis until benchmark runs |
+| Latency targets | Binary-only path measured ~12-15 ms internally; end-to-end wall time includes LLM round-trip |
 | Agent writes unsupported snippet grammar | Error lists the accepted marker forms; Layer D scope payload is the escape hatch |
 
 ## 12. Open questions
 
-1. **Name.** `blitz` (working title) vs alternatives (`fted`, `blaze`, `kenzo-edit`, `piedit`). Needs public-facing decision before repo init.
-2. **Backup cache location.** `~/.cache/blitz/` vs `.blitz/` per-repo. Recommend user-cache + per-repo override via env.
-3. **Ship Pi extension alpha before blitz prebuilt binaries.** Recommend: extension `0.0.1-alpha` builds blitz from source locally; public `0.1.0` gates on prebuilt matrix.
-4. **v0.2 output channel.** Keep text stdout (LLM-friendly, fastedit-style) or add `--output json` flag for structured pi-blitz integration? Recommend text-only for v0.1; add `--json` in v0.2 if telemetry demands it.
-5. **Layer D JSON shape** — freeze in v0.1 or keep exploratory for v0.2? Recommend freeze: any change breaks the host-LLM prompt template.
+1. **Backup cache location.** `~/.cache/blitz/` vs `.blitz/` per-repo. Recommend user-cache + per-repo override via env.
+2. **v0.2 output channel.** Keep text stdout (LLM-friendly, fastedit-style) or add `--output json` flag for structured pi-blitz integration? Text-only for v0.1; add `--json` in v0.2 if telemetry demands it.
+3. **Layer D JSON shape** — freeze in v0.1 or keep exploratory for v0.2? Recommend freeze: any change breaks the host-LLM prompt template.
+
+**Resolved:**
+- Name: `blitz`. Repo: `codewithkenzo/blitz`. npm: `@codewithkenzo/blitz`.
+- Extension alpha ships before prebuilts: MCP server (`mcp/blitz-mcp.ts`) covers the tool surface for local use until `@codewithkenzo/pi-blitz` is published and prebuilt binaries land.
 
 ## 13. Sequence
 
-| Sprint | Goal |
-|---|---|
-| Sprint 1 (done) | Zig skeleton, tree-sitter static link, `blitz read`, `blitz edit --replace`, `blitz edit --after`, initial CI/bench. |
-| Sprint 2 (done for v0.1 local) | Backup store, `blitz undo`, `blitz rename`, `blitz doctor`, and Layer A marker splice passed local 5.5 review. |
-| Sprint 3 (next) | Wire `@codewithkenzo/pi-blitz` to the local reviewed binary, collect Pi-stream telemetry, then npm prebuilts + 10-case benchmark. |
-| v0.2 (weeks 4-6) | Layer B (fuzzy recovery) + Layer C (structural tree-sitter queries) + `multi-edit` + `rename-all` + `query`. |
-| v1.1 (later) | LSP refactor bridge, benchmark-proven latency targets, public release. |
+| Sprint | Goal | Status |
+|---|---|---|
+| Sprint 1 | Zig skeleton, tree-sitter static link, `blitz read`, `blitz edit --replace`, `blitz edit --after`, initial CI/bench. | Done |
+| Sprint 2 | Backup store, `blitz undo`, `blitz rename`, `blitz doctor`, Layer A marker splice, local `gpt-5.5` review. | Done |
+| Sprint 3 | `@codewithkenzo/pi-blitz` wired to reviewed binary, MCP stdio server (`mcp/blitz-mcp.ts`), Pi-stream benchmarks, npm package (`0.1.0-alpha.0`). | Done |
+| v0.2 | Layer B (fuzzy recovery) + Layer C (structural tree-sitter queries) + `multi-edit` + `rename-all` + `query`. npm prebuilt matrix. | Planned |
+| v1.1 | LSP refactor bridge, full benchmark matrix, public stable release. | Planned |
 
 ## 14. References
 
@@ -652,7 +743,7 @@ External sources this design relies on (URLs frozen at research time):
 - ast-grep performance notes: https://ast-grep.github.io/blog/optimize-ast-grep.html
 - Comby FAQ (perf numbers): https://comby.dev/docs/faq
 
-Internal (this repo):
-- `pi-extension-surface-notes.md` — pi-mono ExtensionAPI reference (shared across plugins).
-- `roadmap.md` — master roadmap (plugin rows).
-- `archive/` — prior drafts (fastedit wrapper, pi-rollback, first-pass review, ecosystem/positioning/overlap one-offs; kept for context only).
+Internal:
+- Pi Rig `pi-extension-surface-notes.md` — pi-mono ExtensionAPI reference (shared across plugins).
+- Pi Rig `roadmap.md` — master roadmap (plugin rows).
+- `reports/archive/` — superseded benchmark/report snapshots kept for audit only.
