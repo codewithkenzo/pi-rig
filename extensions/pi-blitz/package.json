@@ -57,10 +57,10 @@
     }
   },
   "optionalDependencies": {
-    "@codewithkenzo/blitz-darwin-arm64": "0.1.0-alpha.0",
-    "@codewithkenzo/blitz-darwin-x64": "0.1.0-alpha.0",
-    "@codewithkenzo/blitz-linux-x64-musl": "0.1.0-alpha.0",
-    "@codewithkenzo/blitz-linux-arm64-musl": "0.1.0-alpha.0",
-    "@codewithkenzo/blitz-windows-x64": "0.1.0-alpha.0"
+    "@codewithkenzo/blitz-darwin-arm64": "0.1.0-alpha.10",
+    "@codewithkenzo/blitz-darwin-x64": "0.1.0-alpha.10",
+    "@codewithkenzo/blitz-linux-x64-musl": "0.1.0-alpha.10",
+    "@codewithkenzo/blitz-linux-arm64-musl": "0.1.0-alpha.10",
+    "@codewithkenzo/blitz-windows-x64": "0.1.0-alpha.10"
   }
 }
