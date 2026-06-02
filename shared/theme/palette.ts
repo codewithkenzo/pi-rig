@@ -27,33 +27,49 @@ export const catppuccinMocha: Palette = {
   description: "Catppuccin Mocha — soothing pastel dark theme",
   source: "pi-theme-switcher",
   semantic: semantic(
-    "#89b4fa",  // accent    → blue
-    "#a6e3a1",  // success   → green
-    "#f38ba8",  // error     → red
-    "#f9e2af",  // warning   → yellow
-    "#6c7086",  // muted     → overlay0
-    "#585b70",  // dim       → surface2
-    "#cdd6f4",  // text      → text
-    "#45475a",  // border    → surface1
-    "#f5c2e7",  // highlight → pink
-    "#89dceb",  // info      → sky
-    "#a6e3a1",  // active    → green
-    "#6c7086",  // inactive  → overlay0
-    "#cba6f7",  // header    → mauve
-    "#b4befe",  // label     → lavender
-    "#cdd6f4",  // value     → text
-    "#313244",  // separator → surface0
-  ),
-  raw: {
-    rosewater: "#f5e0dc", flamingo: "#f2cdcd", pink: "#f5c2e7",
-    mauve: "#cba6f7", red: "#f38ba8", maroon: "#eba0ac",
-    peach: "#fab387", yellow: "#f9e2af", green: "#a6e3a1",
-    teal: "#94e2d5", sky: "#89dceb", sapphire: "#74c7ec",
-    blue: "#89b4fa", lavender: "#b4befe", text: "#cdd6f4",
-    subtext1: "#bac2de", subtext0: "#a6adc8", overlay2: "#9399b2",
-    overlay1: "#7f849c", overlay0: "#6c7086", surface2: "#585b70",
-    surface1: "#45475a", surface0: "#313244", base: "#1e1e2e",
-    mantle: "#181825", crust: "#11111b",
+    "#89b4fa",  // accent
+    "#a6e3a1",  // success
+    "#f38ba8",  // error
+    "#f9e2af",  // warning
+    "#6c7086",  // muted
+    "#1F2027",  // dim
+    "#CCD5F4",  // text
+    "#30323F",  // border
+    "#f5c2e7",  // highlight
+    "#89dceb",  // info
+    "#a6e3a1",  // active
+    "#6c7086",  // inactive
+    "#CAA5F7",  // header
+    "#B4BEFE",  // label
+    "#CCD5F4",  // value
+    "#1B1C26",  // separator
+   {
+    base: "#1e1e2e",
+    blue: "#89b4fa",
+    crust: "#11111b",
+    flamingo: "#f2cdcd",
+    green: "#a6e3a1",
+    lavender: "#b4befe",
+    mantle: "#181825",
+    maroon: "#eba0ac",
+    mauve: "#cba6f7",
+    overlay0: "#6c7086",
+    overlay1: "#7f849c",
+    overlay2: "#9399b2",
+    peach: "#fab387",
+    pink: "#f5c2e7",
+    red: "#f38ba8",
+    rosewater: "#F5E0DC",
+    sapphire: "#74c7ec",
+    sky: "#89dceb",
+    subtext0: "#BFC4D8",
+    subtext1: "#BAC2DE",
+    surface0: "#1B1C26",
+    surface1: "#1C1D25",
+    surface2: "#1D1E25",
+    teal: "#94e2d5",
+    text: "#CCD5F4",
+    yellow: "#f9e2af",
   },
   animations: defaultAnimations,
 };
@@ -64,24 +80,23 @@ export const catppuccinLatte: Palette = {
   description: "Catppuccin Latte — soothing pastel light theme",
   source: "pi-theme-switcher",
   semantic: semantic(
-    "#1e66f5",  // accent    → blue
-    "#40a02b",  // success   → green
-    "#d20f39",  // error     → red
-    "#df8e1d",  // warning   → yellow
-    "#8c8fa1",  // muted     → overlay0
-    "#acb0be",  // dim       → surface2
-    "#4c4f69",  // text
-    "#bcc0cc",  // border    → surface1
-    "#ea76cb",  // highlight → pink
-    "#04a5e5",  // info      → sky
-    "#40a02b",  // active    → green
+    "#6294F8",  // accent
+    "#7AD566",  // success
+    "#F24A6E",  // error
+    "#E8AA53",  // warning
+    "#8c8fa1",  // muted
+    "#1F2128",  // dim
+    "#C9CBD8",  // text
+    "#30343F",  // border
+    "#ea76cb",  // highlight
+    "#5ECFFC",  // info
+    "#8FDC7E",  // active
     "#8c8fa1",  // inactive
-    "#8839ef",  // header    → mauve
-    "#7287fd",  // label     → lavender
-    "#4c4f69",  // value
-    "#dce0e8",  // separator → crust
-  ),
-  raw: {
+    "#C6A0F7",  // header
+    "#7287fd",  // label
+    "#C3C5D4",  // value
+    "#1A1E28",  // separator
+   {
     rosewater: "#dc8a78", flamingo: "#dd7878", pink: "#ea76cb",
     mauve: "#8839ef", red: "#d20f39", maroon: "#e64553",
     peach: "#fe640b", yellow: "#df8e1d", green: "#40a02b",
@@ -97,24 +112,23 @@ export const nord: Palette = {
   description: "Nord — arctic, north-bluish color palette",
   source: "pi-theme-switcher",
   semantic: semantic(
-    "#88c0d0",  // accent    → nord8 (frost)
-    "#a3be8c",  // success   → nord14 (aurora green)
-    "#bf616a",  // error     → nord11 (aurora red)
-    "#ebcb8b",  // warning   → nord13 (aurora yellow)
-    "#4c566a",  // muted     → nord3
-    "#434c5e",  // dim       → nord2
-    "#eceff4",  // text      → nord6
-    "#3b4252",  // border    → nord1
-    "#b48ead",  // highlight → nord15 (aurora purple)
-    "#81a1c1",  // info      → nord9 (frost)
-    "#a3be8c",  // active    → green
-    "#4c566a",  // inactive  → nord3
-    "#5e81ac",  // header    → nord10 (frost)
-    "#81a1c1",  // label     → nord9
-    "#d8dee9",  // value     → nord4
-    "#2e3440",  // separator → nord0
-  ),
-  raw: {
+    "#88c0d0",  // accent
+    "#a3be8c",  // success
+    "#bf616a",  // error
+    "#ebcb8b",  // warning
+    "#6A7894",  // muted
+    "#1D2129",  // dim
+    "#ECEEF3",  // text
+    "#3b4252",  // border
+    "#b48ead",  // highlight
+    "#81a1c1",  // info
+    "#a3be8c",  // active
+    "#6A7894",  // inactive
+    "#B4C5D8",  // header
+    "#9FB7CF",  // label
+    "#D8DEE8",  // value
+    "#1B1F26",  // separator
+   {
     nord0: "#2e3440", nord1: "#3b4252", nord2: "#434c5e", nord3: "#4c566a",
     nord4: "#d8dee9", nord5: "#e5e9f0", nord6: "#eceff4",
     nord7: "#8fbcbb", nord8: "#88c0d0", nord9: "#81a1c1", nord10: "#5e81ac",
@@ -130,24 +144,23 @@ export const dracula: Palette = {
   description: "Dracula — dark theme for code editors and terminals",
   source: "pi-theme-switcher",
   semantic: semantic(
-    "#bd93f9",  // accent    → purple
-    "#50fa7b",  // success   → green
-    "#ff5555",  // error     → red
-    "#f1fa8c",  // warning   → yellow
-    "#6272a4",  // muted     → comment
-    "#44475a",  // dim       → selection
-    "#f8f8f2",  // text      → foreground
-    "#44475a",  // border    → selection
-    "#ff79c6",  // highlight → pink
-    "#8be9fd",  // info      → cyan
-    "#50fa7b",  // active    → green
-    "#6272a4",  // inactive  → comment
-    "#bd93f9",  // header    → purple
-    "#8be9fd",  // label     → cyan
-    "#f8f8f2",  // value
-    "#282a36",  // separator → background
-  ),
-  raw: {
+    "#bd93f9",  // accent
+    "#50fa7b",  // success
+    "#ff5555",  // error
+    "#f1fa8c",  // warning
+    "#6272a4",  // muted
+    "#1E2028",  // dim
+    "#F7F7F2",  // text
+    "#30323F",  // border
+    "#ff79c6",  // highlight
+    "#8be9fd",  // info
+    "#50fa7b",  // active
+    "#6272a4",  // inactive
+    "#BE94F9",  // header
+    "#8AE9FD",  // label
+    "#F7F7F2",  // value
+    "#1C1D26",  // separator
+   {
     background: "#282a36", currentLine: "#44475a", foreground: "#f8f8f2",
     comment: "#6272a4", cyan: "#8be9fd", green: "#50fa7b",
     orange: "#ffb86c", pink: "#ff79c6", purple: "#bd93f9",
@@ -162,24 +175,23 @@ export const tokyoNight: Palette = {
   description: "Tokyo Night — a clean dark theme inspired by Tokyo's night",
   source: "pi-theme-switcher",
   semantic: semantic(
-    "#7aa2f7",  // accent    → blue
-    "#9ece6a",  // success   → green
-    "#f7768e",  // error     → red
-    "#e0af68",  // warning   → yellow
-    "#565f89",  // muted     → comment
-    "#414868",  // dim       → terminal_black
-    "#c0caf5",  // text      → foreground
-    "#414868",  // border
-    "#bb9af7",  // highlight → purple
-    "#7dcfff",  // info      → cyan
-    "#9ece6a",  // active    → green
-    "#565f89",  // inactive  → comment
-    "#bb9af7",  // header    → purple
-    "#7dcfff",  // label     → cyan
-    "#c0caf5",  // value
-    "#1a1b26",  // separator → background
-  ),
-  raw: {
+    "#7aa2f7",  // accent
+    "#9ece6a",  // success
+    "#f7768e",  // error
+    "#e0af68",  // warning
+    "#565f89",  // muted
+    "#1B1E2B",  // dim
+    "#C0CAF5",  // text
+    "#2B2F45",  // border
+    "#bb9af7",  // highlight
+    "#7dcfff",  // info
+    "#9ece6a",  // active
+    "#565f89",  // inactive
+    "#BA99F7",  // header
+    "#7DCEFF",  // label
+    "#C0CAF5",  // value
+    "#1a1b26",  // separator
+   {
     background: "#1a1b26", terminal_black: "#414868",
     foreground: "#c0caf5", comment: "#565f89",
     blue: "#7aa2f7", cyan: "#7dcfff", green: "#9ece6a",
@@ -201,24 +213,23 @@ export const gruvboxDark: Palette = {
   description: "Gruvbox Dark — retro groove color scheme",
   source: "pi-theme-switcher",
   semantic: semantic(
-    "#458588",  // accent    → aqua
-    "#b8bb26",  // success   → green
-    "#cc241d",  // error     → red
-    "#d79921",  // warning   → yellow
-    "#928374",  // muted     → gray
-    "#504945",  // dim       → bg3
-    "#ebdbb2",  // text      → fg
-    "#3c3836",  // border    → bg1
-    "#b16286",  // highlight → purple
-    "#689d6a",  // info      → aqua-dark
-    "#b8bb26",  // active    → green
-    "#928374",  // inactive  → gray
-    "#fabd2f",  // header    → yellow-bright
-    "#83a598",  // label     → blue
-    "#ebdbb2",  // value     → fg
-    "#282828",  // separator → bg0
-  ),
-  raw: {
+    "#92C5C8",  // accent
+    "#DBDE5D",  // success
+    "#E65B55",  // error
+    "#E5B456",  // warning
+    "#928374",  // muted
+    "#262221",  // dim
+    "#ECDCB6",  // text
+    "#3c3836",  // border
+    "#C891AA",  // highlight
+    "#9CBE9D",  // info
+    "#E1E377",  // active
+    "#928374",  // inactive
+    "#FCDC91",  // header
+    "#ACC2BA",  // label
+    "#EBDBB2",  // value
+    "#282828",  // separator
+   {
     bg0: "#282828", bg1: "#3c3836", bg2: "#504945", bg3: "#665c54",
     bg4: "#7c6f64", fg: "#ebdbb2", fg1: "#ebdbb2",
     red: "#cc241d", green: "#98971a", yellow: "#d79921", blue: "#458588",
@@ -237,24 +248,23 @@ export const oneDark: Palette = {
   description: "One Dark — Atom's iconic dark theme",
   source: "pi-theme-switcher",
   semantic: semantic(
-    "#61afef",  // accent    → blue
-    "#98c379",  // success   → green
-    "#e06c75",  // error     → red
-    "#e5c07b",  // warning   → yellow
-    "#5c6370",  // muted     → comment
-    "#3e4452",  // dim       → gutter
-    "#abb2bf",  // text      → fg
-    "#3e4452",  // border
-    "#c678dd",  // highlight → purple
-    "#56b6c2",  // info      → cyan
+    "#61afef",  // accent
+    "#98c379",  // success
+    "#e06c75",  // error
+    "#e5c07b",  // warning
+    "#727B8C",  // muted
+    "#1E2128",  // dim
+    "#CACFD7",  // text
+    "#30343F",  // border
+    "#c678dd",  // highlight
+    "#87CBD3",  // info
     "#98c379",  // active
-    "#5c6370",  // inactive
-    "#c678dd",  // header    → purple
-    "#56b6c2",  // label     → cyan
-    "#abb2bf",  // value
-    "#21252b",  // separator → bg
-  ),
-  raw: {
+    "#727B8C",  // inactive
+    "#D9A5E8",  // header
+    "#96D1D9",  // label
+    "#BFC4CE",  // value
+    "#21252b",  // separator
+   {
     bg: "#21252b", bg2: "#282c34", fg: "#abb2bf",
     red: "#e06c75", orange: "#d19a66", yellow: "#e5c07b",
     green: "#98c379", cyan: "#56b6c2", blue: "#61afef",
@@ -269,24 +279,23 @@ export const solarizedDark: Palette = {
   description: "Solarized Dark — precision colors for machines and people",
   source: "pi-theme-switcher",
   semantic: semantic(
-    "#268bd2",  // accent    → blue
-    "#859900",  // success   → green
-    "#dc322f",  // error     → red
-    "#b58900",  // warning   → yellow
-    "#657b83",  // muted     → base01
-    "#586e75",  // dim       → base00
-    "#839496",  // text      → base0
-    "#073642",  // border    → base02
-    "#d33682",  // highlight → magenta
-    "#2aa198",  // info      → cyan
-    "#859900",  // active
+    "#74B7E5",  // accent
+    "#E5FF3D",  // success
+    "#E35B59",  // error
+    "#FFCF3D",  // warning
+    "#657b83",  // muted
+    "#1E2628",  // dim
+    "#CDD4D4",  // text
+    "#073642",  // border
+    "#E179AB",  // highlight
+    "#7DDDD5",  // info
+    "#E9FF5B",  // active
     "#657b83",  // inactive
-    "#6c71c4",  // header    → violet
-    "#2aa198",  // label     → cyan
-    "#839496",  // value
-    "#002b36",  // separator → base03
-  ),
-  raw: {
+    "#AEB1DE",  // header
+    "#8DE1DB",  // label
+    "#C2CACB",  // value
+    "#002b36",  // separator
+   {
     base03: "#002b36", base02: "#073642", base01: "#586e75",
     base00: "#657b83", base0: "#839496", base1: "#93a1a1",
     base2: "#eee8d5", base3: "#fdf6e3",
@@ -303,12 +312,23 @@ export const solarizedLight: Palette = {
   description: "Solarized Light — the light variant",
   source: "pi-theme-switcher",
   semantic: semantic(
-    "#268bd2", "#859900", "#dc322f", "#b58900",
-    "#93a1a1", "#eee8d5", "#586e75", "#eee8d5",
-    "#d33682", "#2aa198", "#859900", "#93a1a1",
-    "#6c71c4", "#2aa198", "#657b83", "#fdf6e3",
-  ),
-  raw: { ...solarizedDark.raw },
+    "#74B7E5",  // accent
+    "#E5FF3D",  // success
+    "#E35B59",  // error
+    "#FFCF3D",  // warning
+    "#93a1a1",  // muted
+    "#322B14",  // dim
+    "#CAD4D7",  // text
+    "#4F4420",  // border
+    "#E179AB",  // highlight
+    "#7DDDD5",  // info
+    "#E9FF5B",  // active
+    "#93a1a1",  // inactive
+    "#B6B8E1",  // header
+    "#8DE1DB",  // label
+    "#C5CFD2",  // value
+    "#3D2E04",  // separator
+   { accentPrimary: "#8B5CF6", accentSecondary: "#3B82F6", bgDeep: "#0A0A0A", bgOverlay: "#18181B", bgSurface: "#141414", chromeDark: "#27272A", chromeHigh: "#E4E4E7", chromeLow: "#787886", chromeMid: "#A1A1AA", highlight: "#E66565" },
   animations: defaultAnimations,
 };
 
@@ -318,34 +338,33 @@ export const kenzoElectricMidnight: Palette = {
   description: "Electric Midnight — dark chrome with electric purple/blue accents, by Kenzo.",
   source: "pi-theme-switcher",
   semantic: semantic(
-    "#8B5CF6",  // accent    → token accent-primary
-    "#3B82F6",  // success   → token accent-secondary
-    "#DC2626",  // error     → token highlight
-    "#8B5CF6",  // warning   → token accent-primary
-    "#A1A1AA",  // muted     → token chrome-mid
-    "#52525B",  // dim       → token chrome-low
-    "#E4E4E7",  // text      → token chrome-high
-    "#27272A",  // border    → token chrome-dark
-    "#3B82F6",  // highlight → token accent-secondary
-    "#3B82F6",  // info      → token accent-secondary
-    "#8B5CF6",  // active    → token accent-primary
-    "#52525B",  // inactive  → token chrome-low
-    "#E4E4E7",  // header    → token chrome-high
-    "#A1A1AA",  // label     → token chrome-mid
-    "#E4E4E7",  // value     → token chrome-high
-    "#141414",  // separator → token bg-surface
-  ),
-  raw: {
-    bgDeep: "#0A0A0A",
-    bgSurface: "#141414",
-    bgOverlay: "#18181B",
+    "#8B5CF6",  // accent
+    "#3B82F6",  // success
+    "#E45858",  // error
+    "#8B5CF6",  // warning
+    "#A1A1AA",  // muted
+    "#212125",  // dim
+    "#E4E4E7",  // text
+    "#27272A",  // border
+    "#629BF7",  // highlight
+    "#629BF7",  // info
+    "#8B5CF6",  // active
+    "#787886",  // inactive
+    "#E4E4E7",  // header
+    "#B4B4BB",  // label
+    "#E4E4E7",  // value
+    "#141414",  // separator
+   {
     accentPrimary: "#8B5CF6",
     accentSecondary: "#3B82F6",
-    highlight: "#DC2626",
-    chromeHigh: "#E4E4E7",
-    chromeMid: "#A1A1AA",
-    chromeLow: "#52525B",
+    bgDeep: "#0A0A0A",
+    bgOverlay: "#18181B",
+    bgSurface: "#141414",
     chromeDark: "#27272A",
+    chromeHigh: "#E4E4E7",
+    chromeLow: "#787886",
+    chromeMid: "#A1A1AA",
+    highlight: "#E66565",
   },
   animations: {
     runningFrames: ["", "", "", ""],
@@ -366,24 +385,23 @@ export const hermesCadet: Palette = {
   description: "Cadet — black, violet, lime, and soft-white palette (Hermes skin)",
   source: "hermes",
   semantic: semantic(
-    "#7D39EB",  // accent    → ui_accent (violet)
-    "#C6FF33",  // success   → ui_ok (lime)
-    "#FF6B6B",  // error     → ui_error
-    "#C6FF33",  // warning   → ui_warn (lime)
-    "#B794FF",  // muted     → banner_dim
-    "#D9D5E4",  // dim       → status_bar_dim
-    "#F5F4EE",  // text      → banner_text
-    "#7D39EB",  // border    → banner_border (violet)
-    "#C6FF33",  // highlight → banner_accent
-    "#B794FF",  // info      → banner_dim
-    "#C6FF33",  // active    → status_bar_good
-    "#B794FF",  // inactive  → banner_dim
-    "#F5F4EE",  // header    → banner_title
-    "#F5F4EE",  // label     → ui_label
-    "#F5F4EE",  // value     → banner_text
-    "#7D39EB",  // separator → border
-  ),
-  raw: { violet: "#7D39EB", lime: "#C6FF33", softwhite: "#F5F4EE", lavender: "#B794FF" },
+    "#9D6AF0",  // accent
+    "#C6FF33",  // success
+    "#FF6B6B",  // error
+    "#C6FF33",  // warning
+    "#681EFF",  // muted
+    "#201B2B",  // dim
+    "#F5F4ED",  // text
+    "#2D0A65",  // border
+    "#C6FF33",  // highlight
+    "#B794FF",  // info
+    "#C6FF33",  // active
+    "#681EFF",  // inactive
+    "#F5F4ED",  // header
+    "#F5F4ED",  // label
+    "#F5F4ED",  // value
+    "#1A063C",  // separator
+   { violet: "#7D39EB", lime: "#C6FF33", softwhite: "#F5F4EE", lavender: "#B794FF" },
   animations: {
     runningFrames: ["◇", "◈", "◆", "◈"],
     toolFrames:    ["▏", "▎", "▍", "▌", "▍", "▎"],
@@ -404,19 +422,23 @@ export const hermesGrove: Palette = {
     "#E67E80",  // error
     "#E69875",  // warning
     "#859289",  // muted
-    "#414B50",  // dim
-    "#D3C6AA",  // text
-    "#414B50",  // border
-    "#7FBBB3",  // highlight → banner_accent
-    "#A7C080",  // info      → ui_label
+    "#202427",  // dim
+    "#DFD6C2",  // text
+    "#323A3D",  // border
+    "#7FBBB3",  // highlight
+    "#A7C080",  // info
     "#A7C080",  // active
     "#859289",  // inactive
-    "#A7C080",  // header    → banner_title
-    "#A7C080",  // label
-    "#D3C6AA",  // value
-    "#414B50",  // separator
-  ),
-  raw: { teal: "#7FBBB3", green: "#A7C080", red: "#E67E80", orange: "#E69875", sand: "#D3C6AA" },
+    "#CBD9B4",  // header
+    "#BCCF9F",  // label
+    "#D8CDB5",  // value
+    "#1D2224",  // separator
+   {
+    cyan: "#5BB8C4",
+    green: "#99BE8D",
+    parchment: "#D9D4BE",
+    teal: "#81C8CA",
+  },
   animations: { ...defaultAnimations },
 };
 
@@ -426,24 +448,23 @@ export const hermesHyrule: Palette = {
   description: "Hyrule — deep teal and parchment, Legend of Zelda inspired (Hermes skin)",
   source: "hermes",
   semantic: semantic(
-    "#3B8A8C",  // accent
-    "#6B9E5A",  // success
-    "#C47A32",  // error
-    "#D4A843",  // warning
+    "#8CCCCE",  // accent
+    "#90B883",  // success
+    "#D79D64",  // error
+    "#DAB661",  // warning
     "#6E7B8A",  // muted
-    "#2E3B4B",  // dim
-    "#D7D1B9",  // text
+    "#1B222C",  // dim
+    "#DDD8C4",  // text
     "#2E3B4B",  // border
-    "#5BB8C4",  // highlight → banner_title
-    "#5BB8C4",  // info
-    "#6B9E5A",  // active
+    "#86CBD3",  // highlight
+    "#86CBD3",  // info
+    "#A2C397",  // active
     "#6E7B8A",  // inactive
-    "#5BB8C4",  // header
-    "#5BB8C4",  // label
+    "#ACDBE1",  // header
+    "#95D1D9",  // label
     "#D7D1B9",  // value
-    "#2E3B4B",  // separator
-  ),
-  raw: { teal: "#3B8A8C", cyan: "#5BB8C4", green: "#6B9E5A", parchment: "#D7D1B9" },
+    "#192029",  // separator
+   { aqua: "#8ea4a2", green: "#98BB6C", red: "#D47779", steel: "#8ba4b0", violet: "#8992a7" },
   animations: { ...defaultAnimations },
 };
 
@@ -453,24 +474,23 @@ export const hermesKanso: Palette = {
   description: "Kansō Zen — deep dark with muted earth tones (Hermes skin)",
   source: "hermes",
   semantic: semantic(
-    "#8992a7",  // accent    → violet2
-    "#98BB6C",  // success   → green
-    "#C34043",  // error     → red
-    "#DCA561",  // warning   → yellow
-    "#5C6066",  // muted     → gray5
-    "#393B44",  // dim       → zenBg3
-    "#C5C9C7",  // text      → fg
-    "#393B44",  // border    → zenBg3
-    "#8992a7",  // highlight → accent
-    "#8ea4a2",  // info      → aqua
-    "#98BB6C",  // active    → green
-    "#5C6066",  // inactive  → gray5
-    "#C5C9C7",  // header    → fg
-    "#8ea4a2",  // label     → aqua
-    "#8ba4b0",  // value     → blue3
-    "#393B44",  // separator
-  ),
-  raw: { violet: "#8992a7", green: "#98BB6C", red: "#C34043", aqua: "#8ea4a2", steel: "#8ba4b0" },
+    "#A1A8B9",  // accent
+    "#98BB6C",  // success
+    "#D06B6D",  // error
+    "#DCA561",  // warning
+    "#787E86",  // muted
+    "#202126",  // dim
+    "#CFD2D1",  // text
+    "#393B44",  // border
+    "#A1A8B9",  // highlight
+    "#8ea4a2",  // info
+    "#B0CB8F",  // active
+    "#787E86",  // inactive
+    "#C5C9C7",  // header
+    "#AFBFBD",  // label
+    "#BCCAD1",  // value
+    "#1E1F24",  // separator
+   { violet: "#8992a7", green: "#98BB6C", red: "#C34043", aqua: "#8ea4a2", steel: "#8ba4b0" },
   animations: {
     runningFrames: ["∘", "○", "◌", "○"],
     toolFrames:    ["▏", "▎", "▍", "▌", "▍", "▎"],
@@ -486,24 +506,23 @@ export const hermesOrchid: Palette = {
   description: "Orchid — Nord base with orchid purple accents (Hermes skin)",
   source: "hermes",
   semantic: semantic(
-    "#81A1C1",  // accent    → nord frost
-    "#A3BE8C",  // success   → nord green
-    "#E8A4CC",  // error     → orchid pink
-    "#DFCA9A",  // warning   → warm yellow
-    "#4C566A",  // muted     → nord3
-    "#3B4252",  // dim       → nord1
-    "#E5E9F0",  // text      → nord5
-    "#3B4252",  // border    → nord1
-    "#C89BD0",  // highlight → orchid purple
-    "#C89BD0",  // info      → orchid
+    "#81A1C1",  // accent
+    "#A3BE8C",  // success
+    "#E8A4CC",  // error
+    "#DFCA9A",  // warning
+    "#6A7894",  // muted
+    "#1D2129",  // dim
+    "#E5E9F0",  // text
+    "#3B4252",  // border
+    "#C89BD0",  // highlight
+    "#C89BD0",  // info
     "#A3BE8C",  // active
-    "#4C566A",  // inactive
-    "#81A1C1",  // header    → frost
-    "#C89BD0",  // label     → orchid
+    "#6A7894",  // inactive
+    "#B3C6D9",  // header
+    "#C99DD1",  // label
     "#E5E9F0",  // value
-    "#3B4252",  // separator
-  ),
-  raw: { frost: "#81A1C1", orchid: "#C89BD0", green: "#A3BE8C", pink: "#E8A4CC" },
+    "#1B1F26",  // separator
+   { frost: "#81A1C1", orchid: "#C89BD0", green: "#A3BE8C", pink: "#E8A4CC" },
   animations: { ...defaultAnimations },
 };
 
@@ -513,24 +532,23 @@ export const hermesRazr: Palette = {
   description: "Razr — chrome silver with purple and blue glints (Hermes skin)",
   source: "hermes",
   semantic: semantic(
-    "#8E82B0",  // accent    → soft purple
-    "#6DAEC4",  // success   → blue-green
-    "#C47088",  // error     → dusty rose
-    "#9E8CC0",  // warning   → muted purple
+    "#8E82B0",  // accent
+    "#6DAEC4",  // success
+    "#C47088",  // error
+    "#9E8CC0",  // warning
     "#7882A0",  // muted
-    "#7882A0",  // dim
-    "#C8C8CC",  // text
-    "#A8A8A8",  // border
-    "#9B8FBF",  // highlight → banner_accent
-    "#A8A8A8",  // info      → ui_label
-    "#6DAEC4",  // active    → status_bar_good
+    "#1D2029",  // dim
+    "#CFCFD2",  // text
+    "#383838",  // border
+    "#9B8FBF",  // highlight
+    "#A8A8A8",  // info
+    "#8ABED0",  // active
     "#7882A0",  // inactive
-    "#7EB8D4",  // header    → banner_title
-    "#A8A8A8",  // label
+    "#AAD0E2",  // header
+    "#B7B7B7",  // label
     "#C8C8CC",  // value
-    "#7882A0",  // separator
-  ),
-  raw: { chrome: "#C8C8CC", purple: "#8E82B0", blue: "#7EB8D4", silver: "#A8A8A8" },
+    "#1B1E26",  // separator
+   { chrome: "#C8C8CC", purple: "#8E82B0", blue: "#7EB8D4", silver: "#A8A8A8" },
   animations: { ...defaultAnimations },
 };
 
@@ -540,24 +558,23 @@ export const hermesSoho: Palette = {
   description: "Soho — Rosé Pine inspired, lavender and rose (Hermes skin)",
   source: "hermes",
   semantic: semantic(
-    "#C4A7E7",  // accent    → lavender
-    "#9CCFD8",  // success   → foam/cyan
-    "#EB6F92",  // error     → love/rose
-    "#F6C177",  // warning   → gold
+    "#C4A7E7",  // accent
+    "#9CCFD8",  // success
+    "#EB6F92",  // error
+    "#F6C177",  // warning
     "#6E6A86",  // muted
-    "#524F67",  // dim
+    "#201E28",  // dim
     "#E0DEF4",  // text
-    "#524F67",  // border
-    "#C4A7E7",  // highlight → accent
-    "#EA9A97",  // info      → banner_title
-    "#9CCFD8",  // active    → status_bar_good
+    "#32303F",  // border
+    "#C4A7E7",  // highlight
+    "#EA9A97",  // info
+    "#9CCFD8",  // active
     "#6E6A86",  // inactive
-    "#EA9A97",  // header    → banner_title
+    "#ECA4A1",  // header
     "#EA9A97",  // label
     "#E0DEF4",  // value
-    "#524F67",  // separator
-  ),
-  raw: { lavender: "#C4A7E7", rose: "#EB6F92", foam: "#9CCFD8", gold: "#F6C177" },
+    "#1D1C25",  // separator
+   { dark: "#212121", error: "#E0A0A0", light: "#F0F0F0", mid: "#8C8C8C" },
   animations: { ...defaultAnimations },
 };
 
@@ -571,20 +588,19 @@ export const hermesSpike: Palette = {
     "#B0B0B0",  // success
     "#E0A0A0",  // error
     "#D0C090",  // warning
-    "#6A6A6A",  // muted
-    "#5A5A5A",  // dim
+    "#7F7F7F",  // muted
+    "#232323",  // dim
     "#E8E8E8",  // text
-    "#A0A0A0",  // border
+    "#383838",  // border
     "#D0D0D0",  // highlight
     "#E0E0E0",  // info
     "#B0B0B0",  // active
-    "#6A6A6A",  // inactive
+    "#7F7F7F",  // inactive
     "#F0F0F0",  // header
     "#E0E0E0",  // label
     "#E8E8E8",  // value
-    "#5A5A5A",  // separator
-  ),
-  raw: { light: "#F0F0F0", mid: "#D0D0D0", dark: "#6A6A6A", error: "#E0A0A0" },
+    "#212121",  // separator
+   { blue: "#7AA2F7", cyan: "#7DCFFF", green: "#9ECE6A", orange: "#FF9E64", purple: "#BB9AF7", red: "#F7768E" },
   animations: { ...defaultAnimations },
 };
 
@@ -594,24 +610,23 @@ export const hermesStorm: Palette = {
   description: "Tokyo Storm — deep blue night with violet and cyan accents (Hermes skin)",
   source: "hermes",
   semantic: semantic(
-    "#7AA2F7",  // accent    → blue
+    "#7AA2F7",  // accent
     "#9ECE6A",  // success
     "#F7768E",  // error
     "#E0AF68",  // warning
     "#565F89",  // muted
-    "#414868",  // dim
+    "#1B1E2B",  // dim
     "#C0CAF5",  // text
-    "#414868",  // border
-    "#BB9AF7",  // highlight → purple
-    "#7DCFFF",  // info      → cyan
+    "#2B2F45",  // border
+    "#BB9AF7",  // highlight
+    "#7DCFFF",  // info
     "#9ECE6A",  // active
     "#565F89",  // inactive
-    "#BB9AF7",  // header    → purple
-    "#7DCFFF",  // label     → cyan
+    "#BA99F7",  // header
+    "#7DCEFF",  // label
     "#C0CAF5",  // value
-    "#1A1B26",  // separator → bg
-  ),
-  raw: {
+    "#1A1B26",  // separator
+   {
     blue: "#7AA2F7", purple: "#BB9AF7", cyan: "#7DCFFF",
     green: "#9ECE6A", red: "#F7768E", orange: "#FF9E64",
   },
@@ -634,20 +649,19 @@ export const hermesVesper: Palette = {
     "#B8C4B8",  // success
     "#CDACAC",  // error
     "#D4CCB4",  // warning
-    "#515761",  // muted
-    "#3D424A",  // dim
+    "#747C8A",  // muted
+    "#202227",  // dim
     "#F0EFEB",  // text
     "#3D424A",  // border
     "#B4BCC4",  // highlight
     "#B4C4BC",  // info
     "#B8C4B8",  // active
-    "#515761",  // inactive
-    "#B4BCC4",  // header
+    "#747C8A",  // inactive
+    "#C0C6CD",  // header
     "#B4C4BC",  // label
     "#F0EFEB",  // value
-    "#3D424A",  // separator
-  ),
-  raw: { silver: "#B4BCC4", sage: "#B8C4B8", blush: "#CDACAC", linen: "#F0EFEB" },
+    "#1D2024",  // separator
+   { silver: "#B4BCC4", sage: "#B8C4B8", blush: "#CDACAC", linen: "#F0EFEB" },
   animations: {
     runningFrames:   ["·", "∘", "·", "∘"],
     toolFrames:      ["▏", "▏", "▎", "▎", "▍", "▍"],
