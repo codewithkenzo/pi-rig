@@ -43,33 +43,17 @@ export const catppuccinMocha: Palette = {
     "#B4BEFE",  // label
     "#CCD5F4",  // value
     "#1B1C26",  // separator
-   {
-    base: "#1e1e2e",
-    blue: "#89b4fa",
-    crust: "#11111b",
-    flamingo: "#f2cdcd",
-    green: "#a6e3a1",
-    lavender: "#b4befe",
-    mantle: "#181825",
-    maroon: "#eba0ac",
-    mauve: "#cba6f7",
-    overlay0: "#6c7086",
-    overlay1: "#7f849c",
-    overlay2: "#9399b2",
-    peach: "#fab387",
-    pink: "#f5c2e7",
-    red: "#f38ba8",
-    rosewater: "#F5E0DC",
-    sapphire: "#74c7ec",
-    sky: "#89dceb",
-    subtext0: "#BFC4D8",
-    subtext1: "#BAC2DE",
-    surface0: "#1B1C26",
-    surface1: "#1C1D25",
-    surface2: "#1D1E25",
-    teal: "#94e2d5",
-    text: "#CCD5F4",
-    yellow: "#f9e2af",
+  ),
+  raw: {
+    rosewater: "#f5e0dc", flamingo: "#f2cdcd", pink: "#f5c2e7",
+    mauve: "#cba6f7", red: "#f38ba8", maroon: "#eba0ac",
+    peach: "#fab387", yellow: "#f9e2af", green: "#a6e3a1",
+    teal: "#94e2d5", sky: "#89dceb", sapphire: "#74c7ec",
+    blue: "#89b4fa", lavender: "#b4befe", text: "#cdd6f4",
+    subtext1: "#bac2de", subtext0: "#a6adc8", overlay2: "#9399b2",
+    overlay1: "#7f849c", overlay0: "#6c7086", surface2: "#585b70",
+    surface1: "#45475a", surface0: "#313244", base: "#1e1e2e",
+    mantle: "#181825", crust: "#11111b",
   },
   animations: defaultAnimations,
 };
@@ -96,7 +80,8 @@ export const catppuccinLatte: Palette = {
     "#7287fd",  // label
     "#C3C5D4",  // value
     "#1A1E28",  // separator
-   {
+  ),
+  raw: {
     rosewater: "#dc8a78", flamingo: "#dd7878", pink: "#ea76cb",
     mauve: "#8839ef", red: "#d20f39", maroon: "#e64553",
     peach: "#fe640b", yellow: "#df8e1d", green: "#40a02b",
@@ -128,7 +113,8 @@ export const nord: Palette = {
     "#9FB7CF",  // label
     "#D8DEE8",  // value
     "#1B1F26",  // separator
-   {
+  ),
+  raw: {
     nord0: "#2e3440", nord1: "#3b4252", nord2: "#434c5e", nord3: "#4c566a",
     nord4: "#d8dee9", nord5: "#e5e9f0", nord6: "#eceff4",
     nord7: "#8fbcbb", nord8: "#88c0d0", nord9: "#81a1c1", nord10: "#5e81ac",
@@ -160,7 +146,8 @@ export const dracula: Palette = {
     "#8AE9FD",  // label
     "#F7F7F2",  // value
     "#1C1D26",  // separator
-   {
+  ),
+  raw: {
     background: "#282a36", currentLine: "#44475a", foreground: "#f8f8f2",
     comment: "#6272a4", cyan: "#8be9fd", green: "#50fa7b",
     orange: "#ffb86c", pink: "#ff79c6", purple: "#bd93f9",
@@ -191,7 +178,8 @@ export const tokyoNight: Palette = {
     "#7DCEFF",  // label
     "#C0CAF5",  // value
     "#1a1b26",  // separator
-   {
+  ),
+  raw: {
     background: "#1a1b26", terminal_black: "#414868",
     foreground: "#c0caf5", comment: "#565f89",
     blue: "#7aa2f7", cyan: "#7dcfff", green: "#9ece6a",
@@ -229,7 +217,8 @@ export const gruvboxDark: Palette = {
     "#ACC2BA",  // label
     "#EBDBB2",  // value
     "#282828",  // separator
-   {
+  ),
+  raw: {
     bg0: "#282828", bg1: "#3c3836", bg2: "#504945", bg3: "#665c54",
     bg4: "#7c6f64", fg: "#ebdbb2", fg1: "#ebdbb2",
     red: "#cc241d", green: "#98971a", yellow: "#d79921", blue: "#458588",
@@ -264,7 +253,8 @@ export const oneDark: Palette = {
     "#96D1D9",  // label
     "#BFC4CE",  // value
     "#21252b",  // separator
-   {
+  ),
+  raw: {
     bg: "#21252b", bg2: "#282c34", fg: "#abb2bf",
     red: "#e06c75", orange: "#d19a66", yellow: "#e5c07b",
     green: "#98c379", cyan: "#56b6c2", blue: "#61afef",
@@ -295,7 +285,8 @@ export const solarizedDark: Palette = {
     "#8DE1DB",  // label
     "#C2CACB",  // value
     "#002b36",  // separator
-   {
+  ),
+  raw: {
     base03: "#002b36", base02: "#073642", base01: "#586e75",
     base00: "#657b83", base0: "#839496", base1: "#93a1a1",
     base2: "#eee8d5", base3: "#fdf6e3",
@@ -328,7 +319,8 @@ export const solarizedLight: Palette = {
     "#8DE1DB",  // label
     "#C5CFD2",  // value
     "#3D2E04",  // separator
-   { accentPrimary: "#8B5CF6", accentSecondary: "#3B82F6", bgDeep: "#0A0A0A", bgOverlay: "#18181B", bgSurface: "#141414", chromeDark: "#27272A", chromeHigh: "#E4E4E7", chromeLow: "#787886", chromeMid: "#A1A1AA", highlight: "#E66565" },
+  ),
+  raw: { ...solarizedDark.raw },
   animations: defaultAnimations,
 };
 
@@ -354,17 +346,18 @@ export const kenzoElectricMidnight: Palette = {
     "#B4B4BB",  // label
     "#E4E4E7",  // value
     "#141414",  // separator
-   {
+  ),
+  raw: {
+    bgDeep: "#0A0A0A",
+    bgSurface: "#141414",
+    bgOverlay: "#18181B",
     accentPrimary: "#8B5CF6",
     accentSecondary: "#3B82F6",
-    bgDeep: "#0A0A0A",
-    bgOverlay: "#18181B",
-    bgSurface: "#141414",
-    chromeDark: "#27272A",
+    highlight: "#DC2626",
     chromeHigh: "#E4E4E7",
-    chromeLow: "#787886",
     chromeMid: "#A1A1AA",
-    highlight: "#E66565",
+    chromeLow: "#52525B",
+    chromeDark: "#27272A",
   },
   animations: {
     runningFrames: ["", "", "", ""],
@@ -401,7 +394,8 @@ export const hermesCadet: Palette = {
     "#F5F4ED",  // label
     "#F5F4ED",  // value
     "#1A063C",  // separator
-   { violet: "#7D39EB", lime: "#C6FF33", softwhite: "#F5F4EE", lavender: "#B794FF" },
+  ),
+  raw: { violet: "#7D39EB", lime: "#C6FF33", softwhite: "#F5F4EE", lavender: "#B794FF" },
   animations: {
     runningFrames: ["◇", "◈", "◆", "◈"],
     toolFrames:    ["▏", "▎", "▍", "▌", "▍", "▎"],
@@ -433,12 +427,8 @@ export const hermesGrove: Palette = {
     "#BCCF9F",  // label
     "#D8CDB5",  // value
     "#1D2224",  // separator
-   {
-    cyan: "#5BB8C4",
-    green: "#99BE8D",
-    parchment: "#D9D4BE",
-    teal: "#81C8CA",
-  },
+  ),
+  raw: { teal: "#7FBBB3", green: "#A7C080", red: "#E67E80", orange: "#E69875", sand: "#D3C6AA" },
   animations: { ...defaultAnimations },
 };
 
@@ -464,7 +454,8 @@ export const hermesHyrule: Palette = {
     "#95D1D9",  // label
     "#D7D1B9",  // value
     "#192029",  // separator
-   { aqua: "#8ea4a2", green: "#98BB6C", red: "#D47779", steel: "#8ba4b0", violet: "#8992a7" },
+  ),
+  raw: { teal: "#3B8A8C", cyan: "#5BB8C4", green: "#6B9E5A", parchment: "#D7D1B9" },
   animations: { ...defaultAnimations },
 };
 
@@ -490,7 +481,8 @@ export const hermesKanso: Palette = {
     "#AFBFBD",  // label
     "#BCCAD1",  // value
     "#1E1F24",  // separator
-   { violet: "#8992a7", green: "#98BB6C", red: "#C34043", aqua: "#8ea4a2", steel: "#8ba4b0" },
+  ),
+  raw: { violet: "#8992a7", green: "#98BB6C", red: "#C34043", aqua: "#8ea4a2", steel: "#8ba4b0" },
   animations: {
     runningFrames: ["∘", "○", "◌", "○"],
     toolFrames:    ["▏", "▎", "▍", "▌", "▍", "▎"],
@@ -522,7 +514,8 @@ export const hermesOrchid: Palette = {
     "#C99DD1",  // label
     "#E5E9F0",  // value
     "#1B1F26",  // separator
-   { frost: "#81A1C1", orchid: "#C89BD0", green: "#A3BE8C", pink: "#E8A4CC" },
+  ),
+  raw: { frost: "#81A1C1", orchid: "#C89BD0", green: "#A3BE8C", pink: "#E8A4CC" },
   animations: { ...defaultAnimations },
 };
 
@@ -548,7 +541,8 @@ export const hermesRazr: Palette = {
     "#B7B7B7",  // label
     "#C8C8CC",  // value
     "#1B1E26",  // separator
-   { chrome: "#C8C8CC", purple: "#8E82B0", blue: "#7EB8D4", silver: "#A8A8A8" },
+  ),
+  raw: { chrome: "#C8C8CC", purple: "#8E82B0", blue: "#7EB8D4", silver: "#A8A8A8" },
   animations: { ...defaultAnimations },
 };
 
@@ -574,7 +568,8 @@ export const hermesSoho: Palette = {
     "#EA9A97",  // label
     "#E0DEF4",  // value
     "#1D1C25",  // separator
-   { dark: "#212121", error: "#E0A0A0", light: "#F0F0F0", mid: "#8C8C8C" },
+  ),
+  raw: { lavender: "#C4A7E7", rose: "#EB6F92", foam: "#9CCFD8", gold: "#F6C177" },
   animations: { ...defaultAnimations },
 };
 
@@ -600,7 +595,8 @@ export const hermesSpike: Palette = {
     "#E0E0E0",  // label
     "#E8E8E8",  // value
     "#212121",  // separator
-   { blue: "#7AA2F7", cyan: "#7DCFFF", green: "#9ECE6A", orange: "#FF9E64", purple: "#BB9AF7", red: "#F7768E" },
+  ),
+  raw: { light: "#F0F0F0", mid: "#D0D0D0", dark: "#6A6A6A", error: "#E0A0A0" },
   animations: { ...defaultAnimations },
 };
 
@@ -626,7 +622,8 @@ export const hermesStorm: Palette = {
     "#7DCEFF",  // label
     "#C0CAF5",  // value
     "#1A1B26",  // separator
-   {
+  ),
+  raw: {
     blue: "#7AA2F7", purple: "#BB9AF7", cyan: "#7DCFFF",
     green: "#9ECE6A", red: "#F7768E", orange: "#FF9E64",
   },
@@ -661,7 +658,8 @@ export const hermesVesper: Palette = {
     "#B4C4BC",  // label
     "#F0EFEB",  // value
     "#1D2024",  // separator
-   { silver: "#B4BCC4", sage: "#B8C4B8", blush: "#CDACAC", linen: "#F0EFEB" },
+  ),
+  raw: { silver: "#B4BCC4", sage: "#B8C4B8", blush: "#CDACAC", linen: "#F0EFEB" },
   animations: {
     runningFrames:   ["·", "∘", "·", "∘"],
     toolFrames:      ["▏", "▏", "▎", "▎", "▍", "▍"],
