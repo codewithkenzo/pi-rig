@@ -455,7 +455,13 @@ export const hermesHyrule: Palette = {
     "#D7D1B9",  // value
     "#192029",  // separator
   ),
-  raw: { teal: "#3B8A8C", cyan: "#5BB8C4", green: "#6B9E5A", parchment: "#D7D1B9" },
+  raw: {
+    background: "#111820",
+    teal: "#3B8A8C",
+    cyan: "#5BB8C4",
+    green: "#6B9E5A",
+    parchment: "#D7D1B9",
+  },
   animations: { ...defaultAnimations },
 };
 

@@ -187,6 +187,70 @@ const blendHex = (base: string, overlay: string, amount: number): string => {
 	);
 };
 
+const relativeLuminance = (hex: string): number => {
+	const [red, green, blue] = hexToRgb(hex).map((channel) => {
+		const normalized = channel / 255;
+		return normalized <= 0.03928
+			? normalized / 12.92
+			: ((normalized + 0.055) / 1.055) ** 2.4;
+	}) as [number, number, number];
+
+	return red * 0.2126 + green * 0.7152 + blue * 0.0722;
+};
+
+export const contrastRatio = (foreground: string, background: string): number => {
+	const foregroundLuminance = relativeLuminance(foreground);
+	const backgroundLuminance = relativeLuminance(background);
+	const lighter = Math.max(foregroundLuminance, backgroundLuminance);
+	const darker = Math.min(foregroundLuminance, backgroundLuminance);
+	return (lighter + 0.05) / (darker + 0.05);
+};
+
+const minContrast = (foreground: string, backgrounds: readonly string[]): number =>
+	Math.min(...backgrounds.map((background) => contrastRatio(foreground, background)));
+
+const readableForeground = (
+	color: string,
+	backgrounds: readonly string[],
+	minimumContrast: number,
+): string => {
+	if (minContrast(color, backgrounds) >= minimumContrast) {
+		return color;
+	}
+
+	const blackMin = minContrast("#000000", backgrounds);
+	const whiteMin = minContrast("#FFFFFF", backgrounds);
+	const target = whiteMin >= blackMin ? "#FFFFFF" : "#000000";
+
+	for (let step = 0.08; step <= 1; step += 0.04) {
+		const candidate = blendHex(color, target, step);
+		if (minContrast(candidate, backgrounds) >= minimumContrast) {
+			return candidate;
+		}
+	}
+
+	return target;
+};
+
+export interface ReadableThemeTextColors {
+	muted: string;
+	dim: string;
+	syntaxComment: string;
+}
+
+export const deriveReadableThemeTextColors = (
+	palette: Palette,
+	backgrounds: readonly string[],
+): ReadableThemeTextColors => ({
+	muted: readableForeground(palette.semantic.muted, backgrounds, 4.5),
+	dim: readableForeground(palette.semantic.dim, backgrounds, 3.5),
+	syntaxComment: readableForeground(
+		palette.raw["comment"] ?? palette.semantic.muted,
+		backgrounds,
+		4.5,
+	),
+});
+
 const pickBackground = (palette: Palette): string =>
 	palette.raw["base"] ??
 	palette.raw["background"] ??
@@ -212,6 +276,16 @@ const toPiTheme = (ctx: ThemeSwitcherContext, palette: Palette): Theme => {
 	const toolPendingBg = blendHex(background, palette.semantic.info, palette.variant === "dark" ? 0.12 : 0.08);
 	const toolSuccessBg = blendHex(background, palette.semantic.success, palette.variant === "dark" ? 0.14 : 0.1);
 	const toolErrorBg = blendHex(background, palette.semantic.error, palette.variant === "dark" ? 0.14 : 0.1);
+	const readableTextBackgrounds = [
+		background,
+		selectedBg,
+		userMessageBg,
+		customMessageBg,
+		toolPendingBg,
+		toolSuccessBg,
+		toolErrorBg,
+	] as const;
+	const readableText = deriveReadableThemeTextColors(palette, readableTextBackgrounds);
 
 	return new ThemeCtor(
 		{
@@ -222,10 +296,10 @@ const toPiTheme = (ctx: ThemeSwitcherContext, palette: Palette): Theme => {
 			success: palette.semantic.success,
 			error: palette.semantic.error,
 			warning: palette.semantic.warning,
-			muted: palette.semantic.muted,
-			dim: palette.semantic.dim,
+			muted: readableText.muted,
+			dim: readableText.dim,
 			text: palette.semantic.text,
-			thinkingText: palette.semantic.muted,
+			thinkingText: readableText.muted,
 			userMessageText: palette.semantic.text,
 			customMessageText: palette.semantic.text,
 			customMessageLabel: palette.semantic.label,
@@ -233,18 +307,18 @@ const toPiTheme = (ctx: ThemeSwitcherContext, palette: Palette): Theme => {
 			toolOutput: palette.semantic.value,
 			mdHeading: palette.semantic.header,
 			mdLink: palette.semantic.accent,
-			mdLinkUrl: palette.semantic.muted,
+			mdLinkUrl: readableText.muted,
 			mdCode: palette.semantic.accent,
 			mdCodeBlock: palette.semantic.text,
 			mdCodeBlockBorder: palette.semantic.border,
-			mdQuote: palette.semantic.muted,
+			mdQuote: readableText.muted,
 			mdQuoteBorder: palette.semantic.border,
 			mdHr: palette.semantic.separator,
 			mdListBullet: palette.semantic.accent,
 			toolDiffAdded: palette.semantic.success,
 			toolDiffRemoved: palette.semantic.error,
-			toolDiffContext: palette.semantic.muted,
-			syntaxComment: palette.raw["comment"] ?? palette.semantic.muted,
+			toolDiffContext: readableText.muted,
+			syntaxComment: readableText.syntaxComment,
 			syntaxKeyword: palette.raw["blue"] ?? palette.semantic.accent,
 			syntaxFunction: palette.raw["yellow"] ?? palette.semantic.header,
 			syntaxVariable: palette.raw["cyan"] ?? palette.semantic.info,
@@ -254,7 +328,7 @@ const toPiTheme = (ctx: ThemeSwitcherContext, palette: Palette): Theme => {
 			syntaxOperator: palette.semantic.text,
 			syntaxPunctuation: palette.semantic.text,
 			thinkingOff: palette.semantic.separator,
-			thinkingMinimal: palette.semantic.muted,
+			thinkingMinimal: readableText.muted,
 			thinkingLow: palette.semantic.accent,
 			thinkingMedium: palette.semantic.info,
 			thinkingHigh: palette.semantic.highlight,
