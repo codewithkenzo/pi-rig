@@ -47,31 +47,52 @@ const makeCtx = (result: { success: boolean; error?: string }) => {
 	return { ctx, emitted, setThemeCalls };
 };
 
-const settingsPath = (dir: string): string =>
+const coreSettingsPath = (dir: string): string =>
 	path.join(dir, "settings.json");
 
-const writeSettings = (dir: string, value: Record<string, unknown>): void => {
-	const file = settingsPath(dir);
+const extensionSettingsPath = (dir: string): string =>
+	path.join(dir, "theme-switcher.json");
+
+const writeJson = (file: string, value: Record<string, unknown>): void => {
 	fs.mkdirSync(path.dirname(file), { recursive: true });
 	fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`, "utf8");
 };
 
-const readSettings = (dir: string): Record<string, unknown> => {
-	const raw = fs.readFileSync(settingsPath(dir), "utf8");
+const writeCoreSettings = (dir: string, value: Record<string, unknown>): void => {
+	writeJson(coreSettingsPath(dir), value);
+};
+
+const writeExtensionSettings = (dir: string, value: Record<string, unknown>): void => {
+	writeJson(extensionSettingsPath(dir), value);
+};
+
+const readJson = (file: string): Record<string, unknown> => {
+	const raw = fs.readFileSync(file, "utf8");
 	return JSON.parse(raw) as Record<string, unknown>;
 };
 
+const readCoreSettings = (dir: string): Record<string, unknown> => readJson(coreSettingsPath(dir));
+
+const readExtensionSettings = (dir: string): Record<string, unknown> => readJson(extensionSettingsPath(dir));
+
 const withTempSettings = async <T>(run: (dir: string) => Promise<T> | T): Promise<T> => {
-	const prevPath = process.env["PI_THEME_SETTINGS_PATH"];
+	const prevCorePath = process.env["PI_THEME_SETTINGS_PATH"];
+	const prevExtensionPath = process.env["PI_THEME_SWITCHER_SETTINGS_PATH"];
 	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "theme-switcher-settings-"));
-	process.env["PI_THEME_SETTINGS_PATH"] = settingsPath(dir);
+	process.env["PI_THEME_SETTINGS_PATH"] = coreSettingsPath(dir);
+	process.env["PI_THEME_SWITCHER_SETTINGS_PATH"] = extensionSettingsPath(dir);
 	try {
 		return await run(dir);
 	} finally {
-		if (prevPath === undefined) {
+		if (prevCorePath === undefined) {
 			delete process.env["PI_THEME_SETTINGS_PATH"];
 		} else {
-			process.env["PI_THEME_SETTINGS_PATH"] = prevPath;
+			process.env["PI_THEME_SETTINGS_PATH"] = prevCorePath;
+		}
+		if (prevExtensionPath === undefined) {
+			delete process.env["PI_THEME_SWITCHER_SETTINGS_PATH"];
+		} else {
+			process.env["PI_THEME_SWITCHER_SETTINGS_PATH"] = prevExtensionPath;
 		}
 		fs.rmSync(dir, { recursive: true, force: true });
 	}
@@ -149,29 +170,76 @@ describe("makeThemeState", () => {
 });
 
 describe("theme preference persistence", () => {
-	it("loadThemePreference reads theme from ~/.pi/agent/settings.json", async () => {
+	it("loadThemePreference prefers extension-owned settings", async () => {
 		await withTempSettings((dir) => {
-			writeSettings(dir, {
+			writeCoreSettings(dir, {
 				theme: "dracula",
 				defaultModel: "gpt-5.4-mini",
 			});
-			expect(loadThemePreference()).toBe("dracula");
+			writeExtensionSettings(dir, { active: "hyrule" });
+
+			expect(loadThemePreference()).toBe("hyrule");
+			expect(readCoreSettings(dir)["theme"]).toBe("dracula");
 		});
 	});
 
-	it("saveThemePreference merges theme and preserves other settings keys", async () => {
+	it("loadThemePreference migrates stale known palette names out of Pi core settings", async () => {
 		await withTempSettings((dir) => {
-			writeSettings(dir, {
-				theme: "catppuccin-mocha",
+			writeCoreSettings(dir, {
+				theme: "hyrule",
 				defaultModel: "gpt-5.4-mini",
 				autoUpdate: true,
 			});
 
-			saveThemePreference("nord");
-			const saved = readSettings(dir);
-			expect(saved["theme"]).toBe("nord");
-			expect(saved["defaultModel"]).toBe("gpt-5.4-mini");
-			expect(saved["autoUpdate"]).toBe(true);
+			expect(loadThemePreference()).toBe("hyrule");
+			expect(readExtensionSettings(dir)["active"]).toBe("hyrule");
+			const core = readCoreSettings(dir);
+			expect(core["theme"]).toBeUndefined();
+			expect(core["defaultModel"]).toBe("gpt-5.4-mini");
+			expect(core["autoUpdate"]).toBe(true);
+		});
+	});
+
+	it("loadThemePreference leaves unknown Pi core theme names untouched", async () => {
+		await withTempSettings((dir) => {
+			writeCoreSettings(dir, {
+				theme: "my-core-theme",
+				defaultModel: "gpt-5.4-mini",
+			});
+
+			expect(loadThemePreference()).toBe("my-core-theme");
+			expect(readCoreSettings(dir)["theme"]).toBe("my-core-theme");
+			expect(fs.existsSync(extensionSettingsPath(dir))).toBe(false);
+		});
+	});
+
+	it("saveThemePreference writes extension settings and scrubs matching core palette theme only", async () => {
+		await withTempSettings((dir) => {
+			writeCoreSettings(dir, {
+				theme: "hyrule",
+				defaultModel: "gpt-5.4-mini",
+				autoUpdate: true,
+			});
+
+			saveThemePreference("hyrule");
+			expect(readExtensionSettings(dir)["active"]).toBe("hyrule");
+			const core = readCoreSettings(dir);
+			expect(core["theme"]).toBeUndefined();
+			expect(core["defaultModel"]).toBe("gpt-5.4-mini");
+			expect(core["autoUpdate"]).toBe(true);
+		});
+	});
+
+	it("saveThemePreference does not scrub unrelated core theme names", async () => {
+		await withTempSettings((dir) => {
+			writeCoreSettings(dir, {
+				theme: "my-core-theme",
+				defaultModel: "gpt-5.4-mini",
+			});
+
+			saveThemePreference("hyrule");
+			expect(readExtensionSettings(dir)["active"]).toBe("hyrule");
+			expect(readCoreSettings(dir)["theme"]).toBe("my-core-theme");
 		});
 	});
 });
@@ -179,7 +247,7 @@ describe("theme preference persistence", () => {
 describe("applyTheme", () => {
 	it("updates state, emits theme:changed, and persists settings on success", async () => {
 		await withTempSettings(async (dir) => {
-			writeSettings(dir, {
+			writeCoreSettings(dir, {
 				theme: "catppuccin-mocha",
 				defaultModel: "gpt-5.4-mini",
 			});
@@ -195,15 +263,16 @@ describe("applyTheme", () => {
 			expect((setThemeCalls[0] as Theme | undefined)?.name).toBe("dracula");
 			expect(emitted).toEqual([{ event: "theme:changed", payload: { theme: "dracula" } }]);
 
-			const saved = readSettings(dir);
-			expect(saved["theme"]).toBe("dracula");
+			const saved = readCoreSettings(dir);
+			expect(readExtensionSettings(dir)["active"]).toBe("dracula");
+			expect(saved["theme"]).toBe("catppuccin-mocha");
 			expect(saved["defaultModel"]).toBe("gpt-5.4-mini");
 		});
 	});
 
 	it("can skip preference writes when persistPreference is disabled", async () => {
 		await withTempSettings(async (dir) => {
-			writeSettings(dir, {
+			writeCoreSettings(dir, {
 				theme: "catppuccin-mocha",
 				defaultModel: "gpt-5.4-mini",
 			});
@@ -215,7 +284,7 @@ describe("applyTheme", () => {
 			);
 			expect(Exit.isSuccess(exit)).toBe(true);
 
-			const saved = readSettings(dir);
+			const saved = readCoreSettings(dir);
 			expect(saved["theme"]).toBe("catppuccin-mocha");
 			expect(state.getActive()).toBe("dracula");
 		});
@@ -223,7 +292,7 @@ describe("applyTheme", () => {
 
 	it("returns ThemeLoadError, keeps state, and does not persist on failed apply", async () => {
 		await withTempSettings(async (dir) => {
-			writeSettings(dir, {
+			writeCoreSettings(dir, {
 				theme: "catppuccin-mocha",
 				defaultModel: "gpt-5.4-mini",
 			});
@@ -246,7 +315,7 @@ describe("applyTheme", () => {
 				}
 			}
 
-			const saved = readSettings(dir);
+			const saved = readCoreSettings(dir);
 			expect(saved["theme"]).toBe("catppuccin-mocha");
 			expect(saved["defaultModel"]).toBe("gpt-5.4-mini");
 		});

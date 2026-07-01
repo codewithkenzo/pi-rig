@@ -72,20 +72,60 @@ const getThemeNames = (): string[] =>
 		]),
 	);
 
-const themeSettingsPath = (): string =>
+const coreThemeSettingsPath = (): string =>
 	process.env.PI_THEME_SETTINGS_PATH ?? path.join(os.homedir(), ".pi", "agent", "settings.json");
 
-export const loadThemePreference = (): string | undefined => {
+const themeSwitcherSettingsPath = (): string =>
+	process.env.PI_THEME_SWITCHER_SETTINGS_PATH ?? path.join(os.homedir(), ".pi", "agent", "theme-switcher.json");
+
+const readJsonObject = (file: string): Record<string, unknown> | undefined => {
 	try {
-		const parsed = JSON.parse(fs.readFileSync(themeSettingsPath(), "utf8")) as unknown;
-		if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-			return undefined;
-		}
-		const theme = (parsed as { theme?: unknown }).theme;
-		return typeof theme === "string" && theme.trim().length > 0 ? theme.trim() : undefined;
+		const parsed = JSON.parse(fs.readFileSync(file, "utf8")) as unknown;
+		return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
+			? parsed as Record<string, unknown>
+			: undefined;
 	} catch {
 		return undefined;
 	}
+};
+
+const writeJsonObject = (file: string, value: Record<string, unknown>): void => {
+	fs.mkdirSync(path.dirname(file), { recursive: true });
+	fs.writeFileSync(file, JSON.stringify(value, null, 2), "utf8");
+};
+
+const readStringField = (value: Record<string, unknown> | undefined, key: string): string | undefined => {
+	const field = value?.[key];
+	return typeof field === "string" && field.trim().length > 0 ? field.trim() : undefined;
+};
+
+export const scrubCoreThemePreference = (theme: string): void => {
+	const normalized = theme.trim();
+	if (normalized.length === 0 || !isKnownThemeName(normalized)) {
+		return;
+	}
+
+	const settingsFile = coreThemeSettingsPath();
+	const current = readJsonObject(settingsFile);
+	if (current === undefined || current["theme"] !== normalized) {
+		return;
+	}
+
+	const { theme: _theme, ...rest } = current;
+	writeJsonObject(settingsFile, rest);
+};
+
+export const loadThemePreference = (): string | undefined => {
+	const extensionTheme = readStringField(readJsonObject(themeSwitcherSettingsPath()), "active");
+	if (extensionTheme !== undefined) {
+		return extensionTheme;
+	}
+
+	const coreTheme = readStringField(readJsonObject(coreThemeSettingsPath()), "theme");
+	if (coreTheme !== undefined && isKnownThemeName(coreTheme)) {
+		saveThemePreference(coreTheme);
+	}
+	return coreTheme;
 };
 
 export const saveThemePreference = (theme: string): void => {
@@ -93,19 +133,8 @@ export const saveThemePreference = (theme: string): void => {
 	if (normalized.length === 0) {
 		return;
 	}
-	const settingsFile = themeSettingsPath();
-	const settingsDir = path.dirname(settingsFile);
-	let current: Record<string, unknown> = {};
-	try {
-		const parsed = JSON.parse(fs.readFileSync(settingsFile, "utf8")) as unknown;
-		if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
-			current = parsed as Record<string, unknown>;
-		}
-	} catch {
-		// default empty object
-	}
-	fs.mkdirSync(settingsDir, { recursive: true });
-	fs.writeFileSync(settingsFile, JSON.stringify({ ...current, theme: normalized }, null, 2), "utf8");
+	writeJsonObject(themeSwitcherSettingsPath(), { active: normalized });
+	scrubCoreThemePreference(normalized);
 };
 
 export interface ThemeState {
