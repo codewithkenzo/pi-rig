@@ -1,6 +1,6 @@
 {
   "name": "@codewithkenzo/pi-theme-switcher",
-  "version": "0.1.6",
+  "version": "0.1.8",
   "description": "Switch and preview Pi themes during live sessions",
   "type": "module",
   "main": "./dist/index.js",
@@ -24,6 +24,7 @@
     "test": "bun test"
   },
   "keywords": [
+    "pi-package",
     "pi",
     "pi-agent",
     "pi-coding-agent",
